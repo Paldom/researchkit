@@ -77,17 +77,19 @@ The server binds `127.0.0.1` and is unauthenticated by default. To expose it bey
 
 ## Configuration
 
-| Provider            | Env var                  | Notes                           |
-| ------------------- | ------------------------ | ------------------------------- |
-| OpenAI              | `OPENAI_API_KEY`         | default provider set            |
-| Gemini              | `GEMINI_API_KEY`         | default provider set            |
-| Grok (xAI)          | `XAI_API_KEY`            | default provider set            |
-| Perplexity          | `PERPLEXITY_API_KEY`     | default provider set            |
-| Tavily              | `TAVILY_API_KEY`         | opt-in via `--providers`        |
-| Claude              | Claude Code subscription | opt-in; runs the `claude` CLI   |
-| GitHub              | `GITHUB_TOKEN`           | opt-in; code/issue search       |
-| GLM (Z.ai)          | `GLM_API_KEY`            | opt-in                          |
-| Exa (site research) | `EXA_API_KEY`            | optional deep-source enrichment |
+Each provider sees a different slice of the web — that's the point of running them together. Source volumes and domain profiles below come from ~290 logged research runs and a 14-run benchmark.
+
+| Provider   | Env var                  | Default?      | What it adds                                                                                                                                         |
+| ---------- | ------------------------ | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenAI     | `OPENAI_API_KEY`         | yes           | Agentic multi-step web search with domain filtering; steady mid-volume citer (median ~50 sources/run) skewing Reddit, GitHub, arXiv, news            |
+| Gemini     | `GEMINI_API_KEY`         | yes           | The only first-party Google Search grounding; near 1:1 citation-to-retrieval ratio (researchkit resolves its redirect URLs to real sources)          |
+| Grok (xAI) | `XAI_API_KEY`            | yes           | Native X/Twitter search and the highest volume of any provider (median ~110 sources/run); the go-to for social pulse — X, Reddit, TikTok             |
+| Perplexity | `PERPLEXITY_API_KEY`     | yes           | Search-first LLM tuned for fresh news and media; the strongest YouTube/Instagram/Facebook coverage of the API providers                              |
+| Tavily     | `TAVILY_API_KEY`         | opt-in        | LLM-optimized raw search: a deterministic ~40 clean sources per run, zero failures across 149 logged runs — breadth without another model's opinions |
+| Claude     | Claude Code subscription | opt-in        | Agentic multi-step research via the `claude` CLI; strongest on developer forums (Hacker News, dev.to) and the only other provider citing X           |
+| GitHub     | `GITHUB_TOKEN`           | opt-in        | Developer ground truth: real repos, issues and PRs (~95% of its citations are github.com) — primary artifacts, not summaries                         |
+| GLM (Z.ai) | `GLM_API_KEY`            | opt-in        | Budget generalist: cheap and reliable but capped at ~20 sources with no distinctive domains — best as an inexpensive analysis/summarizer slot        |
+| Exa        | `EXA_API_KEY`            | site research | Embeddings-first neural search: finds semantically related pages that keyword search misses, with full-text retrieval for deep reading               |
 
 All keys live in `.env` (see [`.env.example`](.env.example)). Model choices, presets, budgets, and advanced CLI-backed modes are documented in [`models.yaml`](models.yaml).
 

@@ -24,7 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider progress, rendered cited reports, past-project browser.
 - `models.yaml` presets (safe defaults; deep-research/CLI-backed modes
   opt-in), `.env.example`, and a frontend CI job.
-- `slugify_topic` for normalizing research topics into filesystem-safe slugs.
 - Full project toolchain: uv packaging, ruff, mypy (strict), pytest coverage
   gate, pre-commit, CI, and tag-triggered PyPI publishing.
 
