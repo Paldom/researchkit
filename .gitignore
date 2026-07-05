@@ -220,3 +220,7 @@ __marimo__/
 # local
 .local/
 .claude/settings.local.json
+
+# researchkit run outputs (reports may contain private research)
+projects/
+projects-remote/
