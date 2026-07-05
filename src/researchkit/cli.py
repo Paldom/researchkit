@@ -1,13 +1,13 @@
 """
-Command-line interface for the Social Insight Collector.
+Command-line interface for researchkit.
 
 This is a thin interface layer that delegates to SocialResearchService.
 
 Commands:
-    social-insights "topic"              - Instant mode: create project and run
-    social-insights create "topic"       - Create project only
-    social-insights run <project>        - Run existing project
-    social-insights list                 - List all projects
+    researchkit "topic"              - Instant mode: create project and run
+    researchkit create "topic"       - Create project only
+    researchkit run <project>        - Run existing project
+    researchkit list                 - List all projects
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from researchkit.service import SocialResearchService
 def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser with subcommands."""
     parser = argparse.ArgumentParser(
-        prog="social-insights",
+        prog="researchkit",
         description="Collect and analyze social insights about a topic using multiple AI providers.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
@@ -429,7 +429,7 @@ def cmd_create(args, service: SocialResearchService) -> int:
     print(f"Created project: {project.path}", file=sys.stderr)
     print(f"Config saved to: {project.config_path}", file=sys.stderr)
     print("\nTo run this project:", file=sys.stderr)
-    print(f"  social-insights run {project.path}", file=sys.stderr)
+    print(f"  researchkit run {project.path}", file=sys.stderr)
 
     return 0
 
@@ -914,7 +914,7 @@ def main() -> int:
     if not wants_help and first is not None and first not in subcommands:
         # Instant mode: the first positional is the research topic.
         instant_parser = argparse.ArgumentParser(
-            prog="social-insights",
+            prog="researchkit",
             description="Instant mode: create project and run research",
         )
         instant_parser.add_argument("topic", help="The topic to research")

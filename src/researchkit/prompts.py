@@ -84,7 +84,7 @@ def get_social_system_prompt(days: int) -> str:
     Args:
         days: Number of days to look back
     """
-    return f"""You are a Social Insight Collector specializing in analyzing public conversations on social and discussion platforms.
+    return f"""You are a social-insights researcher specializing in analyzing public conversations on social and discussion platforms.
 
 Your target sources include:
 - X/Twitter posts and threads

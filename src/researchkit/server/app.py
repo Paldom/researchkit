@@ -1,0 +1,263 @@
+"""FastAPI backend serving the researchkit REST/SSE API and the built web UI.
+
+Minimal by design: research runs execute in daemon threads with an in-memory
+run registry, progress streams over Server-Sent Events, and the built React
+frontend (web/dist) is served from the same origin. Single-process only —
+front it with a real ASGI deployment (and auth) if you expose it beyond
+localhost.
+
+Requires the ``server`` extra: ``pip install "researchkit[server]"``.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import queue
+import threading
+import uuid
+from collections import OrderedDict
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from researchkit import __version__
+from researchkit.project import PROJECTS_DIR, Project, list_projects
+from researchkit.service import SocialResearchService
+
+logger = logging.getLogger(__name__)
+
+KNOWN_PROVIDERS = (
+    "openai",
+    "gemini",
+    "grok",
+    "perplexity",
+    "tavily",
+    "claude",
+    "github",
+    "glm",
+)
+DEFAULT_PROVIDERS = ("openai", "gemini", "grok", "perplexity")
+
+# Terminal sentinel pushed to a run's event queue when the run finishes.
+_SENTINEL: dict[str, Any] | None = None
+_MAX_TRACKED_RUNS = 100
+_SSE_HEARTBEAT_SECONDS = 15.0
+
+
+class ResearchIn(BaseModel):
+    """Request body for POST /api/research."""
+
+    topic: str = Field(min_length=3, max_length=500)
+    days: int = Field(default=7, ge=1, le=90)
+    providers: list[str] | None = None
+    preset: str | None = None
+    sources: list[str] = Field(default_factory=lambda: ["social", "web"])
+
+
+class RunStatus(BaseModel):
+    """Response body for GET /api/research/{run_id}."""
+
+    status: str
+    project: str | None = None
+    error: str | None = None
+
+
+class _RunState:
+    """Mutable state for one background research run."""
+
+    def __init__(self) -> None:
+        self.events: queue.Queue[dict[str, Any] | None] = queue.Queue()
+        self.status = "running"
+        self.project: str | None = None
+        self.error: str | None = None
+
+
+def _project_summary(project: Project) -> dict[str, Any]:
+    return {
+        "name": project.name,
+        "topic": project.config.topic,
+        "days": project.config.days,
+        "providers": list(project.config.providers),
+        "created_at": project.created_at.isoformat(),
+        "has_report": project.report_path.is_file(),
+    }
+
+
+def _web_dist() -> Path | None:
+    """Locate the built frontend, if any (env override, then ./web/dist)."""
+    override = os.getenv("RESEARCHKIT_WEB_DIST")
+    candidate = Path(override) if override else Path.cwd() / "web" / "dist"
+    return candidate if (candidate / "index.html").is_file() else None
+
+
+def create_app(service: SocialResearchService | None = None) -> FastAPI:
+    """Build the FastAPI app (service injectable for tests)."""
+    app = FastAPI(title="researchkit", version=__version__, docs_url="/api/docs")
+    app.add_middleware(
+        CORSMiddleware,
+        # Same-origin in production; localhost origins cover `vite dev`.
+        allow_origins=[
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    svc = service or SocialResearchService()
+    runs: OrderedDict[str, _RunState] = OrderedDict()
+    runs_lock = threading.Lock()
+
+    def _register_run(run_id: str, state: _RunState) -> None:
+        with runs_lock:
+            runs[run_id] = state
+            while len(runs) > _MAX_TRACKED_RUNS:
+                runs.popitem(last=False)
+
+    def _get_run(run_id: str) -> _RunState:
+        with runs_lock:
+            state = runs.get(run_id)
+        if state is None:
+            raise HTTPException(status_code=404, detail="Unknown run id")
+        return state
+
+    def _execute(state: _RunState, params: ResearchIn) -> None:
+        try:
+            project, _artifacts = svc.create_and_run_project(
+                topic=params.topic,
+                days=params.days,
+                providers=list(params.providers or DEFAULT_PROVIDERS),
+                sources=params.sources,
+                preset_name=params.preset,
+                progress=state.events.put,
+            )
+            state.project = project.name
+            state.status = "done"
+        except Exception as e:  # surface any pipeline failure to the client
+            logger.exception("Research run failed")
+            state.error = str(e)[:500]
+            state.status = "error"
+        finally:
+            state.events.put(_SENTINEL)
+
+    @app.get("/api/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok", "version": __version__}
+
+    @app.get("/api/config")
+    def config() -> dict[str, Any]:
+        manager = svc.config_manager
+        return {
+            "active_preset": manager.get_active_preset(),
+            "presets": manager.get_preset_names(),
+            "providers": list(KNOWN_PROVIDERS),
+            "default_providers": list(DEFAULT_PROVIDERS),
+        }
+
+    @app.post("/api/research", status_code=202)
+    def start_research(params: ResearchIn) -> dict[str, str]:
+        unknown = set(params.providers or []) - set(KNOWN_PROVIDERS)
+        if unknown:
+            raise HTTPException(
+                status_code=422, detail=f"Unknown providers: {sorted(unknown)}"
+            )
+        if invalid_sources := set(params.sources) - {"social", "web"}:
+            raise HTTPException(
+                status_code=422, detail=f"Unknown sources: {sorted(invalid_sources)}"
+            )
+        run_id = uuid.uuid4().hex
+        state = _RunState()
+        _register_run(run_id, state)
+        threading.Thread(
+            target=_execute,
+            args=(state, params),
+            name=f"research-{run_id[:8]}",
+            daemon=True,
+        ).start()
+        return {"run_id": run_id}
+
+    @app.get("/api/research/{run_id}")
+    def run_status(run_id: str) -> RunStatus:
+        state = _get_run(run_id)
+        return RunStatus(status=state.status, project=state.project, error=state.error)
+
+    @app.get("/api/research/{run_id}/events")
+    def run_events(run_id: str) -> StreamingResponse:
+        state = _get_run(run_id)
+
+        def stream() -> Iterator[str]:
+            while True:
+                try:
+                    event = state.events.get(timeout=_SSE_HEARTBEAT_SECONDS)
+                except queue.Empty:
+                    yield ": keep-alive\n\n"
+                    continue
+                if event is _SENTINEL or event is None:
+                    break
+                payload = json.dumps(event, default=str)
+                yield f"event: progress\ndata: {payload}\n\n"
+            if state.status == "done":
+                done = json.dumps({"project": state.project})
+                yield f"event: done\ndata: {done}\n\n"
+            else:
+                err = json.dumps({"message": state.error or "run failed"})
+                yield f"event: error\ndata: {err}\n\n"
+
+        return StreamingResponse(
+            stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    @app.get("/api/projects")
+    def projects() -> list[dict[str, Any]]:
+        return [_project_summary(p) for p in list_projects(PROJECTS_DIR)]
+
+    @app.get("/api/projects/{name}/report")
+    def project_report(name: str) -> PlainTextResponse:
+        for project in list_projects(PROJECTS_DIR):
+            if project.name == name:
+                if not project.report_path.is_file():
+                    raise HTTPException(status_code=404, detail="No report yet")
+                return PlainTextResponse(
+                    project.report_path.read_text(encoding="utf-8"),
+                    media_type="text/markdown",
+                )
+        raise HTTPException(status_code=404, detail="Unknown project")
+
+    dist = _web_dist()
+    if dist is not None:
+        app.mount("/", StaticFiles(directory=dist, html=True), name="web")
+    else:  # pragma: no cover - trivial fallback branch
+        logger.info("No web/dist build found; serving API only")
+
+        @app.get("/")
+        def index() -> dict[str, str]:
+            return {
+                "service": "researchkit",
+                "docs": "/api/docs",
+                "hint": "build the web UI with: cd web && npm run build",
+            }
+
+    return app
+
+
+def main() -> None:
+    """Entry point for the ``researchkit-server`` console script."""
+    import uvicorn
+
+    host = os.getenv("RESEARCHKIT_HOST", "127.0.0.1")
+    port = int(os.getenv("RESEARCHKIT_PORT", "8000"))
+    uvicorn.run(create_app(), host=host, port=port)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main()

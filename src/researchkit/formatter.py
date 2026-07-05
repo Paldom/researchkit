@@ -49,7 +49,7 @@ class Formatter:
             system_config: Optional system config snapshot to display
         """
         lines = [
-            "# Social Insight Report",
+            "# Research Report",
             "",
             f"**Topic:** {bundle.topic}",
         ]
