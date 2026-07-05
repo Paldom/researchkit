@@ -1,0 +1,7 @@
+# Last matching rule wins: catch-all first, automation-defining paths after.
+*                      @Paldom
+/.github/              @Paldom
+/.github/CODEOWNERS    @Paldom
+/AGENTS.md             @Paldom
+/CLAUDE.md             @Paldom
+/.claude/              @Paldom

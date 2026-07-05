@@ -1,0 +1,114 @@
+# researchkit model presets.
+#
+# Pick a preset with `active_preset` (or per-run via `--preset`). Each preset
+# maps every pipeline slot to a model and sets search/effort/budget knobs.
+# `optimal` comes from a 9-setup LLM-as-judge benchmark: summary quality was
+# ~flat across model tiers, so cheap+fast setups win the combined
+# quality/sources/time/price objective.
+#
+# CLI-backed slots (advanced, all opt-in):
+# - `openai: codex` or `codex:<model>` routes the OpenAI step through the
+#   Codex CLI (`codex exec`, ChatGPT-subscription billing).
+# - `gemini: agy` or `agy:<model>` routes the Gemini step through the
+#   Antigravity CLI with Google Search grounding.
+# - `claude: deep` or `deep:<model>` routes the Claude step through Claude
+#   Code's /deep-research workflow (fan-out searches, verified claims, cited
+#   report). Powerful but slow (10-40 min) and expensive: every workflow
+#   subagent inherits the chosen model — prefer sonnet, never opus. The
+#   claude_max_budget cap is enforced lazily mid-workflow; an over-budget run
+#   is killed WITHOUT returning a report, so set it well above the realistic
+#   cost (>= 15-20) when using deep mode. NEVER ship deep: as a default —
+#   it runs a CLI subprocess with web access on every default invocation.
+
+active_preset: default
+
+presets:
+  default:
+    description: Latest models with best quality
+    models:
+      openai: gpt-5.4-mini
+      gemini: gemini-3.5-flash
+      grok: grok-4.3
+      perplexity: sonar
+      tavily: tavily-search # display name only (search API)
+      claude: claude-sonnet-4-6 # plain two-query mode; `deep:<model>` opt-in (see header)
+      github: gpt-5.4-mini
+      glm: glm-5.2
+      summarizer: gemini-3.5-flash # cross-provider meta-summary
+      site_summarizer: gemini-3-flash-preview # site-research summarization
+      improver: gpt-5.4-mini # topic improvement + keyword generation
+    reasoning_effort: medium
+    perplexity_search_type: pro # fast | auto | pro
+    tavily_search_depth: advanced # basic | advanced | fast | ultra-fast
+    claude_max_budget: 5.0 # max USD per Claude Code query
+    # LLM council for topic improvement + keyword generation (boosted runs).
+    # Members accept CLI specs (codex:<m>, agy:<m>) or plain model ids.
+    council:
+      members:
+        - claude-opus-4-8
+        - gpt-5.5
+        - gemini-3.5-flash
+      boss: claude-opus-4-8
+    # Boost fans a topic out into parallel sub-projects topped by a
+    # super-summary. Off by default: a boosted run multiplies cost by the
+    # number of sub-projects. Enable deliberately (or per-run via --boost).
+    boost:
+      enabled: false
+      max_subprojects: 5
+
+  optimal:
+    description: Best balance — fastest, cheapest, summary within noise of the best (bench winner 0.91)
+    models:
+      openai: gpt-5.4-nano
+      gemini: gemini-3-flash-preview
+      grok: grok-4.3
+      perplexity: sonar
+      tavily: tavily-search
+      claude: claude-haiku-4-5
+      github: gpt-5.4-mini
+      glm: glm-4.7-flashx
+      summarizer: gemini-3-flash-preview
+      site_summarizer: gemini-3-flash-preview
+      improver: gpt-5.4-nano
+    reasoning_effort: low
+    perplexity_search_type: fast # fast = more sources, less time/cost
+    tavily_search_depth: fast
+    claude_max_budget: 3.0
+
+  optimal_quality:
+    description: Quality cushion — sweet-spot models, more sources, robust on harder topics (bench 0.74)
+    models:
+      openai: gpt-5.4-mini
+      gemini: gemini-3.5-flash
+      grok: grok-4.3
+      perplexity: sonar-pro
+      tavily: tavily-search
+      claude: claude-sonnet-4-6
+      github: gpt-5.4-mini
+      glm: glm-4.7
+      summarizer: gemini-3.5-flash
+      site_summarizer: gemini-3-flash-preview
+      improver: gpt-5.4-mini
+    reasoning_effort: low
+    perplexity_search_type: fast
+    tavily_search_depth: fast
+    claude_max_budget: 5.0
+
+  budget_friendly:
+    description: Cost-effective models for faster iteration
+    models:
+      openai: gpt-5.4-mini
+      gemini: gemini-3-flash-preview
+      grok: grok-4.3
+      perplexity: sonar
+      tavily: tavily-search
+      claude: claude-sonnet-4-6
+      github: gpt-5.4-mini
+      glm: glm-5.2
+      summarizer: gemini-3.5-flash
+      site_summarizer: gemini-3-flash-preview
+      improver: gpt-5.4-mini
+    reasoning_effort: medium
+    perplexity_search_type: fast
+    tavily_search_depth: fast
+    claude_max_budget: 5.0

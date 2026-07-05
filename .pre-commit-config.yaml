@@ -1,0 +1,70 @@
+# Hooks are convenience; CI (.github/workflows/ci.yml, pre-commit job) runs the
+# same config and is the enforcement layer. Setup: `uv run pre-commit install`.
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  # Hygiene — cheap, universal
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-toml
+      - id: check-json
+      - id: check-added-large-files
+        # uv.lock for the full provider-SDK dependency tree is ~520 KB.
+        args: ["--maxkb=1024"]
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  # Python lint + format. Order matters: fixer first, formatter second.
+  # rev in lockstep with ruff==0.15.20 in pyproject.toml [dependency-groups] dev.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.20
+    hooks:
+      - id: ruff-check
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
+  # mypy runs from the uv-locked venv (single env shared with CI and the Stop
+  # hook) — a mirrors-mypy isolated env cannot resolve `import researchkit` on
+  # tests-only commits and needs a hand-synced additional_dependencies list.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: uv run --no-sync mypy src
+        language: system
+        pass_filenames: false
+        files: '(\.py$|^pyproject\.toml$)'
+
+  # Non-Python formatting (original pre-commit mirror is archived; use fork)
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.9.4
+    hooks:
+      - id: prettier
+        types_or: [yaml, markdown, json] # never .py — no fight with ruff
+
+  # Non-Python validation (formatting is not validation)
+  - repo: https://github.com/abravalheri/validate-pyproject
+    rev: v0.25
+    hooks:
+      - id: validate-pyproject
+        additional_dependencies: ["validate-pyproject-schema-store[all]"]
+
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.37.4
+    hooks:
+      - id: check-github-workflows
+
+  # Slow checks once per push, in the project's own locked environment
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest (pre-push)
+        entry: uv run pytest -q
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
