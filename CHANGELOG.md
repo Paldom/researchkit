@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Core research engine ported from the pre-OSS codebase: 8 concurrent
+  AI web-search providers (OpenAI, Gemini, Grok, Perplexity, Tavily, Claude,
+  GitHub, GLM) with graceful degradation, cross-provider synthesis,
+  LLM council + boost orchestration, Exa site research, project persistence,
+  and per-run observability.
+- `researchkit` CLI (instant mode, create/run/list, user sources, link
+  analytics, keyword tooling).
+- `researchkit-mcp`: stdio MCP server exposing `research`,
+  `list_research_projects`, and `get_research_report` tools.
+- `researchkit-server`: FastAPI backend with SSE progress streaming, project
+  and report endpoints, and static serving of the built web UI.
+- React 19 + Vite + Tailwind 4 web dashboard (`web/`): research form, live
+  provider progress, rendered cited reports, past-project browser.
+- `models.yaml` presets (safe defaults; deep-research/CLI-backed modes opt-in),
+  `.env.example`, EXTRAS.md blueprint for the planned YouTube/Medium
+  connectors, and a frontend CI job.
 - `slugify_topic` for normalizing research topics into filesystem-safe slugs.
-- Full project toolchain: uv packaging, ruff, mypy (strict), pytest with a
-  90% branch-coverage gate, pre-commit, CI, and tag-triggered PyPI publishing.
+- Full project toolchain: uv packaging, ruff, mypy (strict), pytest coverage
+  gate, pre-commit, CI, and tag-triggered PyPI publishing.
+
+### Changed
+
+- mypy runs strict globally with a shrink-only exemption list for ported
+  modules; the coverage gate is set at the measured 35% baseline with a
+  ratchet-up policy (see `pyproject.toml` comments).

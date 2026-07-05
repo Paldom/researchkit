@@ -110,10 +110,30 @@ jobs:
       - run: uv run coverage combine
       - run: uv run coverage report
 
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
   # THE required check. Mark only this job as required in branch rules.
   all-checks-passed:
     runs-on: ubuntu-latest
-    needs: [pre-commit, lint, typecheck, test, coverage]
+    needs: [pre-commit, lint, typecheck, test, coverage, web]
     # Load-bearing: without always(), a failed dependency SKIPS this job,
     # and a skipped required check counts as SUCCESS.
     if: always()

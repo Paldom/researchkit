@@ -16,9 +16,7 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
   const [preset, setPreset] = useState(config.active_preset)
 
   function toggleProvider(name: string) {
-    setProviders((prev) =>
-      prev.includes(name) ? prev.filter((p) => p !== name) : [...prev, name],
-    )
+    setProviders((prev) => (prev.includes(name) ? prev.filter((p) => p !== name) : [...prev, name]))
   }
 
   function handleSubmit(e: FormEvent) {
