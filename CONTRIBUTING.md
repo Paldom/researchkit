@@ -10,8 +10,6 @@ pull requests get reviewed fastest.
 - **New features, new providers/connectors, dependency changes:** open an issue
   first and outline the idea — it saves both of us a rewritten PR. New runtime
   dependencies need explicit maintainer sign-off (see AGENTS.md).
-- Planned-but-not-yet-built work (YouTube/Medium connectors) is specified in
-  [EXTRAS.md](EXTRAS.md) — PRs implementing that blueprint are very welcome.
 
 ## Development setup
 

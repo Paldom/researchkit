@@ -58,7 +58,6 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "httpx2>=2.5.0",
-    "hypothesis>=6.156.1",
     "mypy==2.1.0",
     "pre-commit==4.6.0",
     "pytest>=9.1.1",

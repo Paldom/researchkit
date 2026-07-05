@@ -2,7 +2,6 @@
 
 import logging
 import os
-import re
 import sys
 from importlib.metadata import version
 from logging import NullHandler
@@ -41,14 +40,6 @@ os.environ.setdefault("GRPC_VERBOSITY", "error")
 logging.getLogger(__name__).addHandler(NullHandler())
 
 
-def slugify_topic(topic: str) -> str:
-    """Normalize a research topic into a filesystem-safe ASCII slug."""
-    slug = re.sub(r"[^a-z0-9]+", "-", topic.lower()).strip("-")
-    if not slug:
-        raise ValueError("topic must contain at least one ASCII alphanumeric character")
-    return slug
-
-
 from researchkit.project import (  # noqa: E402
     Project,
     ProjectConfig,
@@ -74,5 +65,4 @@ __all__ = [
     "create_project",
     "list_projects",
     "load_project",
-    "slugify_topic",
 ]

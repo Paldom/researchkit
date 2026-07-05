@@ -1,4 +1,4 @@
-"""Site research module for keyword-based deep-source research (Exa; see EXTRAS.md)."""
+"""Site research module for keyword-based deep-source research (Exa)."""
 
 from researchkit.site_research.site_researcher import (
     SiteResearcher,

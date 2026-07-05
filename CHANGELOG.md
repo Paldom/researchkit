@@ -22,9 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and report endpoints, and static serving of the built web UI.
 - React 19 + Vite + Tailwind 4 web dashboard (`web/`): research form, live
   provider progress, rendered cited reports, past-project browser.
-- `models.yaml` presets (safe defaults; deep-research/CLI-backed modes opt-in),
-  `.env.example`, EXTRAS.md blueprint for the planned YouTube/Medium
-  connectors, and a frontend CI job.
+- `models.yaml` presets (safe defaults; deep-research/CLI-backed modes
+  opt-in), `.env.example`, and a frontend CI job.
 - `slugify_topic` for normalizing research topics into filesystem-safe slugs.
 - Full project toolchain: uv packaging, ruff, mypy (strict), pytest coverage
   gate, pre-commit, CI, and tag-triggered PyPI publishing.

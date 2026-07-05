@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import queue
+import secrets
 import threading
 import uuid
 from collections import OrderedDict
@@ -22,14 +23,14 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from researchkit import __version__
-from researchkit.project import PROJECTS_DIR, Project, list_projects
+from researchkit.project import PROJECTS_DIR, list_projects
 from researchkit.service import SocialResearchService
 
 logger = logging.getLogger(__name__)
@@ -46,9 +47,8 @@ KNOWN_PROVIDERS = (
 )
 DEFAULT_PROVIDERS = ("openai", "gemini", "grok", "perplexity")
 
-# Terminal sentinel pushed to a run's event queue when the run finishes.
-_SENTINEL: dict[str, Any] | None = None
 _MAX_TRACKED_RUNS = 100
+_MAX_ACTIVE_RUNS = 4
 _SSE_HEARTBEAT_SECONDS = 15.0
 
 
@@ -80,17 +80,6 @@ class _RunState:
         self.error: str | None = None
 
 
-def _project_summary(project: Project) -> dict[str, Any]:
-    return {
-        "name": project.name,
-        "topic": project.config.topic,
-        "days": project.config.days,
-        "providers": list(project.config.providers),
-        "created_at": project.created_at.isoformat(),
-        "has_report": project.report_path.is_file(),
-    }
-
-
 def _web_dist() -> Path | None:
     """Locate the built frontend, if any (env override, then ./web/dist)."""
     override = os.getenv("RESEARCHKIT_WEB_DIST")
@@ -116,11 +105,38 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
     runs: OrderedDict[str, _RunState] = OrderedDict()
     runs_lock = threading.Lock()
 
+    # Optional bearer-token auth (RESEARCHKIT_AUTH_TOKEN). The API can start
+    # paid provider work and read stored reports, so anything beyond loopback
+    # must set this (enforced in main()).
+    auth_token = os.getenv("RESEARCHKIT_AUTH_TOKEN")
+    if auth_token:
+
+        @app.middleware("http")
+        async def _require_token(request: Request, call_next: Any) -> Any:
+            if (
+                request.url.path.startswith("/api/")
+                and request.url.path != "/api/health"
+            ):
+                supplied = request.headers.get("Authorization", "")
+                if not secrets.compare_digest(supplied, f"Bearer {auth_token}"):
+                    return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+            return await call_next(request)
+
     def _register_run(run_id: str, state: _RunState) -> None:
         with runs_lock:
+            if (
+                sum(1 for s in runs.values() if s.status == "running")
+                >= _MAX_ACTIVE_RUNS
+            ):
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Too many active runs (max {_MAX_ACTIVE_RUNS})",
+                )
             runs[run_id] = state
-            while len(runs) > _MAX_TRACKED_RUNS:
-                runs.popitem(last=False)
+            # Evict oldest *finished* runs only; active runs stay reachable.
+            finished = [rid for rid, s in runs.items() if s.status != "running"]
+            while len(runs) > _MAX_TRACKED_RUNS and finished:
+                runs.pop(finished.pop(0), None)
 
     def _get_run(run_id: str) -> _RunState:
         with runs_lock:
@@ -131,7 +147,10 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
 
     def _execute(state: _RunState, params: ResearchIn) -> None:
         try:
-            project, _artifacts = svc.create_and_run_project(
+            # Fresh service per run unless one was injected (tests): isolates
+            # concurrent runs from any shared-state assumptions in the engine.
+            run_svc = svc if service is not None else SocialResearchService()
+            project, _artifacts = run_svc.create_and_run_project(
                 topic=params.topic,
                 days=params.days,
                 providers=list(params.providers or DEFAULT_PROVIDERS),
@@ -146,7 +165,7 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
             state.error = str(e)[:500]
             state.status = "error"
         finally:
-            state.events.put(_SENTINEL)
+            state.events.put(None)  # terminal sentinel
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
@@ -173,6 +192,8 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
             raise HTTPException(
                 status_code=422, detail=f"Unknown sources: {sorted(invalid_sources)}"
             )
+        if params.providers is not None:
+            params.providers = list(dict.fromkeys(params.providers))
         run_id = uuid.uuid4().hex
         state = _RunState()
         _register_run(run_id, state)
@@ -198,9 +219,14 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
                 try:
                     event = state.events.get(timeout=_SSE_HEARTBEAT_SECONDS)
                 except queue.Empty:
+                    # Reconnect safety: a second/reconnected subscriber finds
+                    # the queue already drained — emit terminal state instead
+                    # of heartbeating forever.
+                    if state.status != "running":
+                        break
                     yield ": keep-alive\n\n"
                     continue
-                if event is _SENTINEL or event is None:
+                if event is None:
                     break
                 payload = json.dumps(event, default=str)
                 yield f"event: progress\ndata: {payload}\n\n"
@@ -219,7 +245,7 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
 
     @app.get("/api/projects")
     def projects() -> list[dict[str, Any]]:
-        return [_project_summary(p) for p in list_projects(PROJECTS_DIR)]
+        return [p.summary() for p in list_projects(PROJECTS_DIR)]
 
     @app.get("/api/projects/{name}/report")
     def project_report(name: str) -> PlainTextResponse:
@@ -256,6 +282,15 @@ def main() -> None:
 
     host = os.getenv("RESEARCHKIT_HOST", "127.0.0.1")
     port = int(os.getenv("RESEARCHKIT_PORT", "8000"))
+    loopback = host in {"127.0.0.1", "::1", "localhost"}
+    if not loopback and not os.getenv("RESEARCHKIT_AUTH_TOKEN"):
+        raise SystemExit(
+            "Refusing to bind researchkit-server to a non-loopback host "
+            "without auth: the API starts paid provider runs and serves "
+            "stored reports. Set RESEARCHKIT_AUTH_TOKEN (clients send "
+            "'Authorization: Bearer <token>') or keep RESEARCHKIT_HOST on "
+            "127.0.0.1 behind a reverse proxy that handles auth."
+        )
     uvicorn.run(create_app(), host=host, port=port)
 
 

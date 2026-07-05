@@ -64,6 +64,8 @@ uv run researchkit-server
 
 Open `http://127.0.0.1:8000` — submit a topic, watch live per-provider progress, read the rendered report, browse past runs. The API is documented at `/api/docs`.
 
+The server binds `127.0.0.1` and is unauthenticated by default. To expose it beyond localhost, set `RESEARCHKIT_AUTH_TOKEN` (clients send `Authorization: Bearer <token>`) — the server refuses to bind a non-loopback host without it.
+
 ## Features
 
 - Queries up to 8 AI search providers concurrently; one slow or failing provider never blocks the rest
@@ -87,7 +89,7 @@ Open `http://127.0.0.1:8000` — submit a topic, watch live per-provider progres
 | GLM (Z.ai)          | `GLM_API_KEY`            | opt-in                          |
 | Exa (site research) | `EXA_API_KEY`            | optional deep-source enrichment |
 
-All keys live in `.env` (see [`.env.example`](.env.example)). Model choices, presets, budgets, and advanced CLI-backed modes are documented in [`models.yaml`](models.yaml). YouTube and Medium connectors are planned — the blueprint lives in [EXTRAS.md](EXTRAS.md).
+All keys live in `.env` (see [`.env.example`](.env.example)). Model choices, presets, budgets, and advanced CLI-backed modes are documented in [`models.yaml`](models.yaml).
 
 ## Development
 

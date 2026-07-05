@@ -84,7 +84,7 @@ class SiteResearcher:
         # Phase 1: Search all sites x keywords
         # Sites that require sequential requests due to rate limiting
         # Sites whose APIs rate-limit hard enough to need sequential queries
-        # (none currently; Medium lived here — see EXTRAS.md).
+        # (none currently).
         sequential_sites: set[str] = set()
 
         async def _search(connector: BaseSiteConnector, query: str) -> list[SiteItem]:

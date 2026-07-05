@@ -145,3 +145,71 @@ def test_projects_listing_and_report(tmp_path: Path, monkeypatch: Any) -> None:
     report = client.get("/api/projects/20260705_topic/report")
     assert report.status_code == 200
     assert report.text == "# The Report"
+
+
+def test_reconnect_after_completion_gets_terminal_event(tmp_path: Path) -> None:
+    """A second SSE subscriber (drained queue) must not hang on keep-alives."""
+    import researchkit.server.app as app_module
+
+    client = TestClient(create_app(FakeService(tmp_path)))  # type: ignore[arg-type]
+    run_id = client.post("/api/research", json={"topic": "ai agents"}).json()["run_id"]
+    _wait_done(client, run_id)
+
+    with client.stream("GET", f"/api/research/{run_id}/events") as first:
+        "".join(first.iter_text())
+
+    original = app_module._SSE_HEARTBEAT_SECONDS
+    app_module._SSE_HEARTBEAT_SECONDS = 0.05
+    try:
+        with client.stream("GET", f"/api/research/{run_id}/events") as second:
+            body = "".join(second.iter_text())
+    finally:
+        app_module._SSE_HEARTBEAT_SECONDS = original
+    assert "event: done" in body
+
+
+def test_active_run_cap_returns_429(tmp_path: Path) -> None:
+    import threading as _threading
+
+    release = _threading.Event()
+
+    class BlockingService(FakeService):
+        def create_and_run_project(self, *, progress: Any = None, **kwargs: Any):
+            release.wait(timeout=10)
+            return super().create_and_run_project(progress=progress, **kwargs)
+
+    client = TestClient(create_app(BlockingService(tmp_path)))  # type: ignore[arg-type]
+    try:
+        for _ in range(4):
+            assert (
+                client.post("/api/research", json={"topic": "ai agents"}).status_code
+                == 202
+            )
+        resp = client.post("/api/research", json={"topic": "ai agents"})
+        assert resp.status_code == 429
+    finally:
+        release.set()
+
+
+def test_duplicate_providers_are_deduped(tmp_path: Path) -> None:
+    service = FakeService(tmp_path)
+    client = TestClient(create_app(service))  # type: ignore[arg-type]
+    run_id = client.post(
+        "/api/research",
+        json={"topic": "ai agents", "providers": ["openai", "openai", "gemini"]},
+    ).json()["run_id"]
+    _wait_done(client, run_id)
+    assert service.calls[0]["providers"] == ["openai", "gemini"]
+
+
+def test_auth_token_guards_api(tmp_path: Path, monkeypatch: Any) -> None:
+    monkeypatch.setenv("RESEARCHKIT_AUTH_TOKEN", "sekrit")
+    client = TestClient(create_app(FakeService(tmp_path)))  # type: ignore[arg-type]
+    assert client.get("/api/health").status_code == 200  # health stays open
+    assert client.get("/api/projects").status_code == 401
+    assert (
+        client.get(
+            "/api/projects", headers={"Authorization": "Bearer sekrit"}
+        ).status_code
+        == 200
+    )

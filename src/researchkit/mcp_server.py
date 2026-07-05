@@ -46,18 +46,6 @@ def _get_service() -> SocialResearchService:
     return _service
 
 
-def _project_summary(project: Project) -> dict[str, Any]:
-    """Serializable summary of a stored project."""
-    return {
-        "name": project.name,
-        "topic": project.config.topic,
-        "days": project.config.days,
-        "providers": list(project.config.providers),
-        "created_at": project.created_at.isoformat(),
-        "has_report": project.report_path.is_file(),
-    }
-
-
 def _find_project(project_name: str) -> Project:
     """Resolve a project by exact name (no path semantics accepted)."""
     for project in list_projects(PROJECTS_DIR):
@@ -112,7 +100,7 @@ def list_research_projects() -> list[dict[str, Any]]:
         One entry per project with name, topic, days, providers, created_at
         and has_report. Pass a name to get_research_report to read a report.
     """
-    return [_project_summary(p) for p in list_projects(PROJECTS_DIR)]
+    return [p.summary() for p in list_projects(PROJECTS_DIR)]
 
 
 @mcp.tool()

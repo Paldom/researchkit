@@ -226,6 +226,17 @@ class Project:
     def name(self) -> str:
         return self.path.name
 
+    def summary(self) -> dict[str, Any]:
+        """Serializable listing entry (shared by the API and MCP servers)."""
+        return {
+            "name": self.name,
+            "topic": self.config.topic,
+            "days": self.config.days,
+            "providers": list(self.config.providers),
+            "created_at": self.created_at.isoformat(),
+            "has_report": self.report_path.is_file(),
+        }
+
     @property
     def has_results(self) -> bool:
         return self.result_path.exists()
