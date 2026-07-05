@@ -23,6 +23,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
@@ -89,6 +90,9 @@ def _web_dist() -> Path | None:
 
 def create_app(service: SocialResearchService | None = None) -> FastAPI:
     """Build the FastAPI app (service injectable for tests)."""
+    # Provider API keys from ./.env, like the CLI. Lives here (not main())
+    # so custom ASGI deployments of create_app() get keys too.
+    load_dotenv()
     app = FastAPI(title="researchkit", version=__version__, docs_url="/api/docs")
     app.add_middleware(
         CORSMiddleware,

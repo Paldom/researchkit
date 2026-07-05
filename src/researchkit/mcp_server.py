@@ -13,6 +13,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from dotenv import load_dotenv
+
 from researchkit.project import PROJECTS_DIR, Project, list_projects
 from researchkit.service import SocialResearchService
 
@@ -125,6 +127,7 @@ def get_research_report(project_name: str) -> str:
 
 def main() -> None:
     """Entry point for the ``researchkit-mcp`` console script (stdio)."""
+    load_dotenv()  # provider API keys from ./.env, like the CLI
     mcp.run()
 
 

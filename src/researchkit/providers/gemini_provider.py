@@ -313,7 +313,10 @@ class GeminiProvider(BaseProvider):
 
         try:
             to_date = dt.datetime.now(dt.UTC)
-            from_date = to_date - dt.timedelta(days=days)
+            # Pad the window slightly: Google's time_range_filter rejects
+            # spans of exactly 24h ("end_time must be 24 hours after
+            # start_time"), which is what days=1 would otherwise produce.
+            from_date = to_date - dt.timedelta(days=days, minutes=5)
             time_range = (from_date, to_date)
 
             sources: list[Source] = []
