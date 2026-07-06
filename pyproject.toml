@@ -80,7 +80,12 @@ minversion = "9.0"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers --strict-config"
 asyncio_mode = "auto"
-filterwarnings = ["error"]
+filterwarnings = [
+    "error",
+    # google-genai imports typing._UnionGenericAlias, deprecated on Python 3.14+;
+    # third-party import-time noise — drop when google-genai catches up.
+    "ignore:'_UnionGenericAlias' is deprecated:DeprecationWarning",
+]
 
 [tool.coverage.run]
 source = ["src"]
