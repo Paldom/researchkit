@@ -261,7 +261,10 @@ class Summarizer:
                 prompt,
                 label="summarizer.generate_content:meta",
                 temperature=0.4,
-                max_output_tokens=2500,
+                # Thinking models (gemini-3.5-flash) spend reasoning tokens from
+                # the same budget; 2500 left ~700 for text and truncated the
+                # meta-summary mid-sentence (found via brain ingestion QA).
+                max_output_tokens=8000,
             )
             logger.info(
                 f"Meta-summary complete: {len(summary)} chars",

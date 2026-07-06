@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import OutputTabs from './components/OutputTabs'
 import ProgressFeed from './components/ProgressFeed'
 import ProjectList from './components/ProjectList'
-import ReportView from './components/ReportView'
 import ResearchForm from './components/ResearchForm'
 import {
-  ApiError,
   getConfig,
-  getReport,
   listProjects,
   startResearch,
   type ConfigResponse,
@@ -15,6 +13,8 @@ import {
 } from './lib/api'
 import { subscribeToRun, type RunProgress } from './lib/sse'
 
+const SIDEBAR_KEY = 'researchkit.sidebar'
+
 export default function App() {
   const [config, setConfig] = useState<ConfigResponse | null>(null)
   const [apiDown, setApiDown] = useState(false)
@@ -22,8 +22,10 @@ export default function App() {
   const [running, setRunning] = useState(false)
   const [events, setEvents] = useState<RunProgress[]>([])
   const [runError, setRunError] = useState<string | null>(null)
-  const [report, setReport] = useState<{ name: string; markdown: string } | null>(null)
-  const [reportError, setReportError] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => localStorage.getItem(SIDEBAR_KEY) !== 'closed',
+  )
   const closeStream = useRef<(() => void) | null>(null)
 
   const loadInitial = useCallback(async () => {
@@ -42,34 +44,26 @@ export default function App() {
     return () => closeStream.current?.()
   }, [loadInitial])
 
-  const openReport = useCallback(async (name: string) => {
-    setReport(null)
-    setReportError(null)
-    try {
-      setReport({ name, markdown: await getReport(name) })
-    } catch (err) {
-      setReportError(
-        err instanceof ApiError && err.status === 404
-          ? `"${name}" has no report yet — the run may not have completed.`
-          : `Failed to load the report for "${name}".`,
-      )
-    }
-  }, [])
+  function toggleSidebar() {
+    setSidebarOpen((open) => {
+      localStorage.setItem(SIDEBAR_KEY, open ? 'closed' : 'open')
+      return !open
+    })
+  }
 
   async function startRun(request: ResearchRequest) {
     closeStream.current?.()
     setRunning(true)
     setEvents([])
     setRunError(null)
-    setReport(null)
-    setReportError(null)
+    setSelected(null)
     try {
       const { run_id } = await startResearch(request)
       closeStream.current = subscribeToRun(run_id, {
         onProgress: (event) => setEvents((prev) => [...prev, event]),
         onDone: (project) => {
           setRunning(false)
-          void openReport(project)
+          setSelected(project)
           listProjects().then(setProjects, () => undefined)
         },
         onError: (message) => {
@@ -90,10 +84,20 @@ export default function App() {
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
       <header className="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900/50">
-        <div className="mx-auto flex max-w-6xl items-baseline justify-between px-4 py-4">
-          <div className="flex items-baseline gap-3">
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              aria-label="Toggle projects sidebar"
+              aria-expanded={sidebarOpen}
+              className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm
+                hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+            >
+              ☰
+            </button>
             <span className="text-xl font-bold tracking-tight">
-              research<span className="text-indigo-600 dark:text-indigo-400">kit</span>
+              research<span className="text-orange-600 dark:text-orange-400">kit</span>
             </span>
             <span className="hidden text-sm text-neutral-500 sm:inline">
               define a topic, research everywhere
@@ -127,55 +131,58 @@ export default function App() {
         </div>
       )}
 
-      <main className="mx-auto grid max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <div className="min-w-0 space-y-6">
-          {config && (
-            <div className={card}>
-              <ResearchForm config={config} running={running} onSubmit={startRun} />
-            </div>
-          )}
-
-          {(running || (events.length > 0 && !report)) && (
-            <div className={card}>
-              <ProgressFeed events={events} running={running} />
-            </div>
-          )}
-
-          {runError && (
+      <div className="flex">
+        {sidebarOpen && (
+          <>
+            {/* mobile: overlay drawer with backdrop; desktop: static column */}
             <div
-              role="alert"
-              className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700
-                dark:border-red-900 dark:bg-red-950 dark:text-red-300"
+              className="fixed inset-0 z-20 bg-black/40 lg:hidden"
+              onClick={toggleSidebar}
+              aria-hidden="true"
+            />
+            <aside
+              className="fixed inset-y-0 left-0 z-30 w-72 shrink-0 overflow-y-auto border-r
+                border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900
+                lg:static lg:z-auto lg:bg-transparent lg:dark:bg-transparent"
             >
-              Run failed: {runError}
-            </div>
-          )}
+              <ProjectList projects={projects} selected={selected} onSelect={setSelected} />
+            </aside>
+          </>
+        )}
 
-          {reportError && (
-            <div
-              role="alert"
-              className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800
-                dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300"
-            >
-              {reportError}
-            </div>
-          )}
+        <main className="min-w-0 flex-1 px-4 py-6">
+          {/* centered reading frame */}
+          <div className="mx-auto max-w-[980px] space-y-6">
+            {config && (
+              <div className={card}>
+                <ResearchForm config={config} running={running} onSubmit={startRun} />
+              </div>
+            )}
 
-          {report && (
-            <div className={card}>
-              <ReportView name={report.name} markdown={report.markdown} />
-            </div>
-          )}
-        </div>
+            {(running || (events.length > 0 && !selected)) && (
+              <div className={card}>
+                <ProgressFeed events={events} running={running} />
+              </div>
+            )}
 
-        <aside className="min-w-0">
-          <ProjectList
-            projects={projects}
-            selected={report?.name ?? null}
-            onSelect={(name) => void openReport(name)}
-          />
-        </aside>
-      </main>
+            {runError && (
+              <div
+                role="alert"
+                className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700
+                  dark:border-red-900 dark:bg-red-950 dark:text-red-300"
+              >
+                Run failed: {runError}
+              </div>
+            )}
+
+            {selected && (
+              <div className={card}>
+                <OutputTabs name={selected} />
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
     </div>
   )
 }

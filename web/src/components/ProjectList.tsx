@@ -15,15 +15,10 @@ export default function ProjectList({ projects, selected, onSelect }: Props) {
   const sorted = [...projects].sort((a, b) => b.created_at.localeCompare(a.created_at))
 
   return (
-    /* ponytail: <details open> = collapsible on mobile, plain sidebar on desktop. No JS state. */
-    <details open className="group">
-      <summary
-        className="mb-2 cursor-pointer list-none text-sm font-semibold uppercase tracking-wide
-          text-neutral-500 select-none"
-      >
-        <span className="mr-1 inline-block transition-transform group-open:rotate-90">›</span>
+    <nav aria-label="Past projects">
+      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
         Past projects
-      </summary>
+      </h2>
       {sorted.length === 0 ? (
         <p className="text-sm text-neutral-500">No projects yet.</p>
       ) : (
@@ -36,7 +31,7 @@ export default function ProjectList({ projects, selected, onSelect }: Props) {
                 aria-current={p.name === selected || undefined}
                 className={`w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-neutral-100
                   dark:hover:bg-neutral-800 ${
-                    p.name === selected ? 'bg-neutral-100 dark:bg-neutral-800' : ''
+                    p.name === selected ? 'bg-orange-50 dark:bg-orange-950/40' : ''
                   }`}
               >
                 <span className="block truncate font-medium">{p.topic}</span>
@@ -49,6 +44,6 @@ export default function ProjectList({ projects, selected, onSelect }: Props) {
           ))}
         </ul>
       )}
-    </details>
+    </nav>
   )
 }

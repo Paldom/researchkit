@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <title>researchkit</title>
+  <rect id="bg" width="1024" height="1024" rx="229" fill="#2A2A2E"/>
+  <g id="glyph">
+    <path id="bracket-l" d="M 368 288 H 288 V 736 H 368" fill="none" stroke="#E8E8EA" stroke-width="64"/>
+    <path id="bracket-r" d="M 656 288 H 736 V 736 H 656" fill="none" stroke="#E8E8EA" stroke-width="64"/>
+    <circle id="ring" cx="512" cy="512" r="112" fill="none" stroke="#F5A623" stroke-width="64"/>
+    <circle id="dot" cx="512" cy="512" r="36" fill="#F5A623"/>
+  </g>
+</svg>

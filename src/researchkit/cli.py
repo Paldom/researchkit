@@ -95,6 +95,29 @@ Site Research (optional):
         "project",
         help="Project folder name or path",
     )
+    run_parser.add_argument(
+        "--materials",
+        action="store_true",
+        help="After the run, download cited sources into materials/",
+    )
+
+    # --- materials command ---
+    materials_parser = subparsers.add_parser(
+        "materials",
+        help="Download the sources cited by a completed run into materials/",
+    )
+    materials_parser.add_argument("project", help="Project folder name or path")
+    materials_parser.add_argument(
+        "--limit",
+        type=int,
+        default=25,
+        help="Max sources to fetch, 0 = all (default: 25)",
+    )
+    materials_parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Re-fetch sources whose material file already exists",
+    )
 
     # --- list command ---
     subparsers.add_parser(
@@ -287,6 +310,11 @@ def _add_research_args(parser: argparse.ArgumentParser) -> None:
         help="Search keywords to guide research (optional)",
     )
     parser.add_argument(
+        "--materials",
+        action="store_true",
+        help="After the run, download cited sources into materials/ (ignored by create)",
+    )
+    parser.add_argument(
         "--providers",
         "-p",
         nargs="+",
@@ -434,6 +462,36 @@ def cmd_create(args, service: SocialResearchService) -> int:
     return 0
 
 
+def _download_materials_for(project, limit: int = 25, refresh: bool = False) -> int:
+    """Shared materials-download step for run/instant/materials commands."""
+    from researchkit.materials import download_materials
+
+    try:
+        manifest = download_materials(project, limit=limit, refresh=refresh)
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    counts: dict[str, int] = {}
+    for entry in manifest["entries"]:
+        counts[entry["status"]] = counts.get(entry["status"], 0) + 1
+    summary = ", ".join(f"{v} {k}" for k, v in sorted(counts.items()))
+    print(
+        f"Materials: {manifest['fetched']}/{manifest['total_cited']} sources "
+        f"archived in {project.path / 'materials'} ({summary})",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def cmd_materials(args, service: SocialResearchService) -> int:
+    """Handle the 'materials' command."""
+    project = find_project(args.project, args.projects_dir)
+    if not project:
+        print(f"Error: Project not found: {args.project}", file=sys.stderr)
+        return 1
+    return _download_materials_for(project, limit=args.limit, refresh=args.refresh)
+
+
 def cmd_run(args, service: SocialResearchService) -> int:
     """Handle the 'run' command."""
     project = find_project(args.project, args.projects_dir)
@@ -461,6 +519,9 @@ def cmd_run(args, service: SocialResearchService) -> int:
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
+
+    if getattr(args, "materials", False):
+        _download_materials_for(project)
 
     # Output report
     print(artifacts.report_markdown)
@@ -845,6 +906,9 @@ def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
+    if getattr(args, "materials", False):
+        _download_materials_for(project)
+
     # Output report
     print(artifacts.report_markdown)
 
@@ -883,6 +947,7 @@ def main() -> int:
         "create",
         "run",
         "list",
+        "materials",
         "links",
         "improve-topic",
         "generate-keywords",
@@ -968,6 +1033,8 @@ def main() -> int:
         return cmd_run(args, service)
     elif args.command == "list":
         return cmd_list(args, service)
+    elif args.command == "materials":
+        return cmd_materials(args, service)
     elif args.command == "links":
         return cmd_links(args, service)
     elif args.command == "improve-topic":

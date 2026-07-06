@@ -224,3 +224,7 @@ __marimo__/
 # researchkit run outputs (reports may contain private research)
 projects/
 projects-remote/
+
+# transient design artifacts
+.claude/curator-reports/
+.active_preset.json

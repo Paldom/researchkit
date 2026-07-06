@@ -1,7 +1,9 @@
 # researchkit web
 
-Minimal React frontend for researchkit. Single page: submit a topic, watch the run's live
-progress over Server-Sent Events, read the rendered markdown report, browse past projects.
+Minimal React frontend for researchkit. Single page: submit a topic (with keyword
+generation, topic improvement, boost, and custom URLs), watch the run's live progress over
+Server-Sent Events, then browse the output tabs — Report, Prompt, Raw JSON, Links, Log.
+Past projects live in a collapsible sidebar.
 
 ## Stack
 
@@ -41,12 +43,13 @@ npm run format:check
 
 ```
 src/
-├── App.tsx                    # state + layout
+├── App.tsx                    # state + layout (sidebar, A4 reading frame)
 ├── components/
-│   ├── ResearchForm.tsx       # topic / days / providers / preset
+│   ├── ResearchForm.tsx       # topic / days / providers / preset / keywords / boost / URLs
 │   ├── ProgressFeed.tsx       # live SSE progress feed
-│   ├── ReportView.tsx         # markdown report + copy/download
-│   └── ProjectList.tsx        # past projects sidebar
+│   ├── OutputTabs.tsx         # Report | Prompt | Raw JSON | Links | Log
+│   ├── ReportView.tsx         # markdown report + shared copy/download helpers
+│   └── ProjectList.tsx        # past projects list (in the sidebar)
 └── lib/
     ├── api.ts                 # API types + typed fetch helpers
     └── sse.ts                 # SSE payload parsing + run subscription

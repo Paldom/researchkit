@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon.svg" width="128" alt="researchkit" />
+</p>
+
 # researchkit
 
 > Command-line research tool (with MCP server and web UI) that fans one topic out to many AI web-search providers in parallel and merges the answers into a single citation-backed markdown report.
@@ -10,12 +14,14 @@ Every AI search provider sees a different slice of the web — and each will hap
 
 ```mermaid
 flowchart LR
-    T([topic]) --> R{researchkit}
-    R --> A[OpenAI] & B[Gemini] & C[Grok] & D[Perplexity] & E[...]
-    A & B & C & D & E --> S[LLM synthesis]
-    S --> P["report.md
-    cited, cross-checked"]
+    T(["💡 any topic"]) --> RK["🔍 <b>researchkit</b><br/>8 AI search engines in parallel:<br/>one cited report + archived sources"]
+    RK -- "one-shot:<br/>teach every agent" --> SK["⚡ <b>skillskit</b><br/>research pack in, validated skill out —<br/>installable in 70+ agents via skills.sh"]
+    RK -- "compounding:<br/>grow a memory" --> BK["🧠 <b>brainkit</b><br/>portable hybrid brain (OKF wiki + RAG),<br/>cited answers for agents and harnesses"]
+    classDef here stroke:#f97316,stroke-width:3px;
+    class RK here
 ```
+
+**One research run, two superpowers.** Ship the findings as an installable agent skill with [skillskit](https://github.com/Paldom/skillskit), or grow them into a portable, citation-backed brain with [brainkit](https://github.com/Paldom/brainkit).
 
 ## Quick start
 
@@ -65,6 +71,35 @@ uv run researchkit-server
 Open `http://127.0.0.1:8000` — submit a topic, watch live per-provider progress, read the rendered report, browse past runs. The API is documented at `/api/docs`.
 
 The server binds `127.0.0.1` and is unauthenticated by default. To expose it beyond localhost, set `RESEARCHKIT_AUTH_TOKEN` (clients send `Authorization: Bearer <token>`) — the server refuses to bind a non-loopback host without it.
+
+## Archive the sources (materials)
+
+Reports cite dozens of URLs; `--materials` (or the `materials` subcommand) downloads the pages themselves — SSRF-guarded, deduplicated, politely paced — into `projects/<run>/materials/` as frontmattered markdown plus an `index.json` manifest:
+
+```bash
+uv run researchkit "your topic" --materials          # research + archive
+uv run researchkit materials <project> --limit 25    # archive an earlier run
+```
+
+## Build a brain from your research
+
+Pair researchkit with [brainkit](https://github.com/Paldom/brainkit) to turn any number of runs into a portable, citation-backed knowledge base that AI agents can query later — every answer traces back to a research run and a source URL:
+
+```bash
+# side-by-side checkouts
+git clone https://github.com/Paldom/researchkit && git clone https://github.com/Paldom/brainkit
+cd researchkit
+
+uv run researchkit "your topic" --materials    # 1. research + archive cited pages
+
+uv run --directory ../brainkit brainkit --brain ../brainkit/brain \
+  ingest "$(pwd)/projects/<run-folder>"        # 2. turn the run into brain notes
+
+uv run --directory ../brainkit brainkit --brain ../brainkit/brain \
+  search "your question"                       # 3. cited answers, any time later
+```
+
+Ingest as many runs as you like into one brain — sources cited by several researches merge into single notes. In [Claude Code](https://claude.com/claude-code), both repos ship skills (`.claude/skills/`) so agents drive this pipeline and answer from the brain with citations on their own.
 
 ## Features
 

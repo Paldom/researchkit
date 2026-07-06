@@ -27,8 +27,8 @@ export default function ProgressFeed({ events, running }: Props) {
         {events.map((e, i) => (
           <div key={i} className="flex items-baseline gap-2">
             <span
-              className="shrink-0 rounded bg-indigo-100 px-1.5 py-0.5 font-sans font-medium
-                text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"
+              className="shrink-0 rounded bg-orange-100 px-1.5 py-0.5 font-sans font-medium
+                text-orange-700 dark:bg-orange-950 dark:text-orange-300"
             >
               {e.stage}
             </span>
