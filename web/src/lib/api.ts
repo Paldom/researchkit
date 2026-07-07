@@ -8,6 +8,8 @@ export interface ConfigResponse {
   presets: string[]
   providers: string[]
   default_providers: string[]
+  connectors: string[]
+  default_sites: string[]
 }
 
 export interface UserFile {
@@ -23,6 +25,7 @@ export interface ResearchRequest {
   sources: string[]
   include_raw: boolean
   site_research: boolean
+  site_research_sites: string[] | null
   boost: boolean
   user_files: UserFile[]
   user_urls: string[]

@@ -36,18 +36,19 @@ from researchkit.service import SocialResearchService
 
 logger = logging.getLogger(__name__)
 
-KNOWN_PROVIDERS = (
-    "openai",
-    "gemini",
-    "grok",
-    "perplexity",
-    "tavily",
-    "claude",
-    "github",
-    "glm",
-)
-# UI default mirrors the legacy Gradio app: every provider pre-selected.
-DEFAULT_PROVIDERS = KNOWN_PROVIDERS
+
+def _known_providers() -> tuple[str, ...]:
+    """Registered provider names (builtins + active plugins)."""
+    from researchkit.plugins import get_registry
+
+    return tuple(get_registry().provider_names)
+
+
+def _known_connectors() -> tuple[str, ...]:
+    from researchkit.plugins import get_registry
+
+    return tuple(get_registry().connector_names)
+
 
 _MAX_TRACKED_RUNS = 100
 _MAX_ACTIVE_RUNS = 4
@@ -72,6 +73,7 @@ class ResearchIn(BaseModel):
     keywords: list[str] = Field(default_factory=list, max_length=25)
     include_raw: bool = True
     site_research: bool = True
+    site_research_sites: list[str] | None = None
     # Boost: LLM council refines the topic and may fan out into parallel
     # sub-projects (manual keywords and custom sources are ignored there).
     boost: bool = False
@@ -232,7 +234,7 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
             # Fresh service per run unless one was injected (tests): isolates
             # concurrent runs from any shared-state assumptions in the engine.
             run_svc = svc if service is not None else SocialResearchService()
-            providers = list(params.providers or DEFAULT_PROVIDERS)
+            providers = list(params.providers or _known_providers())
             if params.boost:
                 boosted = run_svc.create_and_run_boosted(
                     params.topic,
@@ -242,6 +244,7 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
                     include_raw=params.include_raw,
                     preset_name=params.preset,
                     site_research_enabled=params.site_research,
+                    site_research_sites=params.site_research_sites,
                     force_boost=True,
                     progress=state.events.put,
                 )
@@ -256,6 +259,7 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
                     include_raw=params.include_raw,
                     preset_name=params.preset,
                     site_research_enabled=params.site_research,
+                    site_research_sites=params.site_research_sites,
                 )
                 for url in params.user_urls:
                     try:
@@ -275,6 +279,7 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
                     include_raw=params.include_raw,
                     preset_name=params.preset,
                     site_research_enabled=params.site_research,
+                    site_research_sites=params.site_research_sites,
                     progress=state.events.put,
                 )
                 state.project = project.name
@@ -292,20 +297,33 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
 
     @app.get("/api/config")
     def config() -> dict[str, Any]:
+        from researchkit.plugins import get_registry
+
         manager = svc.config_manager
+        registry = get_registry()
+        providers = list(_known_providers())
         return {
             "active_preset": manager.get_active_preset(),
             "presets": manager.get_preset_names(),
-            "providers": list(KNOWN_PROVIDERS),
-            "default_providers": list(DEFAULT_PROVIDERS),
+            "providers": providers,
+            # UI default mirrors the legacy Gradio app: everything selected.
+            "default_providers": providers,
+            "connectors": list(_known_connectors()),
+            "default_sites": list(_known_connectors()),
+            "plugins": registry.plugin_versions(),
         }
 
     @app.post("/api/research", status_code=202)
     def start_research(params: ResearchIn) -> dict[str, str]:
-        unknown = set(params.providers or []) - set(KNOWN_PROVIDERS)
+        unknown = set(params.providers or []) - set(_known_providers())
         if unknown:
             raise HTTPException(
                 status_code=422, detail=f"Unknown providers: {sorted(unknown)}"
+            )
+        unknown_sites = set(params.site_research_sites or []) - set(_known_connectors())
+        if unknown_sites:
+            raise HTTPException(
+                status_code=422, detail=f"Unknown sites: {sorted(unknown_sites)}"
             )
         if invalid_sources := set(params.sources) - {"social", "web"}:
             raise HTTPException(

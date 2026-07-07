@@ -426,3 +426,121 @@ def test_junk_titles_replaced_with_url_derived(tmp_path: Path) -> None:
     note = (project.path / "materials" / entry["file"]).read_text(encoding="utf-8")
     assert "title: best local agents (reddit.com)" in note
     assert "published: 2026-07-01" in note
+
+
+def test_connector_content_is_archived_without_fetch(tmp_path: Path) -> None:
+    payload = {
+        "topic": "t",
+        "provider_results": [],
+        "site_research": {
+            "items_by_site": {
+                "medium": [
+                    {
+                        "url": "https://medium.com/@a/post",
+                        "title": "Deep Post",
+                        "content": "Full article body " * 30,
+                        "content_kind": "article",
+                    }
+                ],
+                "youtube": [
+                    {
+                        "url": "https://www.youtube.com/watch?v=abc123def",
+                        "title": "Talk",
+                        "content": "transcript line\n" * 40,
+                        "content_kind": "transcript",
+                    }
+                ],
+            }
+        },
+    }
+    project = _make_project(tmp_path, payload)
+    with patch.object(materials, "safe_fetch_text") as fetch:
+        manifest = download_materials(project, delay=0)
+
+    assert fetch.call_count == 0  # never re-queried
+    origins = {e["url"]: e.get("origin") for e in manifest["entries"]}
+    assert origins["https://medium.com/@a/post"] == "connector:article"
+    assert (
+        origins["https://www.youtube.com/watch?v=abc123def"] == "connector:transcript"
+    )
+    assert manifest["fetched"] == 2
+
+    files = {e["url"]: e["file"] for e in manifest["entries"]}
+    medium_note = (
+        project.path / "materials" / files["https://medium.com/@a/post"]
+    ).read_text(encoding="utf-8")
+    assert "content_kind: article" in medium_note
+    assert "Full article body" in medium_note
+
+
+def test_summary_fallback_when_fetch_fails_or_empty(tmp_path: Path) -> None:
+    summary = {
+        "tldr": ["point one"],
+        "key_takeaways": ["do the thing"],
+        "key_quotes": ["a quote"],
+    }
+    payload = {
+        "topic": "t",
+        "provider_results": [],
+        "site_research": {
+            "items_by_site": {
+                "youtube": [
+                    {
+                        "url": "https://yt.test/dead",
+                        "title": "Dead",
+                        "summary": summary,
+                    },
+                    {
+                        "url": "https://yt.test/shell",
+                        "title": "Shell",
+                        "summary": summary,
+                    },
+                    {"url": "https://yt.test/none", "title": "NoSummary"},
+                ]
+            }
+        },
+    }
+    project = _make_project(tmp_path, payload)
+
+    def fetch(url: str, **kwargs: Any) -> tuple[str | None, str]:
+        if "dead" in url:
+            return None, url
+        return "<html><body><div>Loading…</div></body></html>", url
+
+    with patch.object(materials, "safe_fetch_text", side_effect=fetch):
+        manifest = download_materials(project, delay=0)
+
+    rows = {e["url"]: e for e in manifest["entries"]}
+    assert rows["https://yt.test/dead"]["origin"] == "summary"
+    assert rows["https://yt.test/shell"]["origin"] == "summary"
+    assert rows["https://yt.test/none"]["status"] == "empty"
+
+    body = (
+        project.path / "materials" / rows["https://yt.test/dead"]["file"]
+    ).read_text(encoding="utf-8")
+    assert "content_kind: summary" in body
+    assert "## TL;DR" in body and "> a quote" in body
+
+
+def test_http_and_cached_origins_recorded(tmp_path: Path) -> None:
+    payload = {
+        "topic": "t",
+        "provider_results": [
+            {
+                "provider": "openai",
+                "sources": [{"url": "https://h.test/p", "title": "H"}],
+            }
+        ],
+    }
+    project = _make_project(tmp_path, payload)
+    filler = "Substantive paragraph text. " * 10
+
+    def fetch(url: str, **kwargs: Any) -> tuple[str | None, str]:
+        return f"<html><body><p>{filler}</p></body></html>", url
+
+    with patch.object(materials, "safe_fetch_text", side_effect=fetch):
+        first = download_materials(project, delay=0)
+    assert first["entries"][0]["origin"] == "http"
+    with patch.object(materials, "safe_fetch_text", side_effect=fetch):
+        second = download_materials(project, delay=0)
+    assert second["entries"][0]["origin"] == "cached"

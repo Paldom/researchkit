@@ -9,6 +9,8 @@ const config = {
   presets: ['default', 'optimal'],
   providers,
   default_providers: providers,
+  connectors: [],
+  default_sites: [],
 }
 
 const projects = [

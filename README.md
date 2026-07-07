@@ -114,19 +114,126 @@ Ingest as many runs as you like into one brain — sources cited by several rese
 
 Each provider sees a different slice of the web — that's the point of running them together. Source volumes and domain profiles below come from ~290 logged research runs and a 14-run benchmark.
 
-| Provider   | Env var                  | Default?      | What it adds                                                                                                                                         |
-| ---------- | ------------------------ | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OpenAI     | `OPENAI_API_KEY`         | yes           | Agentic multi-step web search with domain filtering; steady mid-volume citer (median ~50 sources/run) skewing Reddit, GitHub, arXiv, news            |
-| Gemini     | `GEMINI_API_KEY`         | yes           | The only first-party Google Search grounding; near 1:1 citation-to-retrieval ratio (researchkit resolves its redirect URLs to real sources)          |
-| Grok (xAI) | `XAI_API_KEY`            | yes           | Native X/Twitter search and the highest volume of any provider (median ~110 sources/run); the go-to for social pulse — X, Reddit, TikTok             |
-| Perplexity | `PERPLEXITY_API_KEY`     | yes           | Search-first LLM tuned for fresh news and media; the strongest YouTube/Instagram/Facebook coverage of the API providers                              |
-| Tavily     | `TAVILY_API_KEY`         | opt-in        | LLM-optimized raw search: a deterministic ~40 clean sources per run, zero failures across 149 logged runs — breadth without another model's opinions |
-| Claude     | Claude Code subscription | opt-in        | Agentic multi-step research via the `claude` CLI; strongest on developer forums (Hacker News, dev.to) and the only other provider citing X           |
-| GitHub     | `GITHUB_TOKEN`           | opt-in        | Developer ground truth: real repos, issues and PRs (~95% of its citations are github.com) — primary artifacts, not summaries                         |
-| GLM (Z.ai) | `GLM_API_KEY`            | opt-in        | Budget generalist: cheap and reliable but capped at ~20 sources with no distinctive domains — best as an inexpensive analysis/summarizer slot        |
-| Exa        | `EXA_API_KEY`            | site research | Embeddings-first neural search: finds semantically related pages that keyword search misses, with full-text retrieval for deep reading               |
+| Provider   | Env var                  | Default?                                            | What it adds                                                                                                                                                                                                            |
+| ---------- | ------------------------ | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenAI     | `OPENAI_API_KEY`         | yes                                                 | Agentic multi-step web search with domain filtering; steady mid-volume citer (median ~50 sources/run) skewing Reddit, GitHub, arXiv, news                                                                               |
+| Gemini     | `GEMINI_API_KEY`         | yes                                                 | The only first-party Google Search grounding; near 1:1 citation-to-retrieval ratio (researchkit resolves its redirect URLs to real sources)                                                                             |
+| Grok (xAI) | `XAI_API_KEY`            | yes                                                 | Native X/Twitter search and the highest volume of any provider (median ~110 sources/run); the go-to for social pulse — X, Reddit, TikTok                                                                                |
+| Perplexity | `PERPLEXITY_API_KEY`     | yes                                                 | Search-first LLM tuned for fresh news and media; the strongest YouTube/Instagram/Facebook coverage of the API providers                                                                                                 |
+| Tavily     | `TAVILY_API_KEY`         | opt-in                                              | LLM-optimized raw search: a deterministic ~40 clean sources per run, zero failures across 149 logged runs — breadth without another model's opinions                                                                    |
+| Claude     | Claude Code subscription | opt-in                                              | Agentic multi-step research via the `claude` CLI; strongest on developer forums (Hacker News, dev.to) and the only other provider citing X                                                                              |
+| GitHub     | `GITHUB_TOKEN`           | opt-in                                              | Developer ground truth: real repos, issues and PRs (~95% of its citations are github.com) — primary artifacts, not summaries                                                                                            |
+| GLM (Z.ai) | `GLM_API_KEY`            | opt-in                                              | Budget generalist: cheap and reliable but capped at ~20 sources with no distinctive domains — best as an inexpensive analysis/summarizer slot                                                                           |
+| Exa        | `EXA_API_KEY`            | opt-in via `--providers`; also powers site research | Embeddings-first neural search: finds semantically related pages that keyword search misses, with full-text retrieval for deep reading — registered both as a provider (like Tavily) and as the site-research connector |
 
 All keys live in `.env` (see [`.env.example`](.env.example)). Model choices, presets, budgets, and advanced CLI-backed modes are documented in [`models.yaml`](models.yaml).
+
+## Plugins
+
+Providers and site-research connectors are **plugins**: the eight built-in
+providers and the exa connector register through the same registry that
+external plugins use, so anything you install behaves exactly like a
+built-in. Activation is key-based — installing a plugin package and setting
+the API key it declares is all it takes; no config ceremony:
+
+```bash
+# inside your own project (recommended): the dep lands in YOUR manifest
+uv add "researchkit-plugin-example @ git+ssh://git@github.com/you/researchkit-plugin-example@v0.1.0"
+echo 'EXAMPLE_API_KEY=…' >> .env
+researchkit plugins        # → researchkit-plugin-example 0.1.0 [active]
+```
+
+`researchkit plugins` shows every installed plugin with its activation
+status (`inactive (set EXAMPLE_API_KEY to activate)` when a key is
+missing), version, and install origin. Every research run records the
+active plugin versions in `result.json` — provenance over promises.
+
+**Safety model, honestly:** a plugin is Python running in your process — no
+sandbox; installing a package is the trust decision. researchkit adds
+key-based activation (nothing runs uninvited), per-plugin quarantine (one
+broken plugin can't take down a run or other plugins), API-version
+handshake, name-collision rejection, and two rails:
+`RESEARCHKIT_NO_PLUGINS=1` (kill switch) and
+`RESEARCHKIT_PLUGINS=dist-a,dist-b` (exact allowset).
+
+### Writing a plugin
+
+A plugin is a normal package with one entry point returning a manifest.
+Complete connector plugin, ~30 lines:
+
+```toml
+# pyproject.toml
+[project]
+name = "researchkit-plugin-example"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["researchkit"]
+
+[project.entry-points."researchkit.plugins"]
+example = "researchkit_plugin_example.plugin:MANIFEST"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+```
+
+```python
+# researchkit_plugin_example/plugin.py
+from researchkit.plugin_api import (
+    BaseSiteConnector, ConnectorContext, ConnectorSpec, PluginManifest,
+    SiteItem, SiteItemSummary,
+)
+
+class ExampleConnector(BaseSiteConnector):
+    site_name = "example"
+    def search(self, query, published_after, limit):
+        return [SiteItem(site="example", query=query, title="…", url="…",
+                         content="full text here", content_kind="article")]
+    def summarize(self, topic, item):
+        return SiteItemSummary(tldr=["…"])
+    def popularity_score(self, item):
+        return 0.0
+
+MANIFEST = PluginManifest(
+    api_version=1,
+    connectors=(ConnectorSpec("example", lambda ctx: ExampleConnector(),
+                              requires_env=("EXAMPLE_API_KEY",)),),
+)
+```
+
+Rules that keep everyone sane:
+
+- **Import only `researchkit.plugin_api`** — everything else is private and
+  will change. `ProviderSpec` works the same way for research providers
+  (set `is_llm`/`supports_improver` capabilities honestly).
+- **Fill `SiteItem.content` (+ `content_kind`: `article`/`transcript`/
+  `summary`) when your platform's pages can't be fetched generically** —
+  the materials archive stores it directly and never re-queries your API.
+  Plugins hand data to core; core writes all files.
+- Site research runs against **every active connector by default** —
+  installing a connector plugin (plus its key) is all it takes for its
+  results to appear in runs, reports, and the materials archive.
+- Optional hooks: `search_batch` (replaces per-keyword search),
+  `summarize_batch` (adds a digest section), `popularity_label` (report
+  display like `Views: 1.2M`), `sequential = True` (hard rate limits).
+- Configure per-plugin options in a preset's `plugins:` block and a model
+  via a `models: {example: some-model}` key; both arrive in your factory's
+  context.
+
+### Developing against a researchkit checkout
+
+Never `uv add` a plugin inside this repo (it would edit the committed
+manifests — CI rejects it). Install editables venv-only, targeting the
+project venv explicitly, and skip the pruning sync when running:
+
+```bash
+uv pip install --python .venv/bin/python -e . -e ../researchkit-plugin-example
+uv run --no-sync researchkit plugins
+```
+
+(`uv run` without `--no-sync` restores the lockfile state and removes
+venv-only installs; `local-plugins/` and `local-plugins.txt` are gitignored
+scratch conventions for this workflow.)
 
 ## Development
 

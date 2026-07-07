@@ -44,6 +44,13 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked --all-extras --group dev
+      # Local plugins must never enter the committed manifests (see README
+      # plugin guide): fail if a plugin or direct-git dependency appears.
+      - run: |
+          if grep -nE '"researchkit-plugin-|@ git\+' pyproject.toml; then
+            echo "::error::plugin/git dependency in core pyproject.toml — install plugins venv-only (README: Developing against a researchkit checkout)"
+            exit 1
+          fi
       # Check mode only. CI verifies; it never rewrites code.
       - run: uv run ruff check --output-format=github .
       - run: uv run ruff format --check .

@@ -28,6 +28,9 @@ function readFileText(file: File): Promise<string> {
   })
 }
 
+const toggle = (name: string) => (prev: string[]) =>
+  prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]
+
 const splitLines = (value: string) =>
   value
     .split('\n')
@@ -48,6 +51,7 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
   const [boost, setBoost] = useState(false)
   const [includeRaw, setIncludeRaw] = useState(true)
   const [siteResearch, setSiteResearch] = useState(true)
+  const [sites, setSites] = useState<string[]>(config.default_sites)
   const [improving, setImproving] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -60,10 +64,6 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
 
   const daysValid = Number.isFinite(days) && days >= 1 && days <= MAX_DAYS
   const sourcesDisabled = boost || running
-
-  function toggleProvider(name: string) {
-    setProviders((prev) => (prev.includes(name) ? prev.filter((p) => p !== name) : [...prev, name]))
-  }
 
   async function handleImprove() {
     setImproving(true)
@@ -127,6 +127,8 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
       sources: ['social', 'web'],
       include_raw: includeRaw,
       site_research: siteResearch,
+      // ponytail: always send the explicit selection; server defaults never have to guess.
+      site_research_sites: sites,
       boost,
       user_files: files,
       user_urls: splitLines(userUrls),
@@ -237,7 +239,7 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
               <input
                 type="checkbox"
                 checked={providers.includes(p)}
-                onChange={() => toggleProvider(p)}
+                onChange={() => setProviders(toggle(p))}
                 className="accent-orange-600"
               />
               {p}
@@ -287,6 +289,25 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
           Site research
         </label>
       </div>
+
+      {siteResearch && config.connectors.length > 0 && (
+        <fieldset className="ml-6">
+          <legend className="mb-1 text-sm font-medium">Sites</legend>
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
+            {config.connectors.map((c) => (
+              <label key={c} className="flex items-center gap-1.5 text-sm">
+                <input
+                  type="checkbox"
+                  checked={sites.includes(c)}
+                  onChange={() => setSites(toggle(c))}
+                  className="accent-orange-600"
+                />
+                {c}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
 
       <div>
         <p className="mb-1 text-sm font-medium">Custom sources</p>

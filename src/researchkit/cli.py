@@ -101,6 +101,12 @@ Site Research (optional):
         help="After the run, download cited sources into materials/",
     )
 
+    # --- plugins command ---
+    subparsers.add_parser(
+        "plugins",
+        help="List installed research plugins and their activation status",
+    )
+
     # --- materials command ---
     materials_parser = subparsers.add_parser(
         "materials",
@@ -225,7 +231,6 @@ Site Research (optional):
     improve_parser.add_argument(
         "--provider",
         default="openai",
-        choices=["openai", "gemini", "grok", "perplexity", "glm"],
         help="Provider to use (default: uses system config improver model)",
     )
     improve_parser.add_argument(
@@ -257,7 +262,6 @@ Site Research (optional):
     kw_parser.add_argument(
         "--provider",
         default="openai",
-        choices=["openai", "gemini", "grok", "perplexity", "glm"],
         help="Provider to use (default: uses system config improver model)",
     )
     kw_parser.add_argument(
@@ -319,17 +323,10 @@ def _add_research_args(parser: argparse.ArgumentParser) -> None:
         "-p",
         nargs="+",
         default=["openai", "gemini", "grok", "perplexity"],
-        choices=[
-            "openai",
-            "gemini",
-            "grok",
-            "perplexity",
-            "tavily",
-            "claude",
-            "github",
-            "glm",
-        ],
-        help="Providers to query (default: openai gemini grok perplexity; more via this flag)",
+        help=(
+            "Providers to query (default: openai gemini grok perplexity; "
+            "see `researchkit plugins` for everything available)"
+        ),
     )
     parser.add_argument(
         "--sources",
@@ -351,9 +348,11 @@ def _add_research_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--site-research-sites",
         nargs="+",
-        default=["exa"],
-        choices=["exa"],
-        help="Sites to search for site research (default: exa)",
+        default=None,
+        help=(
+            "Sites to search for site research (default: every active "
+            "connector — see `researchkit plugins`)"
+        ),
     )
     parser.add_argument(
         "--boost",
@@ -451,7 +450,7 @@ def cmd_create(args, service: SocialResearchService) -> int:
         sources=list(args.sources),
         include_raw=not args.no_raw,
         site_research_enabled=not getattr(args, "no_site_research", False),
-        site_research_sites=getattr(args, "site_research_sites", ["exa"]),
+        site_research_sites=getattr(args, "site_research_sites", None),
     )
 
     print(f"Created project: {project.path}", file=sys.stderr)
@@ -480,6 +479,48 @@ def _download_materials_for(project, limit: int = 25, refresh: bool = False) -> 
         f"archived in {project.path / 'materials'} ({summary})",
         file=sys.stderr,
     )
+    return 0
+
+
+def _validate_registry_choices(
+    values: list[str], valid: list[str], flag: str
+) -> str | None:
+    """Human error message when values aren't registered, else None."""
+    unknown = [v for v in values if v not in valid]
+    if unknown:
+        return (
+            f"Unknown {flag}: {', '.join(unknown)}. "
+            f"Available: {', '.join(valid)} (see `researchkit plugins`)."
+        )
+    return None
+
+
+def cmd_plugins(args) -> int:
+    """Handle the 'plugins' command: activation status + provenance."""
+    from researchkit import plugins as plugin_mod
+
+    registry = plugin_mod.get_registry(refresh=True)
+    print("Built-in providers:", ", ".join(sorted(plugin_mod.get_registry().providers)))
+    builtin_connectors = [
+        n
+        for n in registry.connectors
+        if all(n not in p.connectors for p in registry.plugins)
+    ]
+    print("Built-in connectors:", ", ".join(sorted(builtin_connectors)))
+    if not registry.plugins:
+        print("\nNo plugins installed. Install one and set its API key —")
+        print("see the README's plugin guide.")
+        return 0
+    print("\nPlugins:")
+    for rec in registry.plugins:
+        extensions = ", ".join([*rec.providers, *rec.connectors]) or "-"
+        line = f"  {rec.dist} {rec.version}  [{rec.status}]"
+        if rec.reason:
+            line += f"  ({rec.reason})"
+        print(line)
+        print(f"      extensions: {extensions}")
+        if rec.origin:
+            print(f"      origin: {rec.origin}")
     return 0
 
 
@@ -827,7 +868,7 @@ def _cmd_instant_boosted(args, service: SocialResearchService, topic: str) -> in
             sources=getattr(args, "sources", None),
             include_raw=not getattr(args, "no_raw", False),
             site_research_enabled=not getattr(args, "no_site_research", False),
-            site_research_sites=getattr(args, "site_research_sites", ["exa"]),
+            site_research_sites=getattr(args, "site_research_sites", None),
             force_boost=True,
             progress=progress,
             log_level=args.log_level,
@@ -895,7 +936,7 @@ def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
             sources=getattr(args, "sources", None),
             include_raw=not getattr(args, "no_raw", False),
             site_research_enabled=not getattr(args, "no_site_research", False),
-            site_research_sites=getattr(args, "site_research_sites", ["exa"]),
+            site_research_sites=getattr(args, "site_research_sites", None),
             progress=progress,
             log_level=args.log_level,
         )
@@ -948,6 +989,7 @@ def main() -> int:
         "run",
         "list",
         "materials",
+        "plugins",
         "links",
         "improve-topic",
         "generate-keywords",
@@ -1027,6 +1069,35 @@ def main() -> int:
 
     service = SocialResearchService(projects_dir=projects_dir)
 
+    # Registry-driven validation (lazy: only when the args carry choices that
+    # used to be hardcoded argparse lists — plugin extensions widen them).
+    if (
+        getattr(args, "providers", None)
+        or getattr(args, "site_research_sites", None)
+        or getattr(args, "provider", None)
+    ):
+        from researchkit.plugins import get_registry
+
+        registry = get_registry()
+        for values, valid, flag in (
+            (getattr(args, "providers", None), registry.provider_names, "providers"),
+            (
+                getattr(args, "site_research_sites", None),
+                registry.connector_names,
+                "site-research sites",
+            ),
+            (
+                [args.provider] if getattr(args, "provider", None) else None,
+                registry.improver_provider_names(),
+                "improver provider",
+            ),
+        ):
+            if values:
+                msg = _validate_registry_choices(list(values), list(valid), flag)
+                if msg:
+                    print(f"Error: {msg}", file=sys.stderr)
+                    return 2
+
     if args.command == "create":
         return cmd_create(args, service)
     elif args.command == "run":
@@ -1035,6 +1106,8 @@ def main() -> int:
         return cmd_list(args, service)
     elif args.command == "materials":
         return cmd_materials(args, service)
+    elif args.command == "plugins":
+        return cmd_plugins(args)
     elif args.command == "links":
         return cmd_links(args, service)
     elif args.command == "improve-topic":

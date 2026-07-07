@@ -11,9 +11,42 @@ if TYPE_CHECKING:
 
 
 class BaseSiteConnector(ABC):
-    """Abstract base class for site connectors."""
+    """Abstract base class for site connectors.
+
+    Optional hooks (all have safe defaults) let a connector customize
+    orchestration without the orchestrator knowing its name:
+
+    - ``search_batch`` is EXCLUSIVE: a non-None return replaces the
+      per-keyword ``search`` loop entirely (one call for the whole request).
+    - ``summarize_batch`` is ADDITIVE: it runs after per-item summaries and
+      contributes an extra digest section; per-item summaries are kept.
+    - ``popularity_label`` renders a display string ("Views: 1.2M") stored
+      on the item so report formatting stays connector-agnostic.
+    - ``sequential`` serializes this connector's keyword queries (hard rate
+      limits); ``summarize_concurrency`` caps its summarization fan-out.
+    """
 
     site_name: str = "base"
+    sequential: bool = False
+    summarize_concurrency: int = 3
+
+    def search_batch(
+        self,
+        topic: str,
+        keywords: list[str],
+        published_after: datetime,
+        limit: int,
+    ) -> list[SiteItem] | None:
+        """One-shot search for the whole request; None = use per-keyword search."""
+        return None
+
+    def summarize_batch(self, topic: str, items: list[SiteItem]) -> str | None:
+        """Cross-item digest section; None = no batch summary."""
+        return None
+
+    def popularity_label(self, item: SiteItem) -> str:
+        """Human-readable popularity string for report display ("" = none)."""
+        return ""
 
     @abstractmethod
     def search(

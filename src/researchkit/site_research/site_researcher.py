@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -84,8 +85,10 @@ class SiteResearcher:
         # Phase 1: Search all sites x keywords
         # Sites that require sequential requests due to rate limiting
         # Sites whose APIs rate-limit hard enough to need sequential queries
-        # (none currently).
-        sequential_sites: set[str] = set()
+        # (declared by the connector itself).
+        sequential_sites: set[str] = {
+            site for site, c in self.connectors.items() if c.sequential
+        }
 
         async def _search(connector: BaseSiteConnector, query: str) -> list[SiteItem]:
             return await asyncio.to_thread(
@@ -109,23 +112,23 @@ class SiteResearcher:
 
             all_items: list[SiteItem] = []
 
-            if site == "exa":
-                # Exa runs ONCE per request with topic as query, keywords as additional_queries
-                try:
-                    from researchkit.site_research.connectors.exa import ExaConnector
+            # Exclusive batch hook: a connector may serve the whole request
+            # in one call (exa does); non-None replaces per-keyword search.
+            batch_items: list[SiteItem] | None = None
+            try:
+                batch_items = await asyncio.to_thread(
+                    connector.search_batch,
+                    topic,
+                    used_keywords,
+                    published_after,
+                    config.get_max_items(site),
+                )
+            except Exception as e:
+                logger.warning(f"{site} batch search error: {e}")
+                bundle.errors.append(f"{site} search error: {str(e)[:100]}")
 
-                    if isinstance(connector, ExaConnector):
-                        items = await asyncio.to_thread(
-                            connector.search,
-                            topic,  # Use topic as main query
-                            published_after,
-                            config.exa_num_results,
-                            used_keywords,  # Keywords as additional_queries
-                        )
-                        all_items.extend(items)
-                except Exception as e:
-                    logger.warning(f"Exa search error: {e}")
-                    bundle.errors.append(f"exa search error: {str(e)[:100]}")
+            if batch_items is not None:
+                all_items.extend(batch_items)
             elif site in sequential_sites:
                 # Run searches sequentially for rate-limited APIs
                 for query in used_keywords:
@@ -162,6 +165,14 @@ class SiteResearcher:
                         logger.warning(f"Search error for {site}: {e}")
                         bundle.errors.append(f"{site} search error: {str(e)[:100]}")
 
+            # Connector-rendered popularity for report display (kept on the
+            # item so formatting stays connector-agnostic).
+            for item in all_items:
+                if not item.popularity_display:
+                    # display-only; never fatal
+                    with contextlib.suppress(Exception):
+                        item.popularity_display = connector.popularity_label(item)
+
             # Dedupe by URL
             seen_urls: set[str] = set()
             unique_items: list[SiteItem] = []
@@ -189,7 +200,7 @@ class SiteResearcher:
         await self._summarize_items(topic, bundle)
 
         # Phase 3: Batch summarization for Exa (single Gemini call)
-        await self._batch_summarize_exa(topic, bundle)
+        await self._batch_summarize(topic, bundle)
 
         # Phase 4: Generate digest markdown
         bundle.digest_markdown = self._generate_digest(bundle)
@@ -239,8 +250,8 @@ class SiteResearcher:
                     )
 
         for site, items in bundle.items_by_site.items():
-            # Use lower concurrency for high-volume sites like Exa
-            concurrency = 2 if site == "exa" else 3
+            connector = self.connectors.get(site)
+            concurrency = connector.summarize_concurrency if connector else 3
             summarize_semaphore = asyncio.Semaphore(concurrency)
 
             tasks = [
@@ -253,37 +264,29 @@ class SiteResearcher:
             # being scrambled into task-completion order. (Review M11.)
             await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def _batch_summarize_exa(
+    async def _batch_summarize(
         self,
         topic: str,
         bundle: SiteResearchBundle,
     ) -> None:
-        """Run batch summarization for Exa results (single Gemini call)."""
-        if "exa" not in bundle.items_by_site or not bundle.items_by_site["exa"]:
-            return
-
-        connector = self.connectors.get("exa")
-        if not connector:
-            return
-
-        # Check if connector has summarize_batch method
-        from researchkit.site_research.connectors.exa import ExaConnector
-
-        if isinstance(connector, ExaConnector):
+        """Additive batch summaries for connectors that provide them."""
+        for site, items in bundle.items_by_site.items():
+            connector = self.connectors.get(site)
+            if not connector or not items:
+                continue
             try:
-                logger.info(
-                    f"Running Exa batch summarization for {len(bundle.items_by_site['exa'])} items"
-                )
                 batch_summary = await asyncio.to_thread(
-                    connector.summarize_batch,
-                    topic,
-                    bundle.items_by_site["exa"],
+                    connector.summarize_batch, topic, items
                 )
-                bundle.batch_summaries["exa"] = batch_summary
-                logger.info("Exa batch summarization complete")
             except Exception as e:
-                logger.warning(f"Exa batch summarization failed: {e}")
-                bundle.errors.append(f"Exa batch summarization error: {str(e)[:100]}")
+                logger.warning(f"{site} batch summarization failed: {e}")
+                bundle.errors.append(
+                    f"{site} batch summarization error: {str(e)[:100]}"
+                )
+                continue
+            if batch_summary:
+                bundle.batch_summaries[site] = batch_summary
+                logger.info(f"{site} batch summarization complete")
 
     def _generate_digest(self, bundle: SiteResearchBundle) -> str:
         """Generate an enhanced markdown digest with detailed summaries."""
@@ -356,47 +359,46 @@ def create_site_researcher(
     sites: list[str] | None = None,
     summarizer_model: str = "gemini-3-flash-preview",
     exa_config: dict[str, Any] | None = None,
+    plugin_options: dict[str, dict[str, Any]] | None = None,
 ) -> SiteResearcher:
     """
-    Factory function to create a SiteResearcher with default connectors.
+    Factory building a SiteResearcher from the plugin registry.
+
+    Every connector — built-in or plugin — is constructed through its
+    registered spec with a uniform ConnectorContext. ``exa_config`` is kept
+    as a legacy alias for exa's options; per-connector options otherwise
+    come from the preset's ``plugins:`` block via ``plugin_options``.
 
     Args:
-        sites: List of sites to enable (default: all available)
-        summarizer_model: Gemini model for summarization (passed to connectors)
-        exa_config: Optional Exa-specific configuration dict
+        sites: Sites to enable (default: every registered connector)
+        summarizer_model: Model for connector summarization
+        exa_config: Legacy exa options (merged into exa's options dict)
+        plugin_options: Per-connector options keyed by connector name
 
     Returns:
         Configured SiteResearcher instance
     """
-    from researchkit.site_research.connectors.exa import ExaConnector
+    from researchkit.plugin_api import ConnectorContext
+    from researchkit.plugins import get_registry
 
-    # Build Exa connector with optional config
-    exa_kwargs: dict[str, Any] = {"gemini_model": summarizer_model}
+    registry = get_registry()
+    options_by_name = dict(plugin_options or {})
     if exa_config:
-        if "search_type" in exa_config:
-            exa_kwargs["search_type"] = exa_config["search_type"]
-        if "num_results" in exa_config:
-            exa_kwargs["num_results"] = exa_config["num_results"]
-        if "include_context" in exa_config:
-            exa_kwargs["include_context"] = exa_config["include_context"]
-        if "text_max_characters" in exa_config:
-            exa_kwargs["text_max_characters"] = exa_config["text_max_characters"]
-        if "highlights_per_url" in exa_config:
-            exa_kwargs["highlights_per_url"] = exa_config["highlights_per_url"]
-        if "include_summary" in exa_config:
-            exa_kwargs["include_summary"] = exa_config["include_summary"]
-        if "category" in exa_config:
-            exa_kwargs["category"] = exa_config["category"]
+        options_by_name["exa"] = {**exa_config, **options_by_name.get("exa", {})}
 
-    # Create all connectors with summarization model
-    all_connectors: dict[str, BaseSiteConnector] = {
-        "exa": ExaConnector(**exa_kwargs),
-    }
-
-    # Filter to requested sites
-    if sites:
-        connectors = {k: v for k, v in all_connectors.items() if k in sites}
-    else:
-        connectors = all_connectors
+    wanted = sites if sites else list(registry.connectors)
+    connectors: dict[str, BaseSiteConnector] = {}
+    for name in wanted:
+        spec = registry.connectors.get(name)
+        if spec is None:
+            continue  # unknown sites surface later as bundle errors
+        ctx = ConnectorContext(
+            summarizer_model=summarizer_model,
+            options=options_by_name.get(name, {}),
+        )
+        try:
+            connectors[name] = spec.factory(ctx)
+        except Exception as e:  # one bad connector never sinks the rest
+            logger.warning("Connector %s failed to construct: %s", name, e)
 
     return SiteResearcher(connectors=connectors)

@@ -166,6 +166,18 @@ class ExaConnector(BaseSiteConnector):
             self._gemini_client = genai.Client(api_key=self.gemini_api_key)
         return self._gemini_client
 
+    summarize_concurrency = 2  # high-volume site: keep Gemini fan-out low
+
+    def search_batch(
+        self,
+        topic: str,
+        keywords: list[str],
+        published_after: datetime,
+        limit: int,
+    ) -> list[SiteItem] | None:
+        """Exa runs ONCE per request: topic as query, keywords as extras."""
+        return self.search(topic, published_after, self.num_results, list(keywords))
+
     def search(
         self,
         query: str,

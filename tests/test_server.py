@@ -136,8 +136,9 @@ def test_research_run_and_sse_stream(tmp_path: Path) -> None:
     assert status["status"] == "done"
     assert status["project"] == "20260705_researchkit"
     assert service.calls[0]["days"] == 3
-    # UI parity with the legacy Gradio app: every provider by default
-    assert service.calls[0]["providers"] == [
+    # UI parity with the legacy Gradio app: every registered provider by
+    # default (registry order is sorted; plugins may extend the set).
+    assert set(service.calls[0]["providers"]) >= {
         "openai",
         "gemini",
         "grok",
@@ -146,7 +147,7 @@ def test_research_run_and_sse_stream(tmp_path: Path) -> None:
         "claude",
         "github",
         "glm",
-    ]
+    }
 
     with client.stream("GET", f"/api/research/{run_id}/events") as stream:
         body = "".join(stream.iter_text())

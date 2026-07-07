@@ -8,28 +8,13 @@ import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 from researchkit.keyword_synthesizer import KeywordSynthesizer
+from researchkit.plugin_api import ProviderContext
+from researchkit.plugins import Registry, get_registry
 from researchkit.project import UserFileSource, UserUrlSource
-from researchkit.providers import (
-    AntigravityProvider,
-    BaseProvider,
-    ClaudeProvider,
-    CodexProvider,
-    GeminiProvider,
-    GitHubProvider,
-    GLMProvider,
-    GrokProvider,
-    OpenAIProvider,
-    PerplexityProvider,
-    ProviderResult,
-    TavilyProvider,
-    antigravity_underlying_model,
-    codex_underlying_model,
-    is_antigravity_model,
-    is_codex_model,
-)
+from researchkit.providers import BaseProvider, ProviderResult
 from researchkit.summarizer import Summarizer
 
 if TYPE_CHECKING:
@@ -125,9 +110,8 @@ class InsightBundle:
         return result
 
 
-# LLM-based providers capable of independent keyword generation.
-# Perplexity, Tavily and GitHub are excluded (search/code APIs, not topic-based LLMs).
-LLM_PROVIDERS = {"openai", "gemini", "grok", "claude", "glm"}
+# Keyword-capable ("LLM") providers are declared per-spec (ProviderSpec.is_llm)
+# in the plugin registry — see researchkit.plugins_builtin for the defaults.
 
 
 class InsightAggregator:
@@ -142,18 +126,6 @@ class InsightAggregator:
     - Progress callbacks for status updates
     """
 
-    # Map of provider names to their classes
-    PROVIDER_MAP: ClassVar[dict[str, type[BaseProvider]]] = {
-        "openai": OpenAIProvider,
-        "gemini": GeminiProvider,
-        "grok": GrokProvider,
-        "perplexity": PerplexityProvider,
-        "tavily": TavilyProvider,
-        "claude": ClaudeProvider,
-        "github": GitHubProvider,
-        "glm": GLMProvider,
-    }
-
     def __init__(
         self,
         summarizer: Summarizer | None = None,
@@ -161,6 +133,7 @@ class InsightAggregator:
         effective_models: EffectiveModels | None = None,
         site_research_enabled: bool = True,
         site_research_sites: list[str] | None = None,
+        registry: Registry | None = None,
     ) -> None:
         """
         Initialize the aggregator.
@@ -173,8 +146,13 @@ class InsightAggregator:
             site_research_sites: Sites to search (default: exa)
         """
         self.effective_models = effective_models
+        self.registry = registry or get_registry()
         self.site_research_enabled = site_research_enabled
-        self.site_research_sites = site_research_sites or ["exa"]
+        from researchkit.plugins import default_site_research_sites
+
+        self.site_research_sites = list(
+            site_research_sites or default_site_research_sites()
+        )
         # Create summarizer with model override if effective_models provided
         summarizer_model = effective_models.summarizer if effective_models else None
         self.summarizer = summarizer or Summarizer(
@@ -182,66 +160,52 @@ class InsightAggregator:
         )
         self.sources = sources or {"social", "web"}
 
+    def _builtin_options(self, name: str) -> dict[str, Any]:
+        """Synthesize the legacy preset knobs into the builtin's options dict."""
+        em = self.effective_models
+        if em is None:
+            return {}
+        knobs: dict[str, dict[str, Any]] = {
+            "openai": {"reasoning_effort": em.reasoning_effort},
+            "perplexity": {"search_type": em.perplexity_search_type},
+            "tavily": {"search_depth": em.tavily_search_depth},
+            "claude": {
+                "max_budget": em.claude_max_budget,
+                "reasoning_effort": em.reasoning_effort,
+            },
+            "github": {"improver_model": em.improver},
+        }
+        return knobs.get(name, {})
+
     def _create_provider(
         self,
         name: str,
         keywords: list[str] | None = None,
-    ) -> (
-        OpenAIProvider
-        | GeminiProvider
-        | GrokProvider
-        | PerplexityProvider
-        | TavilyProvider
-        | ClaudeProvider
-        | GitHubProvider
-        | GLMProvider
-        | CodexProvider
-        | AntigravityProvider
-    ):
-        """Create a provider instance by name."""
-        if name not in self.PROVIDER_MAP:
+    ) -> BaseProvider:
+        """Create a provider through its registered spec (builtin or plugin)."""
+        spec = self.registry.providers.get(name)
+        if spec is None:
             raise ValueError(f"Unknown provider: {name}")
-        # Get model override from effective_models if available
-        model = None
-        kwargs: dict[str, Any] = {"sources": self.sources}
-        if self.effective_models:
-            model = getattr(self.effective_models, name, None)
-            # The OpenAI step can be routed to the Codex CLI by setting the
-            # `openai` model to `codex` / `codex:<model>`. It reports as the
-            # "openai" slot so it drops into the existing pipeline.
-            if name == "openai" and is_codex_model(model):
-                return CodexProvider(
-                    sources=self.sources,
-                    model=codex_underlying_model(model),
-                    reasoning_effort=self.effective_models.reasoning_effort,
-                    provider_name="openai",
-                )
-            # Likewise, the Gemini step can be routed to the Antigravity CLI by
-            # setting the `gemini` model to `agy` / `agy:<model>` (or
-            # `antigravity:<model>`). It reports as the "gemini" slot.
-            if name == "gemini" and is_antigravity_model(model):
-                return AntigravityProvider(
-                    sources=self.sources,
-                    model=antigravity_underlying_model(model),
-                    provider_name="gemini",
-                )
-            if model:
-                kwargs["model"] = model
-            # Pass provider-specific options
-            if name == "openai":
-                kwargs["reasoning_effort"] = self.effective_models.reasoning_effort
-            elif name == "perplexity":
-                kwargs["search_type"] = self.effective_models.perplexity_search_type
-            elif name == "tavily":
-                kwargs["search_depth"] = self.effective_models.tavily_search_depth
-            elif name == "claude":
-                kwargs["max_budget"] = self.effective_models.claude_max_budget
-                # Deep-research mode scales its fan-out with this effort.
-                kwargs["reasoning_effort"] = self.effective_models.reasoning_effort
-            elif name == "github":
-                kwargs["improver_model"] = self.effective_models.improver
-                kwargs["keywords"] = keywords or []
-        return self.PROVIDER_MAP[name](**kwargs)
+
+        em = self.effective_models
+        model = ""
+        options: dict[str, Any] = {}
+        if em is not None:
+            builtin_model = getattr(em, name, None)
+            model = str(
+                builtin_model or em.plugin_models.get(name) or spec.default_model or ""
+            )
+            options = {
+                **self._builtin_options(name),
+                **em.plugin_options.get(name, {}),
+            }
+        ctx = ProviderContext(
+            model=model,
+            sources=frozenset(self.sources),
+            keywords=tuple(keywords or ()),
+            options=options,
+        )
+        return spec.factory(ctx)
 
     async def _fetch_from_provider_async(
         self,
@@ -303,6 +267,11 @@ class InsightAggregator:
             researcher = create_site_researcher(
                 sites=self.site_research_sites,
                 summarizer_model=summarizer_model,
+                plugin_options=(
+                    self.effective_models.plugin_options
+                    if self.effective_models
+                    else None
+                ),
             )
 
             config = SiteResearchConfig(
@@ -386,7 +355,7 @@ class InsightAggregator:
         successful_llm_providers = [
             r.provider
             for r in provider_results
-            if r.is_success and r.provider in LLM_PROVIDERS
+            if r.is_success and r.provider in self.registry.llm_provider_names()
         ]
 
         if not successful_llm_providers:
@@ -459,7 +428,9 @@ class InsightAggregator:
         Returns:
             List of ProviderResults from all providers
         """
-        valid_providers = [name for name in providers if name in self.PROVIDER_MAP]
+        valid_providers = [
+            name for name in providers if name in self.registry.providers
+        ]
         total = len(valid_providers)
 
         if not valid_providers:
@@ -846,6 +817,11 @@ class InsightAggregator:
         system_config_used = {}
         if self.effective_models:
             system_config_used = self.effective_models.to_dict()
+        # Plugin provenance: record exactly which plugin code ran (§2 of the
+        # plugin trust model — provenance over promises).
+        active_plugins = self.registry.plugin_versions()
+        if active_plugins:
+            system_config_used["plugins"] = active_plugins
 
         # Attach user-curated sources (URLs + file metadata + file contents).
         # These never reach providers/summarizer/site_research; they only flow

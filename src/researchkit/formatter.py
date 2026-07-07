@@ -322,6 +322,8 @@ class Formatter:
                     meta_parts.append(f"Published: {item.published_at[:10]}")
                 if item.author_or_channel:
                     meta_parts.append(f"Author: {item.author_or_channel}")
+                if item.popularity_display:
+                    meta_parts.append(item.popularity_display)
 
                 if meta_parts:
                     lines.append(f"   - {' | '.join(meta_parts)}")

@@ -26,6 +26,7 @@ from researchkit.final_summary import (
 from researchkit.formatter import format_as_markdown
 from researchkit.observability.context import run_context
 from researchkit.observability.run_logging import attach_run_file_handler
+from researchkit.plugins import default_site_research_sites
 from researchkit.project import (
     Project,
     ProjectConfig,
@@ -62,7 +63,7 @@ class ResearchRequest:
     include_raw: bool = True
     preset_name: str | None = None  # Model preset to use (None = active preset)
     site_research_enabled: bool = True  # Enable keyword-based site research
-    site_research_sites: tuple[str, ...] = ("exa",)  # Sites to search
+    site_research_sites: tuple[str, ...] = ()  # empty = all active connectors
     # User-curated sources, included in final report/article only (never in research).
     user_url_sources: tuple[UserUrlSource, ...] = ()
     user_file_sources: tuple[UserFileSource, ...] = ()
@@ -449,7 +450,7 @@ class SocialResearchService:
             include_raw=include_raw,
             preset_name=preset_name,
             site_research_enabled=site_research_enabled,
-            site_research_sites=site_research_sites or ["exa"],
+            site_research_sites=site_research_sites or default_site_research_sites(),
         )
         return create_project(config, self.projects_dir)
 
@@ -716,7 +717,8 @@ class SocialResearchService:
                 include_raw=include_raw,
                 preset_name=preset_name,
                 site_research_enabled=site_research_enabled,
-                site_research_sites=site_research_sites or ["exa"],
+                site_research_sites=site_research_sites
+                or default_site_research_sites(),
                 parent_topic=improved_topic,
                 sibling_topics=list(subqueries),
             )

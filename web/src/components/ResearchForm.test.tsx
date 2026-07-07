@@ -14,32 +14,55 @@ const ALL_PROVIDERS = [
   'glm',
 ]
 
+const ALL_CONNECTORS = ['exa', 'crawler']
+
 const config: ConfigResponse = {
   active_preset: 'default',
   presets: ['default', 'optimal'],
   providers: ALL_PROVIDERS,
   default_providers: ALL_PROVIDERS,
+  connectors: ALL_CONNECTORS,
+  default_sites: ALL_CONNECTORS,
 }
 
 const noop = () => undefined
 
 describe('ResearchForm', () => {
-  it('pre-checks exactly the providers config marks as default', () => {
+  it('pre-checks exactly the providers and site connectors config marks as default', () => {
     const { unmount } = render(<ResearchForm config={config} running={false} onSubmit={noop} />)
-    for (const p of ALL_PROVIDERS) {
+    for (const p of [...ALL_PROVIDERS, ...ALL_CONNECTORS]) {
       expect(screen.getByLabelText<HTMLInputElement>(p).checked).toBe(true)
     }
     unmount()
 
     render(
       <ResearchForm
-        config={{ ...config, default_providers: ['openai'] }}
+        config={{ ...config, default_providers: ['openai'], default_sites: ['exa'] }}
         running={false}
         onSubmit={noop}
       />,
     )
     expect(screen.getByLabelText<HTMLInputElement>('openai').checked).toBe(true)
     expect(screen.getByLabelText<HTMLInputElement>('gemini').checked).toBe(false)
+    expect(screen.getByLabelText<HTMLInputElement>('exa').checked).toBe(true)
+    expect(screen.getByLabelText<HTMLInputElement>('crawler').checked).toBe(false)
+  })
+
+  it('hides the sites group when site research is off or no connectors exist', () => {
+    const { unmount } = render(<ResearchForm config={config} running={false} onSubmit={noop} />)
+    expect(screen.getByLabelText('exa')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Site research'))
+    expect(screen.queryByLabelText('exa')).toBeNull()
+    unmount()
+
+    render(
+      <ResearchForm
+        config={{ ...config, connectors: [], default_sites: [] }}
+        running={false}
+        onSubmit={noop}
+      />,
+    )
+    expect(screen.queryByText('Sites')).toBeNull()
   })
 
   it('submits the full research request with custom days and sources', () => {
@@ -48,7 +71,8 @@ describe('ResearchForm', () => {
 
     fireEvent.change(screen.getByLabelText('Topic'), { target: { value: '  AI agents  ' } })
     fireEvent.change(screen.getByLabelText('Days'), { target: { value: '45' } })
-    fireEvent.click(screen.getByLabelText('perplexity')) // uncheck one
+    fireEvent.click(screen.getByLabelText('perplexity')) // uncheck one provider
+    fireEvent.click(screen.getByLabelText('crawler')) // uncheck one site connector
 
     fireEvent.click(screen.getByRole('button', { name: /^Links/ }))
     fireEvent.change(screen.getByLabelText('URLs (one per line)'), {
@@ -69,6 +93,7 @@ describe('ResearchForm', () => {
       sources: ['social', 'web'],
       include_raw: true,
       site_research: true,
+      site_research_sites: ['exa'],
       boost: false,
       user_files: [],
       user_urls: ['https://a.com', 'https://b.com'],

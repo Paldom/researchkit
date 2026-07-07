@@ -228,3 +228,7 @@ projects-remote/
 # transient design artifacts
 .claude/curator-reports/
 .active_preset.json
+
+# local plugin scratch space — never committed (see PLUGIN-PLAN.md §10)
+local-plugins/
+local-plugins.txt

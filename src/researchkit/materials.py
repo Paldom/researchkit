@@ -41,6 +41,10 @@ DEFAULT_TIMEOUT_S = 10.0
 DEFAULT_MAX_BYTES = 500_000
 DEFAULT_DELAY_S = 0.2
 MIN_EXTRACT_CHARS = 200
+# The frozen manifest grammar: origins are "http", "cached", "summary", or
+# "connector:<kind>" with kind in this set. Downstream consumers (brainkit)
+# rely on it; unknown kinds are clamped, never emitted.
+_CONTENT_KINDS = ("article", "transcript", "summary")
 
 # Decoded bodies that start with these markers are binary payloads that
 # slipped through content negotiation; store the citation, skip the body.
@@ -57,6 +61,13 @@ class SourceRef:
     source_type: str = ""
     published: str = ""  # publication date, when the citation carried one
     providers: list[str] = field(default_factory=list)
+    # Connector-provided canonical text (Medium article, YouTube transcript):
+    # archived directly, no HTTP re-query. See EXTRAS.md.
+    content: str = ""
+    content_kind: str = ""
+    # Rendered SiteItemSummary markdown — fallback body when a fetch comes
+    # back empty/failed so the source still lands in the knowledge base.
+    summary_md: str = ""
 
 
 @dataclass
@@ -65,6 +76,7 @@ class MaterialEntry:
 
     url: str
     status: str  # fetched | failed | binary | empty | skipped_scheme | skipped_limit
+    origin: str = ""  # http | connector:<kind> | summary (set on fetched rows)
     file: str | None = None
     final_url: str | None = None
     title: str = ""
@@ -282,6 +294,26 @@ def collect_source_refs(result: dict[str, Any]) -> list[SourceRef]:
             label = f"site:{site}"
             if label not in ref.providers:
                 ref.providers.append(label)
+            if not ref.content and item.get("content"):
+                ref.content = str(item["content"])
+                kind = str(item.get("content_kind") or "article")
+                if kind not in _CONTENT_KINDS:
+                    logger.warning(
+                        "materials: unknown content_kind %r from %s clamped to 'article'",
+                        kind,
+                        url,
+                    )
+                    kind = "article"
+                ref.content_kind = kind
+            if not ref.summary_md and isinstance(item.get("summary"), dict):
+                from researchkit.site_research.types import SiteItemSummary
+
+                try:
+                    ref.summary_md = SiteItemSummary.from_dict(
+                        item["summary"]
+                    ).to_markdown()
+                except Exception:  # malformed legacy summaries never block
+                    logger.debug("Unparseable site summary for %s", url)
 
     return list(refs.values())
 
@@ -353,6 +385,56 @@ def _material_filename(position: int, ref: SourceRef) -> str:
     return f"{position:03d}-{stem}.md"
 
 
+def _write_material(
+    path: Path,
+    ref: SourceRef,
+    result: dict[str, Any],
+    *,
+    body: str,
+    content_kind: str = "",
+    final_url: str = "",
+) -> None:
+    """Write one material file with the standard frontmatter."""
+    pairs = {
+        "title": ref.title or ref.url,
+        "url": ref.url,
+        "final_url": final_url or ref.url,
+        "source_type": ref.source_type or "web",
+        "providers": ", ".join(ref.providers),
+        "topic": str(result.get("topic", "")),
+        "fetched_at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
+    }
+    if content_kind:
+        pairs["content_kind"] = content_kind
+    if ref.published:
+        pairs["published"] = ref.published
+    atomic_write_text(path, f"{_frontmatter(pairs)}\n\n{body.strip()}\n")
+
+
+def _write_summary_fallback(
+    path: Path,
+    ref: SourceRef,
+    result: dict[str, Any],
+    entry: MaterialEntry,
+    filename: str,
+) -> bool:
+    """Archive the connector's summary when the page itself is unreachable.
+
+    A cited summary note in the knowledge base beats a missing source
+    (EXTRAS.md). Returns True when a fallback material was written.
+    """
+    if not ref.summary_md:
+        return False
+    _write_material(path, ref, result, body=ref.summary_md, content_kind="summary")
+    entry.status = "fetched"
+    entry.origin = "summary"
+    entry.file = filename
+    entry.title = ref.title or ref.url
+    entry.chars = len(ref.summary_md)
+    logger.info("materials: stored summary fallback for %s", ref.url)
+    return True
+
+
 def download_materials(
     project: Project,
     *,
@@ -413,8 +495,23 @@ def download_materials(
         path = materials_dir / filename
         if path.exists() and not refresh and _file_matches_url(path, ref.url):
             entry.status = "fetched"
+            entry.origin = "cached"
             entry.file = filename
             entry.chars = len(path.read_text(encoding="utf-8"))
+            fetched += 1
+            continue
+
+        if ref.content:
+            # Connector already holds the canonical text (article/transcript):
+            # archive it directly — the platform is never re-queried.
+            _write_material(
+                path, ref, result, body=ref.content, content_kind=ref.content_kind
+            )
+            entry.status = "fetched"
+            entry.origin = f"connector:{ref.content_kind or 'article'}"
+            entry.file = filename
+            entry.title = ref.title or ref.url
+            entry.chars = len(ref.content)
             fetched += 1
             continue
 
@@ -428,6 +525,9 @@ def download_materials(
             headers=_FETCH_HEADERS,
         )
         if body is None:
+            if _write_summary_fallback(path, ref, result, entry, filename):
+                fetched += 1
+                continue
             entry.status = "failed"
             logger.info("materials: fetch failed/blocked for %s", ref.url)
             continue
@@ -438,6 +538,9 @@ def download_materials(
 
         page_title, text = extract_readable_text(body)
         if len(text) < MIN_EXTRACT_CHARS:
+            if _write_summary_fallback(path, ref, result, entry, filename):
+                fetched += 1
+                continue
             # JS shells (x.com, app-only pages) return chrome with no content;
             # record the citation but don't pollute the archive with husks.
             entry.status = "empty"
@@ -458,6 +561,7 @@ def download_materials(
         front = _frontmatter(pairs)
         atomic_write_text(path, f"{front}\n\n{text}\n")
         entry.status = "fetched"
+        entry.origin = "http"
         entry.file = filename
         entry.final_url = final_url
         entry.title = title

@@ -102,7 +102,8 @@ class ProjectConfig:
     include_raw: bool = True
     preset_name: str | None = None  # Model preset to use (None = active preset)
     site_research_enabled: bool = True  # Enable keyword-based site research
-    site_research_sites: list[str] = field(default_factory=lambda: ["exa"])
+    # empty = all active connectors at run time (registry-driven)
+    site_research_sites: list[str] = field(default_factory=list)
     # User-curated sources, included in final report/article only (not in research).
     user_url_sources: list[UserUrlSource] = field(default_factory=list)
     user_file_sources: list[UserFileSource] = field(default_factory=list)
@@ -151,7 +152,7 @@ class ProjectConfig:
             include_raw=data.get("include_raw", True),
             preset_name=data.get("preset_name"),
             site_research_enabled=data.get("site_research_enabled", True),
-            site_research_sites=data.get("site_research_sites", ["exa"]),
+            site_research_sites=data.get("site_research_sites", []),
             user_url_sources=[
                 UserUrlSource.from_dict(s) for s in data.get("user_url_sources", [])
             ],

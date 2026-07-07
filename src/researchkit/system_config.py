@@ -105,6 +105,12 @@ class EffectiveModels:
     # the run fans out into up to ``boost_max_subprojects`` parallel sub-projects.
     boost_enabled: bool = False
     boost_max_subprojects: int = DEFAULT_BOOST_MAX_SUBPROJECTS
+    # Plugin extensions (additive; empty for plugin-free configs so existing
+    # fingerprints and result.json shapes stay byte-identical):
+    # models.<name> keys that don't match a built-in slot land here, and the
+    # preset's plugins: block provides per-extension option dicts.
+    plugin_models: dict[str, str] = field(default_factory=dict)
+    plugin_options: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def fingerprint(self) -> str:
         """Generate a short hash of the model configuration."""
@@ -131,6 +137,13 @@ class EffectiveModels:
                 "council_boss": self.council_boss,
                 "boost_enabled": self.boost_enabled,
                 "boost_max_subprojects": self.boost_max_subprojects,
+                # only when non-empty: plugin-free fingerprints never change
+                **({"plugin_models": self.plugin_models} if self.plugin_models else {}),
+                **(
+                    {"plugin_options": self.plugin_options}
+                    if self.plugin_options
+                    else {}
+                ),
             },
             sort_keys=True,
         )
@@ -158,6 +171,8 @@ class EffectiveModels:
             "council_boss": self.council_boss,
             "boost_enabled": self.boost_enabled,
             "boost_max_subprojects": self.boost_max_subprojects,
+            **({"plugin_models": self.plugin_models} if self.plugin_models else {}),
+            **({"plugin_options": self.plugin_options} if self.plugin_options else {}),
             "preset_name": self.preset_name,
             "preset_description": self.preset_description,
             "fingerprint": self.fingerprint(),
@@ -290,6 +305,31 @@ class SystemConfigManager:
             boost.get("max_subprojects", DEFAULT_BOOST_MAX_SUBPROJECTS)
         )
 
+        # Plugin extensions: models.<name> keys that aren't built-in slots
+        # become plugin model assignments (a preset naming an uninstalled
+        # plugin is a warning, never an error); the plugins: block carries
+        # per-extension option dicts.
+        builtin_slots = {
+            "openai",
+            "gemini",
+            "grok",
+            "perplexity",
+            "tavily",
+            "claude",
+            "github",
+            "glm",
+            "summarizer",
+            "site_summarizer",
+            "improver",
+        }
+        plugin_models = {
+            str(k): str(v) for k, v in models.items() if k not in builtin_slots
+        }
+        plugins_block = preset.get("plugins", {}) or {}
+        plugin_options = {
+            str(k): dict(v) for k, v in plugins_block.items() if isinstance(v, dict)
+        }
+
         return EffectiveModels(
             openai=models["openai"],
             gemini=models["gemini"],
@@ -312,4 +352,6 @@ class SystemConfigManager:
             council_boss=council_boss,
             boost_enabled=boost_enabled,
             boost_max_subprojects=boost_max_subprojects,
+            plugin_models=plugin_models,
+            plugin_options=plugin_options,
         )

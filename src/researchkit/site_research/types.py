@@ -199,6 +199,29 @@ class SiteItemSummary:
             summarization_error=data.get("summarization_error"),
         )
 
+    def to_markdown(self) -> str:
+        """Render the extraction as readable markdown (materials fallback)."""
+        parts: list[str] = []
+        if self.tldr:
+            parts.append("## TL;DR\n" + "\n".join(f"- {b}" for b in self.tldr))
+        if self.key_takeaways:
+            parts.append(
+                "## Key takeaways\n" + "\n".join(f"- {b}" for b in self.key_takeaways)
+            )
+        if self.extracted_facts:
+            facts = "\n".join(
+                f"- {f.claim}" + (f" (evidence: {f.evidence})" if f.evidence else "")
+                for f in self.extracted_facts
+            )
+            parts.append("## Extracted facts\n" + facts)
+        if self.key_quotes:
+            parts.append("## Quotes\n" + "\n".join(f"> {q}" for q in self.key_quotes))
+        if self.statistics:
+            parts.append(
+                "## Statistics\n" + "\n".join(f"- {s}" for s in self.statistics)
+            )
+        return "\n\n".join(parts).strip()
+
 
 @dataclass
 class SiteItem:
@@ -212,6 +235,14 @@ class SiteItem:
     published_at: str | None = None
     popularity: dict[str, Any] = field(default_factory=dict)
     summary: SiteItemSummary | None = None
+    # Canonical platform text captured by the connector (YouTube transcript,
+    # Medium article body, or a rendered summary) so the materials archive
+    # never has to re-query the platform. See EXTRAS.md.
+    content: str = ""
+    content_kind: str = ""  # transcript | article | summary
+    # Connector-rendered popularity string ("Views: 1.2M") so report
+    # formatting never needs to know connector names.
+    popularity_display: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -228,6 +259,11 @@ class SiteItem:
             result["published_at"] = self.published_at
         if self.summary:
             result["summary"] = self.summary.to_dict()
+        if self.content:
+            result["content"] = self.content
+            result["content_kind"] = self.content_kind or "article"
+        if self.popularity_display:
+            result["popularity_display"] = self.popularity_display
         return result
 
     @classmethod
@@ -242,6 +278,9 @@ class SiteItem:
             author_or_channel=data.get("author_or_channel"),
             published_at=data.get("published_at"),
             popularity=data.get("popularity", {}),
+            content=str(data.get("content", "")),
+            content_kind=str(data.get("content_kind", "")),
+            popularity_display=str(data.get("popularity_display", "")),
             summary=SiteItemSummary.from_dict(summary_data) if summary_data else None,
         )
 

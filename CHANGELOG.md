@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Exa registered as a first-class research provider (Tavily-symmetric
+  neural search with social/web dual queries) alongside its site-research
+  connector; site research now defaults to every active connector, and the
+  web UI gained a config-driven site picker.
+- **Plugin system**: research providers and site-research connectors are
+  now plugins — the built-ins register through the same registry external
+  plugins use. Plugins are normal packages exposing a
+  `researchkit.plugins` entry point; activation is key-based (install +
+  set the declared API key), with per-plugin quarantine, API-version
+  handshake, collision rejection, provenance in `result.json`, and
+  `RESEARCHKIT_NO_PLUGINS` / `RESEARCHKIT_PLUGINS` rails. New
+  `researchkit plugins` command and a README plugin overview +
+  development guide. Materials archives connector-provided content
+  (`SiteItem.content`) directly; connectors gained generic
+  `search_batch` / `summarize_batch` / `popularity_label` hooks (exa's
+  special-casing removed); CLI/API/UI provider and site lists are
+  registry-driven; presets accept plugin model keys and a `plugins:`
+  options block; CI guards core manifests against plugin deps.
+
 - Web UI feature parity with the legacy Gradio app: boost (LLM council)
   runs, all providers pre-selected, keywords with a generate helper,
   improve-topic helper, include-raw and site-research toggles, custom URL
