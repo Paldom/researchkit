@@ -17,7 +17,11 @@ uv run researchkit "TOPIC" --days 7 --materials
 
 - `--materials` also downloads the cited pages into `projects/<run>/materials/`
   (frontmattered markdown + `index.json` manifest) — required if the results
-  will feed a brainkit brain.
+  will feed a brainkit brain. Default cap is 25 sources; `--materials-limit 0`
+  fetches all. Works with `--boost` too (each sub-project archives its own
+  cited sources).
+- The run ends with an absolute `wrote: <path>` line — use that path for any
+  follow-up commands. `RESEARCHKIT_PROJECTS_DIR` pins the output directory.
 - Cost control: fewer providers (`--providers gemini` is the cheapest reliable
   single provider), smaller `--days`, `--preset optimal` for the benchmarked
   cheap setup. Full runs cost real API credits and take minutes.
@@ -49,6 +53,14 @@ adjust the path if yours lives elsewhere):
 
 ```bash
 uv run --directory ../brainkit brainkit --brain ../brainkit/brain ingest "$(pwd)/projects/<run>"
+```
+
+Boosted runs ingest fully — brainkit recurses into `subprojects/`. Or do it in
+one shot when brainkit is installed into this venv
+(`uv pip install -e ../brainkit --python .venv/bin/python`):
+
+```bash
+uv run --no-sync researchkit "TOPIC" --materials --ingest ../brainkit/brain
 ```
 
 (See the brainkit skill for querying.) Never commit `projects/` or `.env`.

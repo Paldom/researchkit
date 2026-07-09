@@ -72,14 +72,47 @@ Open `http://127.0.0.1:8000` — submit a topic, watch live per-provider progres
 
 The server binds `127.0.0.1` and is unauthenticated by default. To expose it beyond localhost, set `RESEARCHKIT_AUTH_TOKEN` (clients send `Authorization: Bearer <token>`) — the server refuses to bind a non-loopback host without it.
 
+## Subscription-only mode (no API keys)
+
+If you're logged into the coding-agent CLIs — Claude Code, Codex, Antigravity (`agy`), and the Grok CLI — researchkit can run entirely on those subscriptions, with zero API keys:
+
+```bash
+uv run researchkit advise "is X a good idea?"       # every harness answers; you read them side by side
+uv run researchkit council "is X a good idea?"      # lensed deliberation -> one boss-synthesized answer
+uv run researchkit explore "your topic" --days 7    # boosted research on CLI providers only
+```
+
+| Command              | What it does                                                                                                                                                                                                                                                                                                                  | Typical time |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `advise "question"`  | Every harness answers the same question; you read the raw, un-synthesized comparison side by side. `--context-file notes.md` appends context.                                                                                                                                                                                 | ~20–60 s     |
+| `council "question"` | Advisory deliberation: members answer through distinct lenses (practical / skeptic / tradeoffs), then a boss synthesizes one decisive answer with explicit **convergence and dissent**. `-v` appends every member's full answer.                                                                                              | ~1–2 min     |
+| `explore "topic"`    | Boost-mode research on the `harness` preset: the council refines and decomposes the topic, sub-investigations run across the four CLI providers (web search included), CLI-routed summaries end to end. Supports `--days`, `--materials`, `--ingest`. The web UI has the same thing as a "Harness only (no API keys)" toggle. | ~15–30 min   |
+
+Defaults live in the `harness` preset in [`models.yaml`](models.yaml) (`claude:claude-opus-4-8` @xhigh, `codex:gpt-5.6-sol` @xhigh, `agy:gemini-3.5-flash` @high, `grokcli:grok-build`) — members, boss, models, and per-member `@<effort>` are all editable there, or per run via `--harnesses`/`--boss`/`--preset`. Site research stays off in these flows (its Exa connector and keyword synthesis are API-key paths). Every model spec follows the same `<harness>:<model>[@<effort>]` grammar — see the [models.yaml guide](docs/models-guide.md).
+
+### The same three, as Agent Skills
+
+`advise`, `council`, and `explore` also ship as [Agent Skills](https://agentskills.io) under [`.claude/skills/`](.claude/skills/), next to the existing `researchkit` pipeline skill — so an agent can drive them (`/advise`, `/council`, `/explore` in Claude Code from this repo). Install them into any of 70+ agents with the [skills CLI](https://skills.sh):
+
+```bash
+npx skills add Paldom/researchkit          # all detected agents
+npx skills add Paldom/researchkit -a codex # or a specific agent
+```
+
+The skills wrap the CLI commands above and inherit the same guarantee: logged-in CLI subscriptions only, no API keys read.
+
 ## Archive the sources (materials)
 
 Reports cite dozens of URLs; `--materials` (or the `materials` subcommand) downloads the pages themselves — SSRF-guarded, deduplicated, politely paced — into `projects/<run>/materials/` as frontmattered markdown plus an `index.json` manifest:
 
 ```bash
-uv run researchkit "your topic" --materials          # research + archive
-uv run researchkit materials <project> --limit 25    # archive an earlier run
+uv run researchkit "your topic" --materials               # research + archive
+uv run researchkit "your topic" --materials --boost       # boosted: each sub-project archives its own sources
+uv run researchkit "your topic" --materials --materials-limit 0   # lift the 25-source cap
+uv run researchkit materials <project> --limit 25         # archive an earlier run
 ```
+
+In boost mode the cited URLs live in the sub-projects (the parent report cites the sub-reports, not the web), so materials are archived per sub-project. When the default cap of 25 truncates a bigger citation set, the summary line says so and how to lift it. Every run prints an absolute `wrote: <path>` line, and `RESEARCHKIT_PROJECTS_DIR` pins output somewhere predictable for wrappers invoking via `uv run --directory`.
 
 ## Build a brain from your research
 
@@ -99,7 +132,13 @@ uv run --directory ../brainkit brainkit --brain ../brainkit/brain \
   search "your question"                       # 3. cited answers, any time later
 ```
 
-Ingest as many runs as you like into one brain — sources cited by several researches merge into single notes. In [Claude Code](https://claude.com/claude-code), both repos ship skills (`.claude/skills/`) so agents drive this pipeline and answer from the brain with citations on their own.
+Or hand off in one shot: with brainkit installed into researchkit's environment (`uv pip install -e ../brainkit --python .venv/bin/python`), `--ingest <brain-dir>` runs the whole pipeline — research, archive, ingest — in a single command:
+
+```bash
+uv run --no-sync researchkit "your topic" --materials --ingest ../brainkit/brain
+```
+
+Boosted runs ingest fully too: brainkit recurses into `subprojects/`, so every sub-investigation lands as its own topic with its own cited sources. Ingest as many runs as you like into one brain — sources cited by several researches merge into single notes. In [Claude Code](https://claude.com/claude-code), both repos ship skills (`.claude/skills/`) so agents drive this pipeline and answer from the brain with citations on their own.
 
 ## Features
 
@@ -114,17 +153,17 @@ Ingest as many runs as you like into one brain — sources cited by several rese
 
 Each provider sees a different slice of the web — that's the point of running them together. Source volumes and domain profiles below come from ~290 logged research runs and a 14-run benchmark.
 
-| Provider   | Env var                  | Default?                                            | What it adds                                                                                                                                                                                                            |
-| ---------- | ------------------------ | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OpenAI     | `OPENAI_API_KEY`         | yes                                                 | Agentic multi-step web search with domain filtering; steady mid-volume citer (median ~50 sources/run) skewing Reddit, GitHub, arXiv, news                                                                               |
-| Gemini     | `GEMINI_API_KEY`         | yes                                                 | The only first-party Google Search grounding; near 1:1 citation-to-retrieval ratio (researchkit resolves its redirect URLs to real sources)                                                                             |
-| Grok (xAI) | `XAI_API_KEY`            | yes                                                 | Native X/Twitter search and the highest volume of any provider (median ~110 sources/run); the go-to for social pulse — X, Reddit, TikTok                                                                                |
-| Perplexity | `PERPLEXITY_API_KEY`     | yes                                                 | Search-first LLM tuned for fresh news and media; the strongest YouTube/Instagram/Facebook coverage of the API providers                                                                                                 |
-| Tavily     | `TAVILY_API_KEY`         | opt-in                                              | LLM-optimized raw search: a deterministic ~40 clean sources per run, zero failures across 149 logged runs — breadth without another model's opinions                                                                    |
-| Claude     | Claude Code subscription | opt-in                                              | Agentic multi-step research via the `claude` CLI; strongest on developer forums (Hacker News, dev.to) and the only other provider citing X                                                                              |
-| GitHub     | `GITHUB_TOKEN`           | opt-in                                              | Developer ground truth: real repos, issues and PRs (~95% of its citations are github.com) — primary artifacts, not summaries                                                                                            |
-| GLM (Z.ai) | `GLM_API_KEY`            | opt-in                                              | Budget generalist: cheap and reliable but capped at ~20 sources with no distinctive domains — best as an inexpensive analysis/summarizer slot                                                                           |
-| Exa        | `EXA_API_KEY`            | opt-in via `--providers`; also powers site research | Embeddings-first neural search: finds semantically related pages that keyword search misses, with full-text retrieval for deep reading — registered both as a provider (like Tavily) and as the site-research connector |
+| Provider   | Env var                  | Default?                                            | What it adds                                                                                                                                                                                                                                                    |
+| ---------- | ------------------------ | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenAI     | `OPENAI_API_KEY`         | yes                                                 | Agentic multi-step web search with domain filtering; steady mid-volume citer (median ~50 sources/run) skewing Reddit, GitHub, arXiv, news                                                                                                                       |
+| Gemini     | `GEMINI_API_KEY`         | yes                                                 | The only first-party Google Search grounding; near 1:1 citation-to-retrieval ratio (researchkit resolves its redirect URLs to real sources)                                                                                                                     |
+| Grok (xAI) | `XAI_API_KEY`            | yes                                                 | Native X/Twitter search and the highest volume of any provider (median ~110 sources/run); the go-to for social pulse — X, Reddit, TikTok. No API key? `grok: grokcli` in `models.yaml` routes it through the official Grok CLI on grok.com-subscription billing |
+| Perplexity | `PERPLEXITY_API_KEY`     | yes                                                 | Search-first LLM tuned for fresh news and media; the strongest YouTube/Instagram/Facebook coverage of the API providers                                                                                                                                         |
+| Tavily     | `TAVILY_API_KEY`         | opt-in                                              | LLM-optimized raw search: a deterministic ~40 clean sources per run, zero failures across 149 logged runs — breadth without another model's opinions                                                                                                            |
+| Claude     | Claude Code subscription | opt-in                                              | Agentic multi-step research via the `claude` CLI; strongest on developer forums (Hacker News, dev.to) and the only other provider citing X                                                                                                                      |
+| GitHub     | `GITHUB_TOKEN`           | opt-in                                              | Developer ground truth: real repos, issues and PRs (~95% of its citations are github.com) — primary artifacts, not summaries                                                                                                                                    |
+| GLM (Z.ai) | `GLM_API_KEY`            | opt-in                                              | Budget generalist: cheap and reliable but capped at ~20 sources with no distinctive domains — best as an inexpensive analysis/summarizer slot                                                                                                                   |
+| Exa        | `EXA_API_KEY`            | opt-in via `--providers`; also powers site research | Embeddings-first neural search: finds semantically related pages that keyword search misses, with full-text retrieval for deep reading — registered both as a provider (like Tavily) and as the site-research connector                                         |
 
 All keys live in `.env` (see [`.env.example`](.env.example)). Model choices, presets, budgets, and advanced CLI-backed modes are documented in [`models.yaml`](models.yaml).
 

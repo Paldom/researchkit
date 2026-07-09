@@ -25,6 +25,10 @@ const config: ConfigResponse = {
   default_sites: ALL_CONNECTORS,
 }
 
+const harnessConfig: ConfigResponse = { ...config, presets: [...config.presets, 'harness'] }
+
+const HARNESS_LABEL = 'Harness only (no API keys)'
+
 const noop = () => undefined
 
 describe('ResearchForm', () => {
@@ -155,6 +159,68 @@ describe('ResearchForm', () => {
     }
     expect(screen.getByRole('button', { name: 'browse' })).toHaveProperty('disabled', true)
     expect(screen.getByLabelText<HTMLInputElement>('Add files').disabled).toBe(true)
+  })
+
+  it('hides the harness toggle when "harness" is not in presets', () => {
+    render(<ResearchForm config={config} running={false} onSubmit={noop} />)
+    expect(screen.queryByLabelText(HARNESS_LABEL)).toBeNull()
+  })
+
+  it('harness mode forces preset, providers, and site research in the payload', () => {
+    const onSubmit = vi.fn()
+    render(<ResearchForm config={harnessConfig} running={false} onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByLabelText('Topic'), { target: { value: 'AI agents' } })
+    fireEvent.click(screen.getByLabelText(HARNESS_LABEL))
+
+    // provider checkboxes: exactly the harness four checked, all locked
+    for (const p of ALL_PROVIDERS) {
+      const box = screen.getByLabelText<HTMLInputElement>(p)
+      expect(box.checked).toBe(['openai', 'gemini', 'grok', 'claude'].includes(p))
+      expect(box.disabled).toBe(true)
+    }
+    // site research forced off and locked, sites picker hidden
+    const siteBox = screen.getByLabelText<HTMLInputElement>('Site research')
+    expect(siteBox.checked).toBe(false)
+    expect(siteBox.disabled).toBe(true)
+    expect(screen.queryByLabelText('exa')).toBeNull()
+    // boost stays user-controlled, with a nudge
+    expect(screen.getByLabelText<HTMLInputElement>(/Boost \(LLM council\)/).disabled).toBe(false)
+    expect(screen.getByText('(recommended with harness mode)')).toBeTruthy()
+
+    fireEvent.submit(screen.getByRole('button', { name: 'Start research' }))
+
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        preset: 'harness',
+        providers: ['openai', 'gemini', 'grok', 'claude'],
+        site_research: false,
+      }),
+    )
+  })
+
+  it('toggling harness off restores the previous selections and payload', () => {
+    const onSubmit = vi.fn()
+    render(<ResearchForm config={harnessConfig} running={false} onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByLabelText('Topic'), { target: { value: 'AI agents' } })
+    fireEvent.click(screen.getByLabelText('perplexity')) // custom selection before toggling
+    fireEvent.click(screen.getByLabelText(HARNESS_LABEL))
+    fireEvent.click(screen.getByLabelText(HARNESS_LABEL))
+
+    expect(screen.getByLabelText<HTMLInputElement>('perplexity').checked).toBe(false)
+    expect(screen.getByLabelText<HTMLInputElement>('perplexity').disabled).toBe(false)
+    expect(screen.getByLabelText<HTMLInputElement>('Site research').checked).toBe(true)
+
+    fireEvent.submit(screen.getByRole('button', { name: 'Start research' }))
+
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        preset: 'default',
+        providers: ['openai', 'gemini', 'grok', 'tavily', 'claude', 'github', 'glm'],
+        site_research: true,
+      }),
+    )
   })
 
   it('disables submit while running and when topic is empty', () => {

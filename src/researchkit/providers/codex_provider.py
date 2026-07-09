@@ -104,6 +104,11 @@ class CodexProvider(BaseProvider):
     citations (titles backfilled) rather than structured annotations.
     """
 
+    # Subclass knobs: GrokCliProvider reuses this provider's whole research
+    # shape and overrides only command construction + output parsing.
+    _label_prefix = "codex.exec"
+    _error_prefix = "Codex exec"
+
     def __init__(
         self,
         api_key: str | None = None,  # accepted for parity; unused (Codex handles auth)
@@ -278,9 +283,7 @@ class CodexProvider(BaseProvider):
         self._log_start()
 
         if not shutil.which(self.codex_bin):
-            return self._create_error_result(
-                f"codex CLI not found on PATH ({self.codex_bin!r})"
-            )
+            return self._create_error_result(f"{self.codex_bin} CLI not found on PATH")
 
         try:
             sources: list[Source] = []
@@ -292,7 +295,7 @@ class CodexProvider(BaseProvider):
                 social_text, social_opened = self._run_query(
                     system_prompt=get_base_system_prompt(days),
                     user_prompt=get_user_prompt(topic, days),
-                    label="codex.exec:social",
+                    label=f"{self._label_prefix}:social",
                 )
                 sources.extend(
                     self._extract_sources(social_text, social_opened, SourceType.SOCIAL)
@@ -305,7 +308,7 @@ class CodexProvider(BaseProvider):
                 web_text, web_opened = self._run_query(
                     system_prompt=get_web_system_prompt(days),
                     user_prompt=get_web_user_prompt(topic, days),
-                    label="codex.exec:web",
+                    label=f"{self._label_prefix}:web",
                 )
                 sources.extend(
                     self._extract_sources(web_text, web_opened, SourceType.WEB)
@@ -329,7 +332,7 @@ class CodexProvider(BaseProvider):
             )
 
         except Exception as e:
-            return self._create_error_result(f"Codex exec error: {e}")
+            return self._create_error_result(f"{self._error_prefix} error: {e}")
 
     def generate_keywords(self, topic: str, days: int, context: str = "") -> list[str]:
         """Generate keywords via ``codex exec`` (no web search)."""
@@ -347,11 +350,11 @@ class CodexProvider(BaseProvider):
             text, _ = self._exec(
                 f"{system_prompt}\n\n{user_prompt}\n\nRespond ONLY with the JSON.",
                 web_search=False,
-                label="codex.exec:keywords",
+                label=f"{self._label_prefix}:keywords",
             )
             return parse_keyword_json(text)
         except Exception as e:
-            logger.warning(f"Codex keyword generation failed: {e}")
+            logger.warning(f"{self._error_prefix} keyword generation failed: {e}")
             return []
 
     def summarize_result(self, raw_text: str, topic: str) -> str:
@@ -381,7 +384,7 @@ Format as a markdown bullet list. Start each bullet with a bold label when appro
             text, _ = self._exec(
                 f"{system_prompt}\n\n{user_prompt}",
                 web_search=False,
-                label="codex.exec:summarize",
+                label=f"{self._label_prefix}:summarize",
             )
             return text or (raw_text[:500] + "..." if len(raw_text) > 500 else raw_text)
         except Exception as e:

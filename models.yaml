@@ -11,6 +11,18 @@
 #   Codex CLI (`codex exec`, ChatGPT-subscription billing).
 # - `gemini: agy` or `agy:<model>` routes the Gemini step through the
 #   Antigravity CLI with Google Search grounding.
+# - `grok: grokcli` or `grokcli:<model>` routes the Grok step through the
+#   Grok CLI's headless mode (`grok -p`, grok.com-subscription billing via
+#   `grok login` instead of XAI_API_KEY; `grok models` lists model ids).
+# CLI-backed specs apply to provider slots, council members, and the
+# summarizer slot (meta-summary; claude* specs there run under the default
+# $3 CLI budget — prefer codex/agy/grokcli). site_summarizer/improver take
+# plain API model ids.
+# - `claude: claude:<model>` is the canonical Claude spec (Claude Code CLI,
+#   Claude-subscription billing). The part after `claude:` goes to
+#   `claude --model` verbatim — an alias (`claude:opus`) or full id
+#   (`claude:claude-sonnet-4-6`). Bare ids (`claude-sonnet-4-6`) are the
+#   legacy spelling of the same route.
 # - `claude: deep` or `deep:<model>` routes the Claude step through Claude
 #   Code's /deep-research workflow (fan-out searches, verified claims, cited
 #   report). Powerful but slow (10-40 min) and expensive: every workflow
@@ -31,7 +43,7 @@ presets:
       grok: grok-4.3
       perplexity: sonar
       tavily: tavily-search # display name only (search API)
-      claude: claude-sonnet-4-6 # plain two-query mode; `deep:<model>` opt-in (see header)
+      claude: claude:claude-sonnet-4-6 # plain two-query mode; `deep:<model>` opt-in (see header)
       github: gpt-5.4-mini
       glm: glm-5.2
       summarizer: gemini-3.5-flash # cross-provider meta-summary
@@ -45,10 +57,10 @@ presets:
     # Members accept CLI specs (codex:<m>, agy:<m>) or plain model ids.
     council:
       members:
-        - claude-opus-4-8
+        - claude:claude-opus-4-8
         - gpt-5.5
         - gemini-3.5-flash
-      boss: claude-opus-4-8
+      boss: claude:claude-opus-4-8
     # Boost fans a topic out into parallel sub-projects topped by a
     # super-summary. Off by default: a boosted run multiplies cost by the
     # number of sub-projects. Enable deliberately (or per-run via --boost).
@@ -64,7 +76,7 @@ presets:
       grok: grok-4.3
       perplexity: sonar
       tavily: tavily-search
-      claude: claude-haiku-4-5
+      claude: claude:claude-haiku-4-5
       github: gpt-5.4-mini
       glm: glm-4.7-flashx
       summarizer: gemini-3-flash-preview
@@ -83,7 +95,7 @@ presets:
       grok: grok-4.3
       perplexity: sonar-pro
       tavily: tavily-search
-      claude: claude-sonnet-4-6
+      claude: claude:claude-sonnet-4-6
       github: gpt-5.4-mini
       glm: glm-4.7
       summarizer: gemini-3.5-flash
@@ -102,7 +114,7 @@ presets:
       grok: grok-4.3
       perplexity: sonar
       tavily: tavily-search
-      claude: claude-sonnet-4-6
+      claude: claude:claude-sonnet-4-6
       github: gpt-5.4-mini
       glm: glm-5.2
       summarizer: gemini-3.5-flash
@@ -112,3 +124,33 @@ presets:
     perplexity_search_type: fast
     tavily_search_depth: fast
     claude_max_budget: 5.0
+
+  harness:
+    description: Subscription-only — every step runs on logged-in CLI harnesses (Codex, Antigravity, Grok CLI, Claude Code); no API keys. Used by `advise`/`council`/`explore` and the UI's "harness only" mode.
+    models:
+      openai: codex:gpt-5.6-sol # Codex CLI, ChatGPT-subscription billing
+      gemini: agy:gemini-3.5-flash # Antigravity CLI, Google account
+      grok: grokcli:grok-build # Grok CLI, grok.com subscription
+      perplexity: sonar # unused: not in the harness provider set
+      tavily: tavily-search # unused
+      claude: claude:claude-opus-4-8 # Claude Code CLI, Claude subscription
+      github: gpt-5.4-mini # unused
+      glm: glm-5.2 # unused
+      summarizer: codex:gpt-5.6-sol # meta-summary via CLI (no API key; codex handles long prompts reliably)
+      site_summarizer: gemini-3-flash-preview # unused (site research off in harness flows)
+      improver: gpt-5.4-mini # unused: the council handles improve/keywords
+    reasoning_effort: xhigh # codex/claude/grokcli honor it; agy has no effort control
+    perplexity_search_type: fast
+    tavily_search_depth: fast
+    claude_max_budget: 15.0 # opus + web search needs headroom (lazy cap, see header)
+    council:
+      # <spec>@<effort> sets per-member reasoning effort where supported.
+      members:
+        - claude:claude-opus-4-8@xhigh
+        - codex:gpt-5.6-sol@xhigh
+        - agy:gemini-3.5-flash@high
+        - grokcli:grok-build
+      boss: claude:claude-opus-4-8@xhigh
+    boost:
+      enabled: true
+      max_subprojects: 3 # harness sub-runs are slow; keep the fan-out tight

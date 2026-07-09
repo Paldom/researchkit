@@ -15,6 +15,7 @@ from researchkit.providers import (
     AntigravityProvider,
     ClaudeProvider,
     CodexProvider,
+    GrokCliProvider,
     OpenAIProvider,
 )
 from researchkit.providers.base import ProviderResult, Source, SourceType
@@ -98,11 +99,15 @@ def test_create_provider_routes_codex_and_agy_and_deep() -> None:
         effective_models=_effective(
             openai="codex:gpt-5.5",
             gemini="agy:gemini-3.5-flash",
+            grok="grokcli:grok-build",
             claude="deep:claude-sonnet-5",
         )
     )
     assert isinstance(agg._create_provider("openai"), CodexProvider)
     assert isinstance(agg._create_provider("gemini"), AntigravityProvider)
+    grok = agg._create_provider("grok")
+    assert isinstance(grok, GrokCliProvider)
+    assert grok.reasoning_effort == "low"  # preset knob flows through options
     claude = agg._create_provider("claude")
     assert isinstance(claude, ClaudeProvider) and claude.deep_research is True
 

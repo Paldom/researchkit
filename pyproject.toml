@@ -147,6 +147,12 @@ disable_error_code = [
     "var-annotated",
 ]
 
+# brainkit is a soft dependency: only imported when the user passes --ingest,
+# and only present when they installed it into this environment themselves.
+[[tool.mypy.overrides]]
+module = ["brainkit.*"]
+ignore_missing_imports = true
+
 [tool.ruff]
 target-version = "py311"
 line-length = 88

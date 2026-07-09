@@ -121,11 +121,19 @@ class ClaudeFinalSummaryGenerator:
         if effective_models is None:
             return cls()
         model: str | None = effective_models.claude
-        # The claude slot may carry the provider-routing `deep[:<model>]`
-        # spec; summaries run a plain CLI call, so unwrap to the underlying
-        # model (bare `deep` falls back to the class default).
+        # The claude slot may carry the provider-routing `deep[:<model>]` or
+        # canonical `claude:<model>` spec; summaries run a plain CLI call, so
+        # unwrap to the underlying model (bare specs fall back to the class
+        # default).
+        from researchkit.providers.claude_provider import (
+            claude_cli_underlying_model,
+            is_claude_cli_spec,
+        )
+
         if is_deep_research_spec(model):
             model = deep_research_underlying_model(model)
+        elif is_claude_cli_spec(model):
+            model = claude_cli_underlying_model(model)
         if model:
             return cls(model=model, max_budget=effective_models.claude_max_budget)
         return cls(max_budget=effective_models.claude_max_budget)
@@ -480,8 +488,19 @@ class SuperSummaryGenerator(ClaudeFinalSummaryGenerator):
             return cls(model="claude-opus-4-8", max_budget=SUPER_SUMMARY_MAX_BUDGET)
         # The super-summary runs via the Claude Code CLI, so it needs a Claude
         # boss; fall back to Opus if the configured boss is a non-Claude model.
-        boss = effective_models.council_boss
-        if boss.lower().startswith("claude"):
+        # Council member specs may carry a researchkit-only `@<effort>` suffix
+        # ("claude-opus-4-8@xhigh") — strip it, or `claude --model` gets an
+        # invalid id and the boosted run's flagship output silently dies.
+        from researchkit.council import split_effort_spec
+        from researchkit.providers.claude_provider import (
+            claude_cli_underlying_model,
+            is_claude_cli_spec,
+        )
+
+        boss, _ = split_effort_spec(effective_models.council_boss)
+        if is_claude_cli_spec(boss):
+            model = claude_cli_underlying_model(boss) or "claude-opus-4-8"
+        elif boss.lower().startswith("claude"):
             model = boss
         else:
             logger.warning(

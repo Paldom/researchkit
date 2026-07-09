@@ -167,6 +167,7 @@ class InsightAggregator:
             return {}
         knobs: dict[str, dict[str, Any]] = {
             "openai": {"reasoning_effort": em.reasoning_effort},
+            "grok": {"reasoning_effort": em.reasoning_effort},
             "perplexity": {"search_type": em.perplexity_search_type},
             "tavily": {"search_depth": em.tavily_search_depth},
             "claude": {

@@ -13,6 +13,7 @@ Commands:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -21,6 +22,15 @@ from dotenv import load_dotenv
 from researchkit.observability.logging_setup import init_app_logging
 from researchkit.project import PROJECTS_DIR, find_project, list_projects
 from researchkit.service import SocialResearchService
+
+
+def _default_projects_dir() -> Path:
+    """Projects dir default: $RESEARCHKIT_PROJECTS_DIR, else ./projects.
+
+    The env var lets wrappers (and `uv run --directory` callers, whose cwd is
+    the researchkit checkout) pin output somewhere predictable.
+    """
+    return Path(os.environ.get("RESEARCHKIT_PROJECTS_DIR") or PROJECTS_DIR)
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -54,8 +64,11 @@ Site Research (optional):
     parser.add_argument(
         "--projects-dir",
         type=Path,
-        default=PROJECTS_DIR,
-        help=f"Directory for projects (default: {PROJECTS_DIR})",
+        default=_default_projects_dir(),
+        help=(
+            f"Directory for projects (default: $RESEARCHKIT_PROJECTS_DIR "
+            f"or {PROJECTS_DIR})"
+        ),
     )
     parser.add_argument(
         "--verbose",
@@ -99,6 +112,117 @@ Site Research (optional):
         "--materials",
         action="store_true",
         help="After the run, download cited sources into materials/",
+    )
+    run_parser.add_argument(
+        "--materials-limit",
+        type=int,
+        default=25,
+        help="Max sources to fetch with --materials, 0 = all (default: 25)",
+    )
+    run_parser.add_argument(
+        "--ingest",
+        metavar="BRAIN_DIR",
+        default=None,
+        help=(
+            "After the run, ingest the project into a brainkit brain at this "
+            "path (requires brainkit installed in the same environment)"
+        ),
+    )
+
+    # --- advise command ---
+    advise_parser = subparsers.add_parser(
+        "advise",
+        help=(
+            "Ask each subscription CLI harness (Claude Code, Codex, Antigravity, "
+            "Grok CLI) the same question and print every answer — no API keys"
+        ),
+    )
+    advise_parser.add_argument("question", help="The question to ask every harness")
+    advise_parser.add_argument(
+        "--context-file",
+        default=None,
+        help="File whose text is appended to the question as context",
+    )
+    advise_parser.add_argument(
+        "--harnesses",
+        nargs="+",
+        default=None,
+        help=(
+            "Member specs override, e.g. claude:claude-opus-4-8@xhigh codex:gpt-5.6-sol "
+            "(default: the harness preset's council members)"
+        ),
+    )
+    advise_parser.add_argument(
+        "--preset",
+        default="harness",
+        help="Preset supplying the members (default: harness)",
+    )
+
+    # --- council command ---
+    council_parser = subparsers.add_parser(
+        "council",
+        help=(
+            "Convene the harness council on a question: members answer through "
+            "distinct lenses, a boss synthesizes one answer — no API keys"
+        ),
+    )
+    council_parser.add_argument("question", help="The question to deliberate on")
+    council_parser.add_argument(
+        "--context-file",
+        default=None,
+        help="File whose text is appended to the question as context",
+    )
+    council_parser.add_argument(
+        "--harnesses",
+        nargs="+",
+        default=None,
+        help="Member specs override (default: the harness preset's council members)",
+    )
+    council_parser.add_argument(
+        "--boss", default=None, help="Boss spec override (default: preset boss)"
+    )
+    council_parser.add_argument(
+        "--preset",
+        default="harness",
+        help="Preset supplying members and boss (default: harness)",
+    )
+
+    # --- explore command ---
+    explore_parser = subparsers.add_parser(
+        "explore",
+        help=(
+            "Boosted research on subscription harnesses only (no API keys): "
+            "council refines the topic, CLI providers research in parallel"
+        ),
+    )
+    explore_parser.add_argument("topic", help="The topic to research")
+    explore_parser.add_argument(
+        "--days", "-d", type=int, default=7, help="Lookback window (default: 7)"
+    )
+    explore_parser.add_argument(
+        "--materials",
+        action="store_true",
+        help="Download cited sources into materials/ after the run",
+    )
+    explore_parser.add_argument(
+        "--materials-limit",
+        type=int,
+        default=25,
+        help="Max sources to fetch with --materials, 0 = all (default: 25)",
+    )
+    explore_parser.add_argument(
+        "--ingest",
+        metavar="BRAIN_DIR",
+        default=None,
+        help="Ingest the finished project into a brainkit brain at this path",
+    )
+    explore_parser.add_argument(
+        "--no-raw", action="store_true", help="Exclude raw provider outputs"
+    )
+    explore_parser.add_argument(
+        "--preset",
+        default="harness",
+        help="Preset to run with (default: harness — subscription CLIs only)",
     )
 
     # --- plugins command ---
@@ -319,6 +443,22 @@ def _add_research_args(parser: argparse.ArgumentParser) -> None:
         help="After the run, download cited sources into materials/ (ignored by create)",
     )
     parser.add_argument(
+        "--materials-limit",
+        type=int,
+        default=25,
+        help="Max sources to fetch with --materials, 0 = all (default: 25)",
+    )
+    parser.add_argument(
+        "--ingest",
+        metavar="BRAIN_DIR",
+        default=None,
+        help=(
+            "After the run, ingest the project into a brainkit brain at this "
+            "path (requires brainkit installed in the same environment; "
+            "ignored by create)"
+        ),
+    )
+    parser.add_argument(
         "--providers",
         "-p",
         nargs="+",
@@ -462,7 +602,7 @@ def cmd_create(args, service: SocialResearchService) -> int:
 
 
 def _download_materials_for(project, limit: int = 25, refresh: bool = False) -> int:
-    """Shared materials-download step for run/instant/materials commands."""
+    """Shared materials-download step for run/instant/boost/materials commands."""
     from researchkit.materials import download_materials
 
     try:
@@ -474,9 +614,46 @@ def _download_materials_for(project, limit: int = 25, refresh: bool = False) -> 
     for entry in manifest["entries"]:
         counts[entry["status"]] = counts.get(entry["status"], 0) + 1
     summary = ", ".join(f"{v} {k}" for k, v in sorted(counts.items()))
+    hint = " (--materials-limit 0 to fetch all)" if counts.get("skipped_limit") else ""
     print(
         f"Materials: {manifest['fetched']}/{manifest['total_cited']} sources "
-        f"archived in {project.path / 'materials'} ({summary})",
+        f"archived in {(project.path / 'materials').resolve()} ({summary}){hint}",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def _ingest_into_brain(project, brain_dir: str) -> int:
+    """One-shot research→brain handoff: ingest the finished project.
+
+    brainkit is a soft dependency — only needed when --ingest is passed.
+    A boosted parent's subprojects/ are ingested recursively by brainkit.
+    """
+    try:
+        from brainkit.brain import ingest_research_project
+    except ImportError:
+        print(
+            "Error: --ingest requires brainkit in this environment "
+            "(e.g. `uv pip install -e ../brainkit`). The run itself succeeded; "
+            f'ingest manually: brainkit ingest "{project.path.resolve()}"',
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        report = ingest_research_project(
+            project.path.resolve(), Path(brain_dir).expanduser()
+        )
+    except Exception as e:
+        # Never let a brain problem (read-only dir, OSError, …) crash the CLI
+        # after a completed paid run — the report must still reach stdout.
+        print(f"Error: ingest failed: {e}", file=sys.stderr)
+        return 1
+    # getattr: tolerate an older installed brainkit without sub-report support
+    subs = getattr(report, "sub_reports", [])
+    total_sources = len(report.source_notes) + sum(len(r.source_notes) for r in subs)
+    print(
+        f"Ingested into brain {Path(brain_dir).expanduser().resolve()}: "
+        f"{1 + len(subs)} topic notes, {total_sources} source notes",
         file=sys.stderr,
     )
     return 0
@@ -561,11 +738,23 @@ def cmd_run(args, service: SocialResearchService) -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
-    if getattr(args, "materials", False):
-        _download_materials_for(project)
+    failures = [r for r in artifacts.bundle.provider_results if not r.is_success]
+    all_failed = bool(failures) and len(failures) == len(
+        artifacts.bundle.provider_results
+    )
+
+    # No materials/ingest for a run with zero successful providers — there is
+    # nothing cited to archive, and a hollow topic note would pollute a brain.
+    handoff_rc = 0
+    if not all_failed:
+        if getattr(args, "materials", False):
+            _download_materials_for(project, limit=getattr(args, "materials_limit", 25))
+        if getattr(args, "ingest", None):
+            handoff_rc = _ingest_into_brain(project, args.ingest)
 
     # Output report
     print(artifacts.report_markdown)
+    print(f"wrote: {project.path.resolve()}", file=sys.stderr)
 
     # Show run metadata
     if args.verbose:
@@ -575,9 +764,7 @@ def cmd_run(args, service: SocialResearchService) -> int:
         if artifacts.log_path:
             print(f"Log: {artifacts.log_path}", file=sys.stderr)
 
-    # Check for failures
-    failures = [r for r in artifacts.bundle.provider_results if not r.is_success]
-    if failures and len(failures) == len(artifacts.bundle.provider_results):
+    if all_failed:
         return 1
 
     # Suggest a Claude Code prompt to iterate on the article.
@@ -585,7 +772,9 @@ def cmd_run(args, service: SocialResearchService) -> int:
 
     if failures and args.verbose:
         print(f"\nWarning: {len(failures)} provider(s) failed", file=sys.stderr)
-    return 0
+    # A requested --ingest that failed is a pipeline failure even though the
+    # research succeeded (agent callers must not proceed to an empty brain).
+    return handoff_rc
 
 
 def cmd_list(args, service: SocialResearchService) -> int:
@@ -816,6 +1005,118 @@ def _print_article_prompt_hint(project) -> None:
     print("--- end prompt ---\n", file=sys.stderr)
 
 
+def _harness_council(preset: str, harnesses=None, boss=None):
+    """Build an LLMCouncil from a preset, with optional member/boss overrides."""
+    from researchkit.council import LLMCouncil
+    from researchkit.system_config import SystemConfigManager
+
+    council = LLMCouncil.from_effective_models(
+        SystemConfigManager().resolve_effective_models(preset)
+    )
+    if harnesses:
+        council.members = list(harnesses)
+    if boss:
+        council.boss = boss
+    return council
+
+
+def _question_with_context(args) -> str:
+    """The question, with --context-file text appended when given."""
+    question = args.question
+    context_file = getattr(args, "context_file", None)
+    if context_file:
+        text = Path(context_file).read_text(encoding="utf-8").strip()
+        question = f"{question}\n\nCONTEXT:\n{text}"
+    return question
+
+
+def cmd_advise(args) -> int:
+    """Handle 'advise': one question, every harness's own answer, verbatim."""
+    try:
+        council = _harness_council(args.preset, args.harnesses)
+        question = _question_with_context(args)
+    except (ValueError, OSError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    print(
+        f"Asking {len(council.members)} harnesses: {', '.join(council.members)} …",
+        file=sys.stderr,
+    )
+    answers = council.advise(question)
+    for a in answers:
+        print(f"\n## {a.member}\n")
+        print(a.answer if a.ok else f"*failed: {a.error}*")
+    ok = sum(1 for a in answers if a.ok)
+    print(f"\n{ok}/{len(answers)} harnesses answered.", file=sys.stderr)
+    return 0 if ok else 1
+
+
+def cmd_council(args) -> int:
+    """Handle 'council': lensed member answers + boss-synthesized consultation."""
+    try:
+        council = _harness_council(args.preset, args.harnesses, args.boss)
+        question = _question_with_context(args)
+    except (ValueError, OSError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    print(
+        f"Convening council ({', '.join(council.members)}; boss={council.boss}) …",
+        file=sys.stderr,
+    )
+    try:
+        result = council.consult(question)
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    if not result.boss_synthesized:
+        print(
+            "Warning: boss synthesis unavailable; showing the first valid "
+            "member answer.",
+            file=sys.stderr,
+        )
+    header = (
+        f"confidence: {result.confidence or 'unstated'}, "
+        f"convergence: {result.convergence or 'unknown'}"
+    )
+    print(f"\n# Council answer ({header})\n")
+    print(result.answer)
+    if result.dissent:
+        print(f"\n## Dissent\n\n{result.dissent}")
+    print("\n## Members\n")
+    for a in result.answers:
+        if a.ok:
+            line = f"- **{a.member}** ({a.lens}, confidence: {a.confidence or '-'})"
+            if a.rationale:
+                line += f" — {a.rationale}"
+        else:
+            line = f"- **{a.member}** — failed: {a.error}"
+        print(line)
+    if args.verbose:
+        print("\n## Full member answers\n")
+        for a in result.answers:
+            if a.ok:
+                print(f"### {a.member} ({a.lens})\n\n{a.answer}\n")
+    return 0
+
+
+def cmd_explore(args, service: SocialResearchService) -> int:
+    """Handle 'explore': boosted research on the subscription-only preset.
+
+    Providers are the four CLI harnesses; site research is off (its keyword
+    synthesis and Exa connector are API-key paths). Everything else is the
+    normal boost pipeline.
+    """
+    args.boost = True
+    args.providers = ["openai", "gemini", "grok", "claude"]
+    args.sources = ["social", "web"]
+    args.no_site_research = True
+    args.preset_name = args.preset
+    return _cmd_instant_boosted(args, service, args.topic)
+
+
 def _make_topic_helper(args):
     """Return the topic/keyword helper: the LLM council by default, or a single
     PromptImprover when the user passes an explicit --provider/--model override
@@ -855,15 +1156,59 @@ def cmd_generate_keywords(args) -> int:
         return 1
 
 
+def _make_boost_progress(args):
+    """Progress callback for boost runs: verbose behavior plus a heartbeat.
+
+    Boost runs take many minutes; without this a non-verbose caller sees no
+    output between "Convening council" and the report and can't tell waiting
+    from hung. Compact [boost] lines go to stderr even without --verbose.
+    """
+    verbose_cb = make_progress_callback(args.verbose)
+    heartbeat_stages = {
+        "council_start",
+        "council_done",
+        "boost_collecting",
+        "super_summary_start",
+        "super_summary_done",
+    }
+
+    def progress(evt: dict) -> None:
+        verbose_cb(evt)
+        stage = evt.get("stage", "")
+        # Boost lifecycle stages are unknown to make_progress_callback, so
+        # print them in verbose mode too.
+        if stage in heartbeat_stages:
+            print(f"[boost] {evt.get('message', stage)}", file=sys.stderr)
+            return
+        if args.verbose:
+            return  # per-event detail already printed by verbose_cb
+        # An event without "subproject" is the parent run itself (the council
+        # declined to decompose) — it deserves the same liveness signal.
+        sub = evt.get("subproject", "")
+        label = f"{sub[:60]}: " if sub else ""
+        if stage == "provider_done":
+            status = "OK" if evt.get("ok") else "FAILED"
+            print(
+                f"[boost] {label}{evt.get('provider', '?')} {status} "
+                f"({evt.get('done', 0)}/{evt.get('total', 0)} providers)",
+                file=sys.stderr,
+            )
+        elif stage == "done":
+            print(f"[boost] {label}{evt.get('message', 'done')}", file=sys.stderr)
+
+    return progress
+
+
 def _cmd_instant_boosted(args, service: SocialResearchService, topic: str) -> int:
     """Handle instant mode with the LLM council + optional boost fan-out."""
     print(f"Convening council for: {topic}", file=sys.stderr)
-    progress = make_progress_callback(args.verbose)
+    progress = _make_boost_progress(args)
 
     try:
         result = service.create_and_run_boosted(
             topic=topic,
             days=getattr(args, "days", 7),
+            preset_name=getattr(args, "preset_name", None),
             providers=getattr(args, "providers", None),
             sources=getattr(args, "sources", None),
             include_raw=not getattr(args, "no_raw", False),
@@ -888,12 +1233,20 @@ def _cmd_instant_boosted(args, service: SocialResearchService, topic: str) -> in
             "Council did not decompose; ran a single improved project.", file=sys.stderr
         )
         artifacts = result.single_artifacts
+        handoff_rc = 0
         if artifacts:
+            if getattr(args, "materials", False):
+                _download_materials_for(
+                    result.project, limit=getattr(args, "materials_limit", 25)
+                )
+            if getattr(args, "ingest", None):
+                handoff_rc = _ingest_into_brain(result.project, args.ingest)
             print(artifacts.report_markdown)
+            print(f"wrote: {result.project.path.resolve()}", file=sys.stderr)
             if args.verbose:
                 print(f"\nProject: {result.project.path}", file=sys.stderr)
             _print_article_prompt_hint(result.project)
-        return 0
+        return handoff_rc
 
     print(
         f"Decomposed into {len(result.sub_projects)} sub-projects "
@@ -903,14 +1256,26 @@ def _cmd_instant_boosted(args, service: SocialResearchService, topic: str) -> in
     for sp in result.sub_projects:
         print(f"  - {sp.config.topic}  [{sp.path}]", file=sys.stderr)
 
+    # Each completed sub-project cites real URLs — archive them there. The
+    # parent's report cites the sub-reports, not the web, so it has no
+    # materials of its own (brainkit ingests subprojects/ recursively).
+    handoff_rc = 0
+    if getattr(args, "materials", False):
+        for sp in result.sub_projects:
+            if sp.has_results:
+                _download_materials_for(sp, limit=getattr(args, "materials_limit", 25))
+    if getattr(args, "ingest", None):
+        handoff_rc = _ingest_into_brain(result.project, args.ingest)
+
     if result.super_summary_markdown:
         print(result.super_summary_markdown)
     else:
         print("Warning: super-summary unavailable.", file=sys.stderr)
 
-    print(f"\nParent project: {result.project.path}", file=sys.stderr)
+    print(f"wrote: {result.project.path.resolve()}", file=sys.stderr)
+    print(f"Parent project: {result.project.path}", file=sys.stderr)
     print(f"Super-summary: {result.project.super_summary_path}", file=sys.stderr)
-    return 0
+    return handoff_rc
 
 
 def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
@@ -947,11 +1312,23 @@ def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
-    if getattr(args, "materials", False):
-        _download_materials_for(project)
+    failures = [r for r in artifacts.bundle.provider_results if not r.is_success]
+    all_failed = bool(failures) and len(failures) == len(
+        artifacts.bundle.provider_results
+    )
+
+    # No materials/ingest for a run with zero successful providers — there is
+    # nothing cited to archive, and a hollow topic note would pollute a brain.
+    handoff_rc = 0
+    if not all_failed:
+        if getattr(args, "materials", False):
+            _download_materials_for(project, limit=getattr(args, "materials_limit", 25))
+        if getattr(args, "ingest", None):
+            handoff_rc = _ingest_into_brain(project, args.ingest)
 
     # Output report
     print(artifacts.report_markdown)
+    print(f"wrote: {project.path.resolve()}", file=sys.stderr)
 
     # Show run metadata
     if args.verbose:
@@ -962,8 +1339,7 @@ def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
         if artifacts.log_path:
             print(f"Log: {artifacts.log_path}", file=sys.stderr)
 
-    failures = [r for r in artifacts.bundle.provider_results if not r.is_success]
-    if failures and len(failures) == len(artifacts.bundle.provider_results):
+    if all_failed:
         return 1
 
     # Suggest a Claude Code prompt to iterate on the article.
@@ -971,7 +1347,9 @@ def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
 
     if failures and args.verbose:
         print(f"\nWarning: {len(failures)} provider(s) failed", file=sys.stderr)
-    return 0
+    # A requested --ingest that failed is a pipeline failure even though the
+    # research succeeded (agent callers must not proceed to an empty brain).
+    return handoff_rc
 
 
 def main() -> int:
@@ -990,6 +1368,9 @@ def main() -> int:
         "list",
         "materials",
         "plugins",
+        "advise",
+        "council",
+        "explore",
         "links",
         "improve-topic",
         "generate-keywords",
@@ -998,7 +1379,7 @@ def main() -> int:
         "list-sources",
         "suggest-prompt",
     }
-    value_flags = {"--projects-dir", "--log-level"}
+    value_flags = {"--projects-dir", "--log-level", "--ingest", "--materials-limit"}
 
     def _first_positional(tokens: list[str]) -> str | None:
         skip_next = False
@@ -1028,8 +1409,11 @@ def main() -> int:
         instant_parser.add_argument(
             "--projects-dir",
             type=Path,
-            default=PROJECTS_DIR,
-            help=f"Directory for projects (default: {PROJECTS_DIR})",
+            default=_default_projects_dir(),
+            help=(
+                f"Directory for projects (default: $RESEARCHKIT_PROJECTS_DIR "
+                f"or {PROJECTS_DIR})"
+            ),
         )
         instant_parser.add_argument("--verbose", "-v", action="store_true")
         instant_parser.add_argument("--quiet", "-q", action="store_true")
@@ -1100,6 +1484,12 @@ def main() -> int:
 
     if args.command == "create":
         return cmd_create(args, service)
+    elif args.command == "advise":
+        return cmd_advise(args)
+    elif args.command == "council":
+        return cmd_council(args)
+    elif args.command == "explore":
+        return cmd_explore(args, service)
     elif args.command == "run":
         return cmd_run(args, service)
     elif args.command == "list":

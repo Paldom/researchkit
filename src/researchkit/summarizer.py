@@ -50,10 +50,18 @@ class Summarizer:
         # GLM models are served via the z.ai OpenAI-compatible endpoint rather
         # than the Gemini SDK, so callers can use GLM as the summarizer model.
         self._is_glm = is_glm_model(self.model)
+        # CLI-backed specs (codex:/agy:/grokcli:/claude*) route through the
+        # logged-in harness instead of any API — the harness (subscription-only)
+        # preset sets the summarizer slot to one of these.
+        from researchkit.council import is_cli_backed_spec
+
+        self._is_cli = is_cli_backed_spec(self.model)
         self._client: Any = None
 
     def _get_client(self) -> Any:
-        """Lazy-load the summarization client (Gemini or GLM/z.ai)."""
+        """Lazy-load the summarization client (Gemini or GLM/z.ai; None for CLI)."""
+        if self._is_cli:
+            return None
         if self._client is None:
             if self._is_glm:
                 from researchkit.providers.glm_provider import make_zai_client
@@ -80,7 +88,13 @@ class Summarizer:
         temperature: float,
         max_output_tokens: int,
     ) -> str:
-        """Run a single completion against the configured backend (Gemini or GLM)."""
+        """Run one completion against the configured backend (Gemini, GLM, or CLI)."""
+        if self._is_cli:
+            from researchkit.council import complete_via_spec
+
+            # CLI harnesses take no temperature/token knobs; the prompt and the
+            # harness's own defaults govern the output.
+            return complete_via_spec(self.model, "", prompt, label=label)
         if self._is_glm:
             response = with_network_retry(
                 client.chat.completions.create,

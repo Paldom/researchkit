@@ -37,7 +37,7 @@ _EMBEDDED_DEFAULT_CONFIG: dict[str, Any] = {
                 "grok": "grok-4.3",
                 "perplexity": "sonar",
                 "tavily": "tavily-search",
-                "claude": "claude-sonnet-4-6",
+                "claude": "claude:claude-sonnet-4-6",
                 "github": "gpt-5.4-mini",
                 "glm": "glm-5.2",
                 "summarizer": "gemini-3.5-flash",
@@ -55,8 +55,12 @@ _EMBEDDED_DEFAULT_CONFIG: dict[str, Any] = {
 # Council defaults: members deliberate on topic improvement + keyword generation,
 # with the boss (a strong reasoning model) synthesizing the final result. Members
 # may use CLI-backed model specs ("codex:<m>", "agy:<m>") or plain API model ids.
-DEFAULT_COUNCIL_MEMBERS = ["claude-opus-4-8", "codex:gpt-5.5", "agy:gemini-3.5-flash"]
-DEFAULT_COUNCIL_BOSS = "claude-opus-4-8"
+DEFAULT_COUNCIL_MEMBERS = [
+    "claude:claude-opus-4-8",
+    "codex:gpt-5.5",
+    "agy:gemini-3.5-flash",
+]
+DEFAULT_COUNCIL_BOSS = "claude:claude-opus-4-8"
 DEFAULT_BOOST_MAX_SUBPROJECTS = 5
 
 
@@ -72,7 +76,16 @@ def _default_config_path() -> Path:
     cwd_path = Path(MODELS_FILENAME)
     if cwd_path.exists():
         return cwd_path
-    return Path(__file__).resolve().parent.parent / MODELS_FILENAME
+    here = Path(__file__).resolve()
+    # src layout (repo checkout): models.yaml sits THREE levels up
+    # (src/researchkit/system_config.py -> repo root). Runs launched outside
+    # the repo cwd (RESEARCHKIT_PROJECTS_DIR wrappers, keyless `env -u` runs)
+    # must still see the shipped presets. Wheel installs ship no models.yaml
+    # and use the embedded defaults.
+    candidate = here.parent.parent.parent / MODELS_FILENAME
+    if candidate.exists():
+        return candidate
+    return here.parent.parent / MODELS_FILENAME
 
 
 @dataclass

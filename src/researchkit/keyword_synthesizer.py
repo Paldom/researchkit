@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import re
 from typing import TYPE_CHECKING
 
 from researchkit.network_retry import with_network_retry
+from researchkit.utils import extract_json_object
 
 if TYPE_CHECKING:
     from researchkit.providers.base import ProviderResult
@@ -33,18 +32,9 @@ def parse_keyword_json(response: str, count: int = 10) -> list[str]:
     """
     text = response.strip()
 
-    data: object = None
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            try:
-                data = json.loads(match.group(0))
-            except json.JSONDecodeError:
-                data = None
-
-    if not isinstance(data, dict):
+    # Shared tolerant extraction: fences, prose preamble, truncated arrays.
+    data = extract_json_object(text)
+    if data is None:
         logger.warning(f"parse_keyword_json: failed to parse JSON: {text[:200]}")
         return []
 

@@ -45,6 +45,33 @@ def is_deep_research_spec(model: str | None) -> bool:
     return model.lower().split(":", 1)[0].strip() in ("deep", "deep-research")
 
 
+def is_claude_cli_spec(model: str | None) -> bool:
+    """Return ``True`` for the canonical ``claude`` / ``claude:<model>`` spec.
+
+    Same harness-pattern grammar as ``codex:<m>`` / ``agy:<m>`` /
+    ``grokcli:<m>``. Bare ``claude-*`` model ids are the legacy spelling and
+    also route to the Claude CLI, but do NOT match this predicate.
+    """
+    if not model:
+        return False
+    return model.lower().split(":", 1)[0].strip() == "claude"
+
+
+def claude_cli_underlying_model(model: str | None) -> str | None:
+    """Extract the underlying model from a ``claude`` spec.
+
+    ``"claude:claude-opus-4-8"`` -> ``"claude-opus-4-8"``; ``"claude:opus"``
+    -> ``"opus"`` (the CLI resolves aliases); ``"claude"`` -> ``None``
+    (Claude CLI default model).
+    """
+    if not model:
+        return None
+    parts = model.split(":", 1)
+    if len(parts) == 2 and parts[1].strip():
+        return parts[1].strip()
+    return None
+
+
 def deep_research_underlying_model(model: str | None) -> str | None:
     """Extract the underlying model from a ``deep`` spec.
 

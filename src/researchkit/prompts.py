@@ -598,6 +598,102 @@ def get_council_boss_user_prompt(
 
 
 # ---------------------------------------------------------------------------
+# Consult prompts (answer-oriented council: advise / council commands)
+# ---------------------------------------------------------------------------
+
+# Answer-oriented lenses (the COUNCIL_LENSES above are topic-refinement
+# lenses). Forced perspectives keep member blind spots decorrelated even when
+# harnesses share a training pedigree.
+CONSULT_LENSES: list[tuple[str, str]] = [
+    (
+        "Direct & Practical",
+        "Answer the question head-on. Prefer concrete, actionable specifics — "
+        "names, numbers, steps, defaults — over abstractions. Commit to a "
+        "recommendation.",
+    ),
+    (
+        "Skeptic & Risks",
+        "Attack the obvious answer. Surface failure modes, edge cases, hidden "
+        "costs, and the strongest counterargument. If the consensus view is "
+        "wrong or oversold, say exactly where.",
+    ),
+    (
+        "Context & Tradeoffs",
+        "Situate the answer. When does it depend, on what, and how would the "
+        "answer change? Name the leading alternatives and the decision "
+        "criteria that pick between them.",
+    ),
+]
+
+
+def get_consult_member_system_prompt(lens_name: str, lens_instruction: str) -> str:
+    """System prompt for one advisory-council member answering a question."""
+    return (
+        "You are one member of a small advisory council. Each member answers "
+        "the same question independently through a distinct lens, then a boss "
+        "model synthesizes the answers. Lean fully into your assigned lens — "
+        "do not hedge toward balance; the synthesis happens later. Answer from "
+        "your own knowledge; be honest about uncertainty.\n\n"
+        f"YOUR LENS — {lens_name}: {lens_instruction}\n\n"
+        "Return ONLY valid JSON with this exact shape:\n"
+        "{\n"
+        '  "answer": "your full answer in markdown (a few paragraphs max)",\n'
+        '  "confidence": "high | medium | low",\n'
+        '  "rationale": "one or two sentences on why you answered this way"\n'
+        "}"
+    )
+
+
+def get_consult_member_user_prompt(question: str) -> str:
+    """User prompt for one advisory-council member."""
+    return (
+        f"QUESTION: {question}\n"
+        f"TODAY'S DATE: {_today_str()}\n\n"
+        "Answer through your lens. Return ONLY the JSON."
+    )
+
+
+def get_consult_boss_system_prompt() -> str:
+    """System prompt for the boss synthesizing consult answers."""
+    return (
+        "You are the BOSS of an advisory council. Several members each answered "
+        "the same question independently through different lenses. Synthesize "
+        "their (anonymized) answers into one decisive, useful answer — NOT an "
+        "average. Adopt the strongest answer, merge the best parts, or override "
+        "the majority when a lone answer's reasoning is clearly best. Respect "
+        "dissent: when members genuinely disagree, say so explicitly instead of "
+        "smoothing it over — real disagreement is signal, not noise.\n\n"
+        "Return ONLY valid JSON with this exact shape:\n"
+        "{\n"
+        '  "answer": "the synthesized answer in markdown",\n'
+        '  "confidence": "high | medium | low",\n'
+        '  "convergence": "high | medium | low — how aligned the members were",\n'
+        '  "dissent": "the strongest unresolved disagreement, or empty string"\n'
+        "}"
+    )
+
+
+def get_consult_boss_user_prompt(question: str, proposals_block: str) -> str:
+    """User prompt for the consult boss. ``proposals_block`` is preformatted."""
+    return (
+        f"QUESTION: {question}\n"
+        f"TODAY'S DATE: {_today_str()}\n\n"
+        "COUNCIL MEMBER ANSWERS (anonymized):\n"
+        f"{proposals_block}\n\n"
+        "SYNTHESIZE the final answer. Return ONLY the JSON."
+    )
+
+
+def get_advise_system_prompt() -> str:
+    """System prompt for a single harness answering an advise question."""
+    return (
+        "You are a concise expert advisor. Answer the question directly in "
+        "markdown, leading with the answer itself, then the key reasoning. Be "
+        "specific and honest about uncertainty. A few paragraphs at most."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Super-summary prompts (boss-authored synthesis across boosted sub-projects)
 # ---------------------------------------------------------------------------
 

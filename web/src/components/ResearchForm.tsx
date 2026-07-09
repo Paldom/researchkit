@@ -13,6 +13,8 @@ const DAY_PRESETS = [7, 30, 90, 180, 365]
 const SOURCE_TABS = ['Files', 'Links', 'Text'] as const
 type SourceTab = (typeof SOURCE_TABS)[number]
 
+const HARNESS_PROVIDERS = ['openai', 'gemini', 'grok', 'claude']
+
 const FILE_PATTERN = /\.(md|markdown|txt|rst)$/i
 const MAX_FILES = 10
 const MAX_FILE_BYTES = 200 * 1024
@@ -49,6 +51,7 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
   const [providers, setProviders] = useState<string[]>(config.default_providers)
   const [preset, setPreset] = useState(config.active_preset)
   const [boost, setBoost] = useState(false)
+  const [harness, setHarness] = useState(false)
   const [includeRaw, setIncludeRaw] = useState(true)
   const [siteResearch, setSiteResearch] = useState(true)
   const [sites, setSites] = useState<string[]>(config.default_sites)
@@ -64,6 +67,10 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
 
   const daysValid = Number.isFinite(days) && days >= 1 && days <= MAX_DAYS
   const sourcesDisabled = boost || running
+  const harnessAvailable = config.presets.includes('harness')
+  // ponytail: harness overrides are derived, not stored — toggling off restores prior selections.
+  const effectiveProviders = harness ? HARNESS_PROVIDERS : providers
+  const effectiveSiteResearch = harness ? false : siteResearch
 
   async function handleImprove() {
     setImproving(true)
@@ -117,16 +124,16 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!topic.trim() || providers.length === 0 || !daysValid) return
+    if (!topic.trim() || effectiveProviders.length === 0 || !daysValid) return
     onSubmit({
       topic: topic.trim(),
       days,
-      providers,
-      preset,
+      providers: effectiveProviders,
+      preset: harness ? 'harness' : preset,
       // ponytail: sources fixed to the tool's default pair; add a control when the API grows more.
       sources: ['social', 'web'],
       include_raw: includeRaw,
-      site_research: siteResearch,
+      site_research: effectiveSiteResearch,
       // ponytail: always send the explicit selection; server defaults never have to guess.
       site_research_sites: sites,
       boost,
@@ -218,7 +225,8 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
           </label>
           <select
             id="preset"
-            value={preset}
+            value={harness ? 'harness' : preset}
+            disabled={harness}
             onChange={(e) => void handlePresetChange(e.target.value)}
             className={`w-full ${inputClass}`}
           >
@@ -231,6 +239,23 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
         </div>
       </div>
 
+      {harnessAvailable && (
+        <div>
+          <label className="flex items-center gap-1.5 text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={harness}
+              onChange={(e) => setHarness(e.target.checked)}
+              className="accent-orange-600"
+            />
+            Harness only (no API keys)
+          </label>
+          <p className="mt-1 text-xs text-neutral-500">
+            Runs on logged-in CLI subscriptions (Claude Code, Codex, Antigravity, Grok CLI).
+          </p>
+        </div>
+      )}
+
       <fieldset>
         <legend className="mb-1 text-sm font-medium">Providers</legend>
         <div className="flex flex-wrap gap-x-4 gap-y-2">
@@ -238,7 +263,8 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
             <label key={p} className="flex items-center gap-1.5 text-sm">
               <input
                 type="checkbox"
-                checked={providers.includes(p)}
+                checked={effectiveProviders.includes(p)}
+                disabled={harness}
                 onChange={() => setProviders(toggle(p))}
                 className="accent-orange-600"
               />
@@ -246,7 +272,7 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
             </label>
           ))}
         </div>
-        {providers.length === 0 && (
+        {effectiveProviders.length === 0 && (
           <p className="mt-1 text-xs text-red-600 dark:text-red-400">
             Select at least one provider.
           </p>
@@ -262,6 +288,11 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
             className="accent-orange-600"
           />
           Boost (LLM council)
+          {harness && (
+            <span className="text-xs font-normal text-neutral-500">
+              (recommended with harness mode)
+            </span>
+          )}
         </label>
         <p className="mt-1 text-xs text-neutral-500">
           Council refines the topic and may fan out into parallel sub-projects with a super-summary.
@@ -282,7 +313,8 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
         <label className="flex items-center gap-1.5 text-sm">
           <input
             type="checkbox"
-            checked={siteResearch}
+            checked={effectiveSiteResearch}
+            disabled={harness}
             onChange={(e) => setSiteResearch(e.target.checked)}
             className="accent-orange-600"
           />
@@ -290,7 +322,7 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
         </label>
       </div>
 
-      {siteResearch && config.connectors.length > 0 && (
+      {effectiveSiteResearch && config.connectors.length > 0 && (
         <fieldset className="ml-6">
           <legend className="mb-1 text-sm font-medium">Sites</legend>
           <div className="flex flex-wrap gap-x-4 gap-y-2">
@@ -446,7 +478,7 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
 
       <button
         type="submit"
-        disabled={running || !topic.trim() || providers.length === 0 || !daysValid}
+        disabled={running || !topic.trim() || effectiveProviders.length === 0 || !daysValid}
         className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white
           hover:bg-orange-500 disabled:cursor-not-allowed disabled:opacity-50"
       >

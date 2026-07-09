@@ -68,8 +68,22 @@ def _make_gemini(ctx: ProviderContext) -> BaseProvider:
 
 
 def _make_grok(ctx: ProviderContext) -> BaseProvider:
-    from researchkit.providers import GrokProvider
+    from researchkit.providers import (
+        GrokCliProvider,
+        GrokProvider,
+        grokcli_underlying_model,
+        is_grokcli_model,
+    )
 
+    # `grokcli` / `grokcli:<model>` routes the grok slot through the Grok
+    # CLI's headless mode (grok.com subscription auth); it reports as "grok".
+    if is_grokcli_model(ctx.model):
+        return GrokCliProvider(
+            sources=_sources(ctx),
+            model=grokcli_underlying_model(ctx.model),
+            reasoning_effort=str(ctx.options.get("reasoning_effort", "medium")),
+            provider_name="grok",
+        )
     return GrokProvider(sources=_sources(ctx), model=ctx.model or None)
 
 
@@ -94,11 +108,20 @@ def _make_tavily(ctx: ProviderContext) -> BaseProvider:
 
 
 def _make_claude(ctx: ProviderContext) -> BaseProvider:
-    from researchkit.providers import ClaudeProvider
+    from researchkit.providers import (
+        ClaudeProvider,
+        claude_cli_underlying_model,
+        is_claude_cli_spec,
+    )
 
+    # Canonical `claude:<model>` spec unwraps to the underlying model; bare
+    # ids and `deep:<model>` pass through (the provider handles deep specs).
+    model: str | None = ctx.model
+    if is_claude_cli_spec(model):
+        model = claude_cli_underlying_model(model)
     return ClaudeProvider(
         sources=_sources(ctx),
-        model=ctx.model or None,
+        model=model or None,
         max_budget=float(ctx.options.get("max_budget", 5.0)),
         reasoning_effort=str(ctx.options.get("reasoning_effort", "medium")),
     )
