@@ -38,7 +38,7 @@
 #   cost (>= 15-20) when using deep mode. NEVER ship deep: as a default —
 #   it runs a CLI subprocess with web access on every default invocation.
 
-active_preset: default
+active_preset: hybrid
 
 presets:
   default:
