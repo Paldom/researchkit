@@ -50,6 +50,6 @@ Members/boss default to the `harness` preset in `models.yaml`; override with
 
 - Individual member failures are isolated; the run errors only when every
   member fails (the message lists each member's error — usually a CLI not
-  installed or not logged in).
+  installed, not logged in, or out of subscription quota).
 - Expect ~60–120 s (members in parallel, then one boss call).
 - Members answer from model knowledge — no web tools in deliberation.

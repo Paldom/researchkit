@@ -47,8 +47,14 @@ class PromptImprover:
             provider: Provider to use (openai, gemini, grok, perplexity)
             model: Model override (defaults to provider-specific default)
         """
+        from researchkit.council import is_cli_backed_spec
+
         self.provider = provider.lower()
-        if self.provider not in self.PROVIDERS:
+        # A CLI-backed model spec (codex:/agy:/grokcli:/claude:) overrides the
+        # provider: the improver runs on the logged-in harness, no API key.
+        if is_cli_backed_spec(model):
+            self.provider = "cli"
+        if self.provider not in self.PROVIDERS and self.provider != "cli":
             raise ValueError(
                 f"Invalid provider: {provider}. Must be one of {self.PROVIDERS}"
             )
@@ -84,8 +90,16 @@ class PromptImprover:
         except Exception as e:
             logger.warning(f"Failed to load system config, using default model: {e}")
 
-        # Route to the matching backend when the improver model is a GLM model.
-        provider = "glm" if is_glm_model(model) else "openai"
+        from researchkit.council import is_cli_backed_spec
+
+        # Route to the matching backend: harness spec -> CLI, GLM -> z.ai,
+        # anything else -> OpenAI.
+        if is_cli_backed_spec(model):
+            provider = "cli"
+        elif is_glm_model(model):
+            provider = "glm"
+        else:
+            provider = "openai"
         return cls(provider=provider, model=model)
 
     def _get_openai_client(self) -> Any:
@@ -237,6 +251,15 @@ class PromptImprover:
 
     def _call_provider(self, system_prompt: str, user_prompt: str) -> str:
         """Call the configured provider."""
+        if self.provider == "cli":
+            from researchkit.council import complete_via_spec
+
+            return complete_via_spec(
+                self.model or "codex",
+                system_prompt,
+                user_prompt,
+                label="improver.cli",
+            )
         if self.provider == "openai":
             return self._call_openai(system_prompt, user_prompt)
         elif self.provider == "gemini":

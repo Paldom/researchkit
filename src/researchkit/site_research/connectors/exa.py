@@ -10,6 +10,7 @@ import re
 from datetime import datetime
 from typing import Any
 
+from researchkit.council import is_cli_backed_spec
 from researchkit.network_retry import with_network_retry
 from researchkit.site_research.connectors.base import BaseSiteConnector
 from researchkit.site_research.types import (
@@ -397,6 +398,17 @@ Be specific and cite source numbers. Focus on information relevant to "{topic}".
 '''
 
         try:
+            if is_cli_backed_spec(self.gemini_model):
+                # site_summarizer may be a harness spec (codex:/agy:/grokcli:/
+                # claude:) — run the summary on the logged-in CLI, no API key.
+                from researchkit.council import complete_via_spec
+
+                return (
+                    complete_via_spec(
+                        self.gemini_model, "", prompt, label="exa.summarize.cli"
+                    )
+                    or "*No response from summarizer*"
+                )
             client = self._get_gemini_client()
             response = with_network_retry(
                 client.models.generate_content,

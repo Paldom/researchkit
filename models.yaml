@@ -14,10 +14,12 @@
 # - `grok: grokcli` or `grokcli:<model>` routes the Grok step through the
 #   Grok CLI's headless mode (`grok -p`, grok.com-subscription billing via
 #   `grok login` instead of XAI_API_KEY; `grok models` lists model ids).
-# CLI-backed specs apply to provider slots, council members, and the
-# summarizer slot (meta-summary; claude* specs there run under the default
-# $3 CLI budget — prefer codex/agy/grokcli). site_summarizer/improver take
-# plain API model ids.
+# CLI-backed specs work in EVERY model slot: providers, council members,
+# summarizer, site_summarizer, and improver (claude* specs in summary slots
+# run under the default $3 CLI budget — prefer codex/agy/grokcli there).
+# Two caveats: site_summarizer is high-volume (a CLI spec is slower than the
+# Gemini API), and a CLI site_summarizer for youtube only summarizes fetched
+# transcripts (Gemini's native video understanding needs the API).
 # - `claude: claude:<model>` is the canonical Claude spec (Claude Code CLI,
 #   Claude-subscription billing). The part after `claude:` goes to
 #   `claude --model` verbatim — an alias (`claude:opus`) or full id
@@ -137,8 +139,8 @@ presets:
       github: gpt-5.4-mini # unused
       glm: glm-5.2 # unused
       summarizer: codex:gpt-5.6-sol # meta-summary via CLI (no API key; codex handles long prompts reliably)
-      site_summarizer: gemini-3-flash-preview # unused (site research off in harness flows)
-      improver: gpt-5.4-mini # unused: the council handles improve/keywords
+      site_summarizer: codex:gpt-5.6-sol # CLI too (site research off by default in harness flows; connector SEARCH keys still apply if enabled)
+      improver: codex:gpt-5.6-sol # CLI too (keyword synthesis / improve-topic without OpenAI key)
     reasoning_effort: xhigh # codex/claude/grokcli honor it; agy has no effort control
     perplexity_search_type: fast
     tavily_search_depth: fast
@@ -154,3 +156,32 @@ presets:
     boost:
       enabled: true
       max_subprojects: 3 # harness sub-runs are slow; keep the fan-out tight
+
+  hybrid:
+    description: Harnesses + search APIs + site research combined — CLI subscriptions for reasoning, API endpoints for breadth
+    models:
+      openai: codex:gpt-5.6-sol # harness (ChatGPT subscription)
+      gemini: gemini-3.5-flash # API — keeps one fast native search-grounded provider
+      grok: grokcli:grok-build # harness (grok.com subscription)
+      perplexity: sonar # search API
+      tavily: tavily-search # search API
+      claude: claude:claude-opus-4-8 # harness (Claude subscription)
+      github: gpt-5.4-mini
+      glm: glm-5.2
+      summarizer: codex:gpt-5.6-sol # meta-summary on the CLI
+      site_summarizer: gemini-3-flash-preview # API: site research is high-volume, keep it fast/cheap
+      improver: codex:gpt-5.6-sol # keyword synthesis / improve-topic on the CLI
+    reasoning_effort: high
+    perplexity_search_type: fast
+    tavily_search_depth: advanced
+    claude_max_budget: 10.0
+    council:
+      members:
+        - claude:claude-fable-5@xhigh
+        - codex:gpt-5.6-sol@xhigh
+        - gemini-3.5-flash # API member — mixing works here too
+        - grokcli:grok-build
+      boss: claude:claude-opus-4-8@xhigh
+    boost:
+      enabled: false
+      max_subprojects: 4

@@ -173,6 +173,33 @@ class TestFetchInsights:
         assert len(raised_inside) == 1
 
 
+class TestCodexErrorDetail:
+    def test_stdout_jsonl_error_surfaced_when_stderr_empty(self) -> None:
+        # Codex reports usage-limit/auth errors as JSONL events on STDOUT
+        # with empty stderr; the failure message must carry them.
+        import subprocess
+
+        from researchkit.providers.codex_provider import CodexProvider
+
+        proc = subprocess.CompletedProcess(
+            ["codex"],
+            1,
+            stdout=(
+                '{"type":"turn.started"}\n'
+                '{"type":"error","message":"You have hit your usage limit."}\n'
+                '{"type":"turn.failed","error":{"message":"You have hit your usage limit."}}'
+            ),
+            stderr="",
+        )
+        assert "usage limit" in CodexProvider._error_detail(proc)
+        # stderr wins when present
+        proc2 = subprocess.CompletedProcess(["codex"], 1, stdout="x", stderr="boom")
+        assert CodexProvider._error_detail(proc2) == "boom"
+        # no output at all
+        proc3 = subprocess.CompletedProcess(["codex"], 1, stdout="", stderr="")
+        assert CodexProvider._error_detail(proc3) == "(no output)"
+
+
 class TestRouting:
     def test_factory_routes_grokcli_spec(self) -> None:
         from researchkit.plugin_api import ProviderContext

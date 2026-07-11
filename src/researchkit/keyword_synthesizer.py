@@ -328,6 +328,19 @@ class KeywordSynthesizer:
     # ------------------------------------------------------------------
 
     def _call_openai(self, system_prompt: str, user_prompt: str) -> str:
+        from researchkit.council import is_cli_backed_spec
+
+        if is_cli_backed_spec(self.model):
+            # improver slot may be a harness spec — synthesize keywords on
+            # the logged-in CLI, no API key.
+            from researchkit.council import complete_via_spec
+
+            return complete_via_spec(
+                self.model,
+                system_prompt,
+                f"{user_prompt}\n\nRespond ONLY with the JSON object.",
+                label="keyword_synthesizer.cli",
+            )
         from openai import OpenAI
 
         api_key = os.getenv("OPENAI_API_KEY")

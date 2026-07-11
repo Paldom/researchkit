@@ -194,6 +194,29 @@ class CodexProvider(BaseProvider):
                         opened.append(_clean_url(q))
         return text, opened
 
+    @staticmethod
+    def _error_detail(proc: subprocess.CompletedProcess[str]) -> str:
+        """Best human-readable failure reason for a failed ``codex exec``.
+
+        Codex reports errors (usage limits, auth) as ``{"type": "error"}`` /
+        ``turn.failed`` events in the stdout JSONL stream with an EMPTY
+        stderr — surfacing only stderr produced blank error messages.
+        """
+        if proc.stderr and proc.stderr.strip():
+            return proc.stderr.strip()[-500:]
+        for line in reversed(proc.stdout.splitlines()):
+            try:
+                evt = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(evt, dict):
+                continue
+            if isinstance(evt.get("error"), dict) and evt["error"].get("message"):
+                return str(evt["error"]["message"])[:500]
+            if evt.get("type") == "error" and evt.get("message"):
+                return str(evt["message"])[:500]
+        return proc.stdout.strip()[-300:] or "(no output)"
+
     def _exec(
         self, prompt: str, *, web_search: bool, label: str
     ) -> tuple[str, list[str]]:
@@ -214,7 +237,8 @@ class CodexProvider(BaseProvider):
             )
             if proc.returncode != 0:
                 raise RuntimeError(
-                    f"codex exec failed (exit {proc.returncode}): {proc.stderr[-500:]}"
+                    f"codex exec failed (exit {proc.returncode}): "
+                    f"{self._error_detail(proc)}"
                 )
             return proc
 

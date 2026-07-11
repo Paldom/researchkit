@@ -377,6 +377,129 @@ class TestCliOnlyCouncilFallback:
         assert called == []
 
 
+class TestSlotCliRouting:
+    """Every model slot accepts harness specs (hybrid/harness presets)."""
+
+    def test_improver_cli_spec_routes_via_router(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from researchkit.prompt_improver import PromptImprover
+
+        calls: list[str] = []
+
+        def fake(spec, system, user, *, label, claude_budget=3.0):
+            calls.append(spec)
+            return "improved topic"
+
+        monkeypatch.setattr(council_mod, "complete_via_spec", fake)
+        imp = PromptImprover(model="codex:gpt-5.6-sol")
+        assert imp.provider == "cli"  # spec overrides the default provider
+        assert imp._call_provider("s", "u") == "improved topic"
+        assert calls == ["codex:gpt-5.6-sol"]
+
+    def test_improver_from_system_config_cli(self) -> None:
+        from researchkit.prompt_improver import PromptImprover
+        from researchkit.system_config import SystemConfigManager
+
+        real = SystemConfigManager()
+
+        class HarnessMgr:
+            def resolve_effective_models(self, name=None):
+                return real.resolve_effective_models("harness")
+
+        imp = PromptImprover.from_system_config(HarnessMgr())  # type: ignore[arg-type]
+        assert imp.provider == "cli"
+        assert imp.model == "codex:gpt-5.6-sol"
+
+    def test_keyword_synthesizer_cli_spec(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from researchkit.keyword_synthesizer import KeywordSynthesizer
+
+        def fake(spec, system, user, *, label, claude_budget=3.0):
+            return json.dumps({"keywords": ["agent memory", "crypto signals"]})
+
+        monkeypatch.setattr(council_mod, "complete_via_spec", fake)
+        ks = KeywordSynthesizer(model="grokcli:grok-build")
+        out = ks.synthesize_from_provider_keywords(
+            "t", 7, {"gemini": ["agent memory", "other thing"]}
+        )
+        assert out == ["agent memory", "crypto signals"]
+
+    def test_exa_connector_summarize_cli_spec(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from researchkit.site_research.connectors.exa import ExaConnector
+        from researchkit.site_research.types import SiteItem
+
+        def fake(spec, system, user, *, label, claude_budget=3.0):
+            assert spec == "codex:gpt-5.6-sol"
+            return "## Key Themes\n- summarized on CLI"
+
+        monkeypatch.setattr(council_mod, "complete_via_spec", fake)
+        conn = ExaConnector(api_key="x", gemini_model="codex:gpt-5.6-sol")
+        items = [
+            SiteItem(url="https://a.test/1", title="A", site="exa", query="q"),
+            SiteItem(url="https://a.test/2", title="B", site="exa", query="q"),
+        ]
+        out = conn.summarize_batch("topic", items)
+        assert "summarized on CLI" in out
+
+    def test_github_improver_cli_spec(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from researchkit.providers.github_provider import GitHubProvider
+
+        def fake(spec, system, user, *, label, claude_budget=3.0):
+            assert spec == "claude:claude-opus-4-8"
+            return "- **summary bullet**"
+
+        monkeypatch.setattr(council_mod, "complete_via_spec", fake)
+        gh = GitHubProvider(improver_model="claude:claude-opus-4-8")
+        assert gh.summarize_result("raw text", "topic") == "- **summary bullet**"
+
+    def test_hybrid_preset_resolves_mixed(self) -> None:
+        from researchkit.system_config import SystemConfigManager
+
+        em = SystemConfigManager().resolve_effective_models("hybrid")
+        assert is_cli_backed_spec(em.openai) and is_cli_backed_spec(em.grok)
+        assert not is_cli_backed_spec(em.gemini)  # API stays API
+        assert not is_cli_backed_spec(em.perplexity)
+        assert is_cli_backed_spec(em.summarizer)
+        assert is_cli_backed_spec(em.improver)
+        assert not is_cli_backed_spec(em.site_summarizer)  # volume slot on API
+        # harness preset is now fully CLI on every LLM slot
+        emh = SystemConfigManager().resolve_effective_models("harness")
+        for spec in (emh.summarizer, emh.site_summarizer, emh.improver):
+            assert is_cli_backed_spec(spec), spec
+
+    def test_preset_flag_reaches_service(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured: dict[str, Any] = {}
+
+        class FakeService:
+            def create_and_run_project(self, **kwargs: Any):
+                captured.update(kwargs)
+                raise KeyboardInterrupt  # stop before any output handling
+
+        args = argparse.Namespace(
+            topic="t",
+            preset="hybrid",
+            boost=False,
+            verbose=False,
+            log_level="INFO",
+            keywords=[],
+            days=7,
+            providers=None,
+            sources=None,
+            no_raw=False,
+            no_site_research=False,
+            site_research_sites=None,
+            materials=False,
+            materials_limit=25,
+            ingest=None,
+        )
+        assert cli.cmd_instant(args, FakeService(), "t") == 130
+        assert captured["preset_name"] == "hybrid"
+
+
 class TestCmdCouncilOutput:
     def test_prints_synthesis_and_members(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

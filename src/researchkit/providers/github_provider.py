@@ -10,6 +10,7 @@ from typing import Any
 import requests
 from openai import OpenAI
 
+from researchkit.council import is_cli_backed_spec
 from researchkit.network_retry import with_network_retry
 from researchkit.providers.base import (
     BaseProvider,
@@ -386,7 +387,7 @@ class GitHubProvider(BaseProvider):
         openai_text: str,
     ) -> str:
         """Use the improver model to analyze relevance and create a summary."""
-        if not self.openai_api_key:
+        if not self.openai_api_key and not is_cli_backed_spec(self.improver_model):
             return openai_text or self._format_fallback(sources)
 
         # Build context from all collected data
@@ -431,42 +432,54 @@ class GitHubProvider(BaseProvider):
         combined_context = "\n\n".join(context_parts)
 
         try:
+            messages: list[dict[str, str]] = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a GitHub research analyst. You receive raw search "
+                        "results from GitHub (repositories, issues, discussions) and "
+                        "a web search of github.com. Your job is to:\n\n"
+                        "1. Filter out irrelevant results\n"
+                        "2. Categorize the relevant ones into:\n"
+                        "   - **Key Repositories** — most relevant/popular repos\n"
+                        "   - **Notable Discussions & Issues** — active community threads\n"
+                        "   - **Documentation & Guides** — READMEs, wikis, guides\n"
+                        "   - **Related Projects** — tangentially relevant repos/tools\n"
+                        "3. For each item write: [title](url) — brief description\n"
+                        "4. End with a 3-5 sentence synthesis of what GitHub activity "
+                        "reveals about this topic\n\n"
+                        "Include ALL relevant links. Be thorough but skip clearly "
+                        "irrelevant results. Use markdown formatting."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Analyze these GitHub search results for relevance to: "
+                        f"{topic}\n"
+                        f"Time window: last {days} days\n\n"
+                        f"{combined_context}"
+                    ),
+                },
+            ]
+            if is_cli_backed_spec(self.improver_model):
+                # improver slot may be a harness spec — run on the
+                # logged-in CLI, no API key.
+                from researchkit.council import complete_via_spec
+
+                return complete_via_spec(
+                    self.improver_model,
+                    str(messages[0]["content"]),
+                    str(messages[1]["content"]),
+                    label="github.cli:analyze",
+                )
             client = self._get_client()
             response = with_network_retry(
                 client.chat.completions.create,
                 label="github.openai.chat.completions:analyze",
                 provider=self.provider_name,
                 model=self.improver_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a GitHub research analyst. You receive raw search "
-                            "results from GitHub (repositories, issues, discussions) and "
-                            "a web search of github.com. Your job is to:\n\n"
-                            "1. Filter out irrelevant results\n"
-                            "2. Categorize the relevant ones into:\n"
-                            "   - **Key Repositories** — most relevant/popular repos\n"
-                            "   - **Notable Discussions & Issues** — active community threads\n"
-                            "   - **Documentation & Guides** — READMEs, wikis, guides\n"
-                            "   - **Related Projects** — tangentially relevant repos/tools\n"
-                            "3. For each item write: [title](url) — brief description\n"
-                            "4. End with a 3-5 sentence synthesis of what GitHub activity "
-                            "reveals about this topic\n\n"
-                            "Include ALL relevant links. Be thorough but skip clearly "
-                            "irrelevant results. Use markdown formatting."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            f"Analyze these GitHub search results for relevance to: "
-                            f"{topic}\n"
-                            f"Time window: last {days} days\n\n"
-                            f"{combined_context}"
-                        ),
-                    },
-                ],
+                messages=messages,
                 max_completion_tokens=3000,
             )
             return response.choices[0].message.content or ""
@@ -548,40 +561,52 @@ class GitHubProvider(BaseProvider):
 
     def summarize_result(self, raw_text: str, topic: str) -> str:
         """Summarize the GitHub analysis into key bullet points."""
-        if not self.openai_api_key:
+        if not self.openai_api_key and not is_cli_backed_spec(self.improver_model):
             return raw_text[:500] + "..." if len(raw_text) > 500 else raw_text
 
         try:
+            messages: list[dict[str, str]] = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a precise summarizer. Distill GitHub research "
+                        "reports into their essential points.\n\n"
+                        "Rules:\n"
+                        "- Extract 5-8 key bullet points\n"
+                        "- Preserve repository names, URLs, and star counts\n"
+                        "- Keep links in [title](url) format\n"
+                        "- Be concise but preserve critical details"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Summarize this GitHub research report into 5-8 key "
+                        f"bullet points:\n\n"
+                        f"**Topic:** {topic}\n\n---\n{raw_text}\n---\n\n"
+                        f"Format as a markdown bullet list. Start each bullet "
+                        f"with a bold label when appropriate."
+                    ),
+                },
+            ]
+            if is_cli_backed_spec(self.improver_model):
+                # improver slot may be a harness spec — run on the
+                # logged-in CLI, no API key.
+                from researchkit.council import complete_via_spec
+
+                return complete_via_spec(
+                    self.improver_model,
+                    str(messages[0]["content"]),
+                    str(messages[1]["content"]),
+                    label="github.cli:summarize",
+                )
             client = self._get_client()
             response = with_network_retry(
                 client.chat.completions.create,
                 label="github.openai.chat.completions:summarize",
                 provider=self.provider_name,
                 model=self.improver_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a precise summarizer. Distill GitHub research "
-                            "reports into their essential points.\n\n"
-                            "Rules:\n"
-                            "- Extract 5-8 key bullet points\n"
-                            "- Preserve repository names, URLs, and star counts\n"
-                            "- Keep links in [title](url) format\n"
-                            "- Be concise but preserve critical details"
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            f"Summarize this GitHub research report into 5-8 key "
-                            f"bullet points:\n\n"
-                            f"**Topic:** {topic}\n\n---\n{raw_text}\n---\n\n"
-                            f"Format as a markdown bullet list. Start each bullet "
-                            f"with a bold label when appropriate."
-                        ),
-                    },
-                ],
+                messages=messages,
                 max_completion_tokens=1000,
             )
             return response.choices[0].message.content or ""

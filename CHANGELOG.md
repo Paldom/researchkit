@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Hybrid harness/API runs: every model slot now accepts CLI-backed specs —
+  `site_summarizer` (exa/medium/youtube connectors summarize on the
+  logged-in CLI; youtube summarizes fetched transcripts, video
+  understanding stays on the Gemini API), `improver`/keyword synthesis,
+  and the GitHub provider's improver, joining the summarizer and provider
+  slots. New `hybrid` preset (CLI subscriptions for reasoning, API
+  endpoints for breadth) and a `--preset` flag on classic create/instant
+  runs. The harness preset is now fully CLI on every LLM slot, and
+  `plugin_api` exposes `complete_via_spec`/`is_cli_backed_spec` so
+  connector plugins can route the same way.
+
 - Canonical `claude:<model>` spec: the Claude slot and council members now
   follow the same `<harness>:<model>[@<effort>]` grammar as
   `codex:`/`agy:`/`grokcli:` (e.g. `claude:claude-opus-4-8@xhigh`,

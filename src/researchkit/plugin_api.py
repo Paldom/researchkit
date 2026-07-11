@@ -28,6 +28,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from researchkit.council import complete_via_spec, is_cli_backed_spec
 from researchkit.network_retry import with_network_retry
 from researchkit.providers.base import (
     BaseProvider,
@@ -60,6 +61,8 @@ __all__ = [
     "Source",
     "SourceType",
     "TopicRelevance",
+    "complete_via_spec",
+    "is_cli_backed_spec",
     "provider_http_timeout",
     "with_network_retry",
 ]

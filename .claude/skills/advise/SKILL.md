@@ -45,8 +45,9 @@ supports it).
 
 ## Failure modes
 
-- A harness not installed or not logged in fails that member only; exit code
-  is 1 only when ALL members fail.
+- A harness that is not installed, not logged in, or **out of subscription
+  quota** ("usage limit", "Individual quota reached") fails that member
+  only — the reason prints inline; exit code is 1 only when ALL members fail.
 - Requires the CLIs to be signed in (`claude`, `codex`, `agy`, `grok login`) —
   there is no API-key fallback by design.
 - Expect ~20–60 s wall clock (parallel; slowest member dominates).

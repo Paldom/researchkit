@@ -55,10 +55,13 @@ Rules:
 - **`@<effort>` suffix** (council members and the boss): per-member
   reasoning effort where the CLI supports it — `codex:gpt-5.6-sol@xhigh`,
   `claude:claude-opus-4-8@xhigh`. Antigravity has no effort control.
-- CLI-backed specs work in the **provider slots** (openai/gemini/grok/claude),
-  **council members/boss**, and the **summarizer** slot (prefer
-  codex/agy/grokcli there; `claude:` runs under the default $3 CLI budget).
-  `site_summarizer`/`improver` take plain API ids.
+- CLI-backed specs work in **every slot**: provider slots, council
+  members/boss, `summarizer`, `site_summarizer`, and `improver` (prefer
+  codex/agy/grokcli in summary slots; `claude:` runs under the default $3
+  CLI budget). Caveats: `site_summarizer` is high-volume — a CLI spec is
+  slower than the Gemini API — and a CLI `site_summarizer` for the youtube
+  connector only summarizes fetched transcripts (native video understanding
+  needs the Gemini API).
 - Keys `models:` doesn't recognize as built-in slots become **plugin model
   slots** (e.g. `youtube: gemini-3.5-flash`); a sibling `plugins:` block
   passes per-plugin option dicts.
@@ -70,6 +73,10 @@ Rules:
   tradeoffs (API keys).
 - `harness` — subscription-only: every step on logged-in CLIs, no API keys.
   Used by `advise`, `council`, `explore`, and the UI's "Harness only" mode.
+- `hybrid` — CLI subscriptions for reasoning (codex/grokcli/claude slots,
+  summarizer, improver) + API endpoints for breadth (gemini, perplexity,
+  tavily, exa, site research). Select per run: `--preset hybrid` (works on
+  classic runs too, not just `explore`).
 
 Precedence: per-run `--preset` > the `active_preset` in the sidecar state
 (set via the UI or `models.yaml`). A `models.yaml` in your current working

@@ -495,6 +495,14 @@ def _add_research_args(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--preset",
+        default=None,
+        help=(
+            "Model preset from models.yaml for this run (default: the active "
+            "preset; e.g. --preset hybrid)"
+        ),
+    )
+    parser.add_argument(
         "--boost",
         action="store_true",
         help=(
@@ -589,6 +597,7 @@ def cmd_create(args, service: SocialResearchService) -> int:
         providers=list(args.providers),
         sources=list(args.sources),
         include_raw=not args.no_raw,
+        preset_name=getattr(args, "preset", None),
         site_research_enabled=not getattr(args, "no_site_research", False),
         site_research_sites=getattr(args, "site_research_sites", None),
     )
@@ -1208,7 +1217,8 @@ def _cmd_instant_boosted(args, service: SocialResearchService, topic: str) -> in
         result = service.create_and_run_boosted(
             topic=topic,
             days=getattr(args, "days", 7),
-            preset_name=getattr(args, "preset_name", None),
+            preset_name=getattr(args, "preset_name", None)
+            or getattr(args, "preset", None),
             providers=getattr(args, "providers", None),
             sources=getattr(args, "sources", None),
             include_raw=not getattr(args, "no_raw", False),
@@ -1300,6 +1310,7 @@ def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
             providers=getattr(args, "providers", None),
             sources=getattr(args, "sources", None),
             include_raw=not getattr(args, "no_raw", False),
+            preset_name=getattr(args, "preset", None),
             site_research_enabled=not getattr(args, "no_site_research", False),
             site_research_sites=getattr(args, "site_research_sites", None),
             progress=progress,
