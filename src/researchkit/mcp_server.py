@@ -76,7 +76,7 @@ def research(
         topic: What to research, e.g. "developer sentiment on Bun vs Node".
         days: Lookback window in days for recency filtering (default 7).
         providers: Providers to query; defaults to openai, gemini, grok and
-            perplexity. Others available: tavily, claude, github, glm.
+            perplexity. Others available: tavily, claude, github, glm, kimi.
         preset: models.yaml preset name (default: the active preset).
 
     Returns:

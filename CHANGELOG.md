@@ -9,6 +9,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Materials frontmatter carries a `content_digest` (sha256-16 of the body,
+  written by the single shared material writer — the fetched-page path was
+  routed through it too): downstream knowledge tools get content lineage
+  and a second dedup key beyond the URL. Raw provider `## ` headings are
+  demoted to `#### ` in report.md so instructed `## Sources` sections can't
+  become junk chunks for `##`-splitting ingesters (brainkit).
+
+- `researchkit doctor` — preflight the active (or `--preset`) configuration
+  before any spend: CLI harnesses installed and logged in, pinned model ids
+  still listed by `grok models` / `agy models` (whole-token/whole-line
+  matching — a dead `grok-4` pin can't false-pass against `grok-4.5`), API
+  keys present per slot (missing keys and missing provider CLIs warn —
+  providers skip gracefully; dead model ids and pipeline/council slots hard
+  fail), binary-only CLIs labeled "auth not verifiable pre-spend". No
+  tokens are spent; exits 1 on hard failures. Motivated by three silent
+  model-id drift breakages in one week (review + backlog P1).
+- Typo guard on instant mode: a single bare token near a subcommand name
+  (`researchkit docter`) now refuses with "did you mean" instead of
+  silently launching a PAID research run on the typo as the topic (this
+  bit `doctor` live before it was registered); multi-word topics are
+  unaffected, and a regression test pins the subcommand registry to the
+  registered subparsers.
+- Citation-yield hardening: the codex/grokcli harness research prompts now
+  request an explicit `## Sources` markdown-link list (the agy/kimi
+  providers already did), and a provider that succeeds with ZERO extracted
+  sources is loudly logged and flagged to the meta-summarizer via the
+  TRUSTED prompt channel, outside the untrusted data block — an in-band
+  note would be both ignorable under the data-not-instructions rule and
+  forgeable by injected web content (advise-max validation finding).
+
+- Kimi (Moonshot AI) provider, in both flavors. **API**: new `kimi` slot
+  backed by the OpenAI-compatible Moonshot endpoint with Moonshot's
+  official web-search tool — the Formula API (`web_search` tool calls
+  executed via `POST /formulas/moonshot%2Fweb-search/fibers`, the
+  `encrypted_output` passed back as the tool message; the deprecated
+  `$web_search` builtin echo feeds the model no content and is not used);
+  sources recovered from inline markdown links since Kimi returns no
+  citation array, `KIMI_API_KEY`/`MOONSHOT_API_KEY` auth, `KIMI_BASE_URL` override
+  for the China platform or the Kimi Code subscription endpoint
+  (`api.kimi.com/coding/v1`, with automatic model-id dialect translation
+  like `kimi-k3` → `k3`), and no sampling params (current Kimi models
+  reject overrides). **Kimi Code CLI**: `kimicli[:<alias>]` specs route the
+  kimi slot, council members, advise/council/explore, and any model slot
+  through `kimi -p --output-format stream-json` on kimi.com-subscription
+  billing — the fifth harness alongside claude/codex/agy/grokcli. Kimi
+  usable as improver and summarizer; keys scrubbed from sibling CLI
+  subprocess envs.
+
+### Fixed
+
+- Harness preset model ids that had gone stale: the Grok CLI no longer
+  serves `grok-build` (now `grokcli:grok-4.5`) and Antigravity now names
+  models by display name (`agy:Gemini 3.5 Flash (High)` — effort is part of
+  the id, `@high` suffixes on bare ids are ignored). Presets, council
+  defaults, docs, and skills updated; both failures previously killed those
+  members in every advise/council/explore run.
+- `GLM_API_KEY`/`ZHIPUAI_API_KEY` (and the new Kimi keys) added to the
+  subprocess env scrub list — they were exfiltratable into research CLI
+  child processes.
+
 - Hybrid harness/API runs: every model slot now accepts CLI-backed specs —
   `site_summarizer` (exa/medium/youtube connectors summarize on the
   logged-in CLI; youtube summarizes fetched transcripts, video

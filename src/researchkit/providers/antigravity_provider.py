@@ -7,8 +7,9 @@ query. The draw is billing: ``agy`` runs on the Google/Antigravity sign-in
 session rather than a ``GEMINI_API_KEY``.
 
 Selecting it: set the ``gemini`` model in ``models.yaml`` to ``agy`` /
-``antigravity`` (agy default model) or ``agy:<model>`` (e.g.
-``agy:gemini-3.5-flash``). The aggregator routes the Gemini step to this provider
+``antigravity`` (agy default model) or ``agy:<model>``. Current agy model ids
+are display names — ``agy models`` lists them, e.g.
+``agy:Gemini 3.5 Flash (High)``. The aggregator routes the Gemini step to this provider
 whenever :func:`is_antigravity_model` matches. It still reports
 ``provider_name = "gemini"`` so it slots into the existing "gemini" provider
 slot; the run is differentiated by its ``model`` field, reported as
@@ -86,8 +87,8 @@ def is_antigravity_model(model: str | None) -> bool:
 def antigravity_underlying_model(model: str | None) -> str | None:
     """Extract the underlying model from an ``agy`` spec.
 
-    ``"agy:gemini-3.5-flash"`` -> ``"gemini-3.5-flash"``; ``"agy"`` -> ``None``
-    (agy default model).
+    ``"agy:Gemini 3.5 Flash (High)"`` -> ``"Gemini 3.5 Flash (High)"``;
+    ``"agy"`` -> ``None`` (agy default model).
     """
     if not model:
         return None

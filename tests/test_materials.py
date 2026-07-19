@@ -544,3 +544,36 @@ def test_http_and_cached_origins_recorded(tmp_path: Path) -> None:
     with patch.object(materials, "safe_fetch_text", side_effect=fetch):
         second = download_materials(project, delay=0)
     assert second["entries"][0]["origin"] == "cached"
+
+
+def test_material_frontmatter_carries_content_digest(tmp_path: Path) -> None:
+    # Content lineage for downstream knowledge tools: same body -> same
+    # digest; changed body -> changed digest (second dedup key beyond URL).
+    from researchkit.materials import _write_material, collect_source_refs
+
+    payload = {
+        "topic": "t",
+        "provider_results": [
+            {
+                "provider": "openai",
+                "sources": [{"url": "https://d.test/a", "title": "A"}],
+            }
+        ],
+    }
+    ref = collect_source_refs(payload)[0]
+    p1, p2, p3 = (tmp_path / f"{i}.md" for i in range(3))
+    _write_material(p1, ref, payload, body="same body")
+    _write_material(p2, ref, payload, body="same body")
+    _write_material(p3, ref, payload, body="different body")
+
+    def digest_of(path: Path) -> str:
+        line = next(
+            line
+            for line in path.read_text().splitlines()
+            if line.startswith("content_digest:")
+        )
+        return line.split(":", 1)[1].strip()
+
+    assert digest_of(p1) == digest_of(p2)
+    assert digest_of(p1) != digest_of(p3)
+    assert len(digest_of(p1)) == 16

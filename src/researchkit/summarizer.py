@@ -16,6 +16,7 @@ from researchkit.prompts import (
 )
 from researchkit.providers.base import ProviderResult
 from researchkit.providers.glm_provider import is_glm_model
+from researchkit.providers.kimi_provider import is_kimi_model
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,8 @@ class Summarizer:
         # GLM models are served via the z.ai OpenAI-compatible endpoint rather
         # than the Gemini SDK, so callers can use GLM as the summarizer model.
         self._is_glm = is_glm_model(self.model)
+        # Kimi models likewise route to the Moonshot OpenAI-compatible endpoint.
+        self._is_kimi = is_kimi_model(self.model)
         # CLI-backed specs (codex:/agy:/grokcli:/claude*) route through the
         # logged-in harness instead of any API — the harness (subscription-only)
         # preset sets the summarizer slot to one of these.
@@ -67,6 +70,10 @@ class Summarizer:
                 from researchkit.providers.glm_provider import make_zai_client
 
                 self._client = make_zai_client()
+            elif self._is_kimi:
+                from researchkit.providers.kimi_provider import make_kimi_client
+
+                self._client = make_kimi_client()
             else:
                 try:
                     from google import genai
@@ -104,6 +111,20 @@ class Summarizer:
                 messages=[{"role": "user", "content": prompt}],
                 temperature=temperature,
                 max_tokens=max_output_tokens,
+            )
+            return response.choices[0].message.content or ""
+        if self._is_kimi:
+            from researchkit.providers.kimi_provider import resolve_kimi_model
+
+            # No temperature/max_tokens: Kimi models run fixed sampling params
+            # (overrides rejected) and spend thinking tokens from the same
+            # output budget, so a small cap truncates the summary.
+            response = with_network_retry(
+                client.chat.completions.create,
+                label=label,
+                provider="summarizer",
+                model=resolve_kimi_model(self.model),
+                messages=[{"role": "user", "content": prompt}],
             )
             return response.choices[0].message.content or ""
 
@@ -247,7 +268,10 @@ class Summarizer:
                 f"## {r.provider}\n{r.raw_text[:1000]}" for r in successful_results
             )
 
-        # Build the providers data
+        # Build the providers data. A provider that returned prose but ZERO
+        # extractable sources is flagged via the TRUSTED prompt channel
+        # (uncited_providers below) — an in-band note inside the untrusted
+        # block would be both ignorable and forgeable by injected content.
         providers_data = [
             {
                 "provider": r.provider,
@@ -256,6 +280,7 @@ class Summarizer:
             }
             for r in successful_results
         ]
+        uncited_providers = [r.provider for r in successful_results if not r.sources]
 
         system_prompt = get_meta_summary_system_prompt()
         user_prompt = get_meta_summary_user_prompt(
@@ -266,6 +291,7 @@ class Summarizer:
             failed_providers=[r.provider for r in failed_results]
             if failed_results
             else None,
+            uncited_providers=uncited_providers or None,
         )
 
         try:

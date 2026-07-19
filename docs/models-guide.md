@@ -13,9 +13,10 @@ presets:
     description: One line shown in the CLI/UI
     models:
       openai: gpt-5.4-mini # provider slots — one per provider
-      gemini: agy:gemini-3.5-flash
-      grok: grokcli:grok-build
+      gemini: "agy:Gemini 3.5 Flash (High)"
+      grok: grokcli:grok-4.5
       claude: claude:claude-sonnet-4-6
+      kimi: kimicli:kimi-code/k3
       summarizer: gemini-3.5-flash # cross-provider meta-summary
       site_summarizer: gemini-3-flash-preview
       improver: gpt-5.4-mini # topic improvement + keyword generation
@@ -37,14 +38,15 @@ A slot or council member is either a **plain API model id** or a **CLI-backed
 spec** that routes the step through a logged-in coding-agent CLI
 (subscription billing, no API key):
 
-| Spec                | Backend                      | Auth                | Example                                                |
-| ------------------- | ---------------------------- | ------------------- | ------------------------------------------------------ |
-| plain id            | provider API                 | API key from `.env` | `gpt-5.4-mini`, `grok-4.3`                             |
-| `codex[:<model>]`   | Codex CLI (`codex exec`)     | ChatGPT login       | `codex:gpt-5.6-sol`                                    |
-| `agy[:<model>]`     | Antigravity CLI              | Google account      | `agy:gemini-3.5-flash`                                 |
-| `grokcli[:<model>]` | Grok CLI (`grok -p`)         | `grok login`        | `grokcli:grok-build`                                   |
-| `claude[:<model>]`  | Claude Code CLI              | Claude subscription | `claude:opus`, `claude:claude-sonnet-4-6`              |
-| `deep[:<model>]`    | Claude Code `/deep-research` | Claude subscription | `deep:claude-sonnet-5` (opt-in only — slow, expensive) |
+| Spec                | Backend                      | Auth                | Example                                                     |
+| ------------------- | ---------------------------- | ------------------- | ----------------------------------------------------------- |
+| plain id            | provider API                 | API key from `.env` | `gpt-5.4-mini`, `grok-4.3`                                  |
+| `codex[:<model>]`   | Codex CLI (`codex exec`)     | ChatGPT login       | `codex:gpt-5.6-sol`                                         |
+| `agy[:<model>]`     | Antigravity CLI              | Google account      | `agy:Gemini 3.5 Flash (High)` (`agy models` lists ids)      |
+| `grokcli[:<model>]` | Grok CLI (`grok -p`)         | `grok login`        | `grokcli:grok-4.5` (`grok models` lists ids)                |
+| `kimicli[:<alias>]` | Kimi Code CLI (`kimi -p`)    | `kimi login`        | `kimicli:kimi-code/k3`, `kimicli:kimi-code/kimi-for-coding` |
+| `claude[:<model>]`  | Claude Code CLI              | Claude subscription | `claude:opus`, `claude:claude-sonnet-4-6`                   |
+| `deep[:<model>]`    | Claude Code `/deep-research` | Claude subscription | `deep:claude-sonnet-5` (opt-in only — slow, expensive)      |
 
 Rules:
 
@@ -54,7 +56,8 @@ Rules:
   remain accepted as the legacy spelling of `claude:<id>`.
 - **`@<effort>` suffix** (council members and the boss): per-member
   reasoning effort where the CLI supports it — `codex:gpt-5.6-sol@xhigh`,
-  `claude:claude-opus-4-8@xhigh`. Antigravity has no effort control.
+  `claude:claude-opus-4-8@xhigh`. Antigravity bakes effort into the model id
+  (`(High)`); Kimi Code takes it from its own config.toml `[thinking]`.
 - CLI-backed specs work in **every slot**: provider slots, council
   members/boss, `summarizer`, `site_summarizer`, and `improver` (prefer
   codex/agy/grokcli in summary slots; `claude:` runs under the default $3

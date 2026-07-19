@@ -14,6 +14,10 @@
 # - `grok: grokcli` or `grokcli:<model>` routes the Grok step through the
 #   Grok CLI's headless mode (`grok -p`, grok.com-subscription billing via
 #   `grok login` instead of XAI_API_KEY; `grok models` lists model ids).
+# - `kimi: kimicli` or `kimicli:<alias>` routes the Kimi step through the
+#   Kimi Code CLI's headless mode (`kimi -p`, kimi.com-subscription billing
+#   via `kimi login` instead of MOONSHOT_API_KEY/KIMI_API_KEY; aliases like
+#   `kimi-code/k3` come from the CLI's config.toml).
 # CLI-backed specs work in EVERY model slot: providers, council members,
 # summarizer, site_summarizer, and improver (claude* specs in summary slots
 # run under the default $3 CLI budget — prefer codex/agy/grokcli there).
@@ -48,6 +52,7 @@ presets:
       claude: claude:claude-sonnet-4-6 # plain two-query mode; `deep:<model>` opt-in (see header)
       github: gpt-5.4-mini
       glm: glm-5.2
+      kimi: kimi-k2.6 # Moonshot API (opt-in via --providers kimi)
       summarizer: gemini-3.5-flash # cross-provider meta-summary
       site_summarizer: gemini-3-flash-preview # site-research summarization
       improver: gpt-5.4-mini # topic improvement + keyword generation
@@ -81,6 +86,7 @@ presets:
       claude: claude:claude-haiku-4-5
       github: gpt-5.4-mini
       glm: glm-4.7-flashx
+      kimi: kimi-k2.6
       summarizer: gemini-3-flash-preview
       site_summarizer: gemini-3-flash-preview
       improver: gpt-5.4-nano
@@ -100,6 +106,7 @@ presets:
       claude: claude:claude-sonnet-4-6
       github: gpt-5.4-mini
       glm: glm-4.7
+      kimi: kimi-k2.6
       summarizer: gemini-3.5-flash
       site_summarizer: gemini-3-flash-preview
       improver: gpt-5.4-mini
@@ -119,6 +126,7 @@ presets:
       claude: claude:claude-sonnet-4-6
       github: gpt-5.4-mini
       glm: glm-5.2
+      kimi: kimi-k2.6
       summarizer: gemini-3.5-flash
       site_summarizer: gemini-3-flash-preview
       improver: gpt-5.4-mini
@@ -128,16 +136,17 @@ presets:
     claude_max_budget: 5.0
 
   harness:
-    description: Subscription-only — every step runs on logged-in CLI harnesses (Codex, Antigravity, Grok CLI, Claude Code); no API keys. Used by `advise`/`council`/`explore` and the UI's "harness only" mode.
+    description: Subscription-only — every step runs on logged-in CLI harnesses (Codex, Antigravity, Grok CLI, Kimi Code CLI, Claude Code); no API keys. Used by `advise`/`council`/`explore` and the UI's "harness only" mode.
     models:
       openai: codex:gpt-5.6-sol # Codex CLI, ChatGPT-subscription billing
-      gemini: agy:gemini-3.5-flash # Antigravity CLI, Google account
-      grok: grokcli:grok-build # Grok CLI, grok.com subscription
+      gemini: "agy:Gemini 3.5 Flash (High)" # Antigravity CLI, Google account (`agy models` ids are display names)
+      grok: grokcli:grok-4.5 # Grok CLI, grok.com subscription (`grok models` lists ids)
       perplexity: sonar # unused: not in the harness provider set
       tavily: tavily-search # unused
       claude: claude:claude-opus-4-8 # Claude Code CLI, Claude subscription
       github: gpt-5.4-mini # unused
       glm: glm-5.2 # unused
+      kimi: kimicli:kimi-code/k3 # Kimi Code CLI, kimi.com subscription
       summarizer: codex:gpt-5.6-sol # meta-summary via CLI (no API key; codex handles long prompts reliably)
       site_summarizer: codex:gpt-5.6-sol # CLI too (site research off by default in harness flows; connector SEARCH keys still apply if enabled)
       improver: codex:gpt-5.6-sol # CLI too (keyword synthesis / improve-topic without OpenAI key)
@@ -150,8 +159,9 @@ presets:
       members:
         - claude:claude-opus-4-8@xhigh
         - codex:gpt-5.6-sol@xhigh
-        - agy:gemini-3.5-flash@high
-        - grokcli:grok-build
+        - "agy:Gemini 3.5 Flash (High)" # effort is part of the agy model id now
+        - grokcli:grok-4.5
+        - kimicli:kimi-code/k3 # effort comes from the CLI's config.toml [thinking]
       boss: claude:claude-opus-4-8@xhigh
     boost:
       enabled: true
@@ -162,12 +172,13 @@ presets:
     models:
       openai: codex:gpt-5.6-sol # harness (ChatGPT subscription)
       gemini: gemini-3.5-flash # API — keeps one fast native search-grounded provider
-      grok: grokcli:grok-build # harness (grok.com subscription)
+      grok: grokcli:grok-4.5 # harness (grok.com subscription)
       perplexity: sonar # search API
       tavily: tavily-search # search API
       claude: claude:claude-opus-4-8 # harness (Claude subscription)
       github: gpt-5.4-mini
       glm: glm-5.2
+      kimi: kimicli:kimi-code/kimi-for-coding # harness (kimi.com subscription; K2.7, faster than k3)
       summarizer: codex:gpt-5.6-sol # meta-summary on the CLI
       site_summarizer: gemini-3-flash-preview # API: site research is high-volume, keep it fast/cheap
       improver: codex:gpt-5.6-sol # keyword synthesis / improve-topic on the CLI
@@ -180,7 +191,8 @@ presets:
         - claude:claude-fable-5@xhigh
         - codex:gpt-5.6-sol@xhigh
         - gemini-3.5-flash # API member — mixing works here too
-        - grokcli:grok-build
+        - grokcli:grok-4.5
+        - kimicli:kimi-code/kimi-for-coding
       boss: claude:claude-opus-4-8@xhigh
     boost:
       enabled: false

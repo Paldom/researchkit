@@ -80,6 +80,7 @@ def _effective(**overrides: object) -> EffectiveModels:
         claude="claude-sonnet-4-6",
         github="gpt-5.4-mini",
         glm="glm-5.2",
+        kimi="kimi-k2.6",
         summarizer="gemini-3.5-flash",
         site_summarizer="gemini-3-flash-preview",
         improver="gpt-5.4-mini",

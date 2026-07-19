@@ -13,7 +13,7 @@ const DAY_PRESETS = [7, 30, 90, 180, 365]
 const SOURCE_TABS = ['Files', 'Links', 'Text'] as const
 type SourceTab = (typeof SOURCE_TABS)[number]
 
-const HARNESS_PROVIDERS = ['openai', 'gemini', 'grok', 'claude']
+const HARNESS_PROVIDERS = ['openai', 'gemini', 'grok', 'claude', 'kimi']
 
 const FILE_PATTERN = /\.(md|markdown|txt|rst)$/i
 const MAX_FILES = 10

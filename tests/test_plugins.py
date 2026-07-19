@@ -206,6 +206,7 @@ def test_plugin_provider_constructs_through_aggregator(fake_eps: list) -> None:
         claude="c",
         github="h",
         glm="l",
+        kimi="m",
         summarizer="s",
         site_summarizer="ss",
         improver="i",

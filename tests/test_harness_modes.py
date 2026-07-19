@@ -38,13 +38,23 @@ class TestEffortSpec:
             "claude:claude-opus-4-8@xhigh",
             "claude-opus-4-8@xhigh",  # legacy spelling still routes to the CLI
             "codex:gpt-5.6-sol@xhigh",
-            "agy:gemini-3.5-flash@high",
-            "grokcli:grok-build",
+            "agy:Gemini 3.5 Flash (High)",
+            "grokcli:grok-4.5",
+            "kimicli:kimi-code/k3",
+            "kimicli",
             "codex",
             "claude",
         ):
             assert is_cli_backed_spec(spec), spec
-        for spec in ("gpt-5.5", "gemini-3.5-flash", "grok-4.3", "sonar", None, ""):
+        for spec in (
+            "gpt-5.5",
+            "gemini-3.5-flash",
+            "grok-4.3",
+            "sonar",
+            "kimi-k2.6",  # plain Kimi API id, not the CLI spec
+            None,
+            "",
+        ):
             assert not is_cli_backed_spec(spec), spec
 
 
@@ -265,7 +275,7 @@ class TestExploreCommand:
         assert cli.cmd_explore(args, service=None) == 0
         assert captured["topic"] == "agent memory"
         assert captured["boost"] is True
-        assert captured["providers"] == ["openai", "gemini", "grok", "claude"]
+        assert captured["providers"] == ["openai", "gemini", "grok", "claude", "kimi"]
         assert captured["no_site_research"] is True
         assert captured["preset_name"] == "harness"
 
@@ -276,7 +286,7 @@ class TestHarnessPreset:
 
         em = SystemConfigManager().resolve_effective_models("harness")
         # every slot the harness flows actually use routes to a CLI
-        for spec in (em.openai, em.gemini, em.grok, em.claude, em.summarizer):
+        for spec in (em.openai, em.gemini, em.grok, em.claude, em.kimi, em.summarizer):
             assert is_cli_backed_spec(spec), spec
         for member in em.council_members:
             assert is_cli_backed_spec(member), member
@@ -289,8 +299,9 @@ class TestHarnessPreset:
         assert em.council_members == [
             "claude:claude-opus-4-8@xhigh",
             "codex:gpt-5.6-sol@xhigh",
-            "agy:gemini-3.5-flash@high",
-            "grokcli:grok-build",
+            "agy:Gemini 3.5 Flash (High)",
+            "grokcli:grok-4.5",
+            "kimicli:kimi-code/k3",
         ]
 
 

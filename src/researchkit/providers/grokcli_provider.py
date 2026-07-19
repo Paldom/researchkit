@@ -9,7 +9,7 @@ subscription rather than XAI_API_KEY per-token billing — the same story as
 
 Selecting it: set the ``grok`` model in ``models.yaml`` to ``grokcli`` (CLI
 default model) or ``grokcli:<model>`` (``grok models`` lists what your login
-offers, e.g. ``grokcli:grok-build``). The aggregator routes the grok slot to
+offers, e.g. ``grokcli:grok-4.5``). The aggregator routes the grok slot to
 this provider whenever :func:`is_grokcli_model` matches; it still reports
 ``provider_name = "grok"`` and is differentiated by its ``model`` field
 (``grokcli:<model>`` / ``grokcli:default``). Council members accept the same
@@ -49,7 +49,7 @@ def is_grokcli_model(model: str | None) -> bool:
 def grokcli_underlying_model(model: str | None) -> str | None:
     """Extract the underlying model from a ``grokcli`` spec.
 
-    ``"grokcli:grok-build"`` -> ``"grok-build"``; ``"grokcli"`` -> ``None``
+    ``"grokcli:grok-4.5"`` -> ``"grok-4.5"``; ``"grokcli"`` -> ``None``
     (CLI default model).
     """
     if not model:

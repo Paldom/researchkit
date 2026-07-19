@@ -144,6 +144,25 @@ def _make_glm(ctx: ProviderContext) -> BaseProvider:
     return GLMProvider(sources=_sources(ctx), model=ctx.model or None)
 
 
+def _make_kimi(ctx: ProviderContext) -> BaseProvider:
+    from researchkit.providers import (
+        KimiCliProvider,
+        KimiProvider,
+        is_kimicli_model,
+        kimicli_underlying_model,
+    )
+
+    # `kimicli` / `kimicli:<alias>` routes the kimi slot through the Kimi
+    # Code CLI (kimi.com subscription auth); it reports as "kimi".
+    if is_kimicli_model(ctx.model):
+        return KimiCliProvider(
+            sources=_sources(ctx),
+            model=kimicli_underlying_model(ctx.model),
+            reasoning_effort=str(ctx.options.get("reasoning_effort", "medium")),
+        )
+    return KimiProvider(sources=_sources(ctx), model=ctx.model or None)
+
+
 def _make_exa_provider(ctx: ProviderContext) -> BaseProvider:
     from researchkit.providers.exa_provider import ExaProvider
 
@@ -183,6 +202,7 @@ def builtin_providers() -> tuple[ProviderSpec, ...]:
         ProviderSpec("claude", _make_claude, is_llm=True),
         ProviderSpec("github", _make_github),
         ProviderSpec("glm", _make_glm, is_llm=True, supports_improver=True),
+        ProviderSpec("kimi", _make_kimi, is_llm=True, supports_improver=True),
         # Exa is a first-class provider (like tavily) AND powers the exa
         # site-research connector below — independent registrations.
         ProviderSpec("exa", _make_exa_provider, requires_env=("EXA_API_KEY",)),

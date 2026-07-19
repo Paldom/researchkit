@@ -27,6 +27,12 @@ from researchkit.providers.grokcli_provider import (
     grokcli_underlying_model,
     is_grokcli_model,
 )
+from researchkit.providers.kimi_provider import KimiProvider, is_kimi_model
+from researchkit.providers.kimicli_provider import (
+    KimiCliProvider,
+    is_kimicli_model,
+    kimicli_underlying_model,
+)
 from researchkit.providers.openai_provider import OpenAIProvider
 from researchkit.providers.perplexity_provider import PerplexityProvider
 from researchkit.providers.tavily_provider import TavilyProvider
@@ -41,6 +47,8 @@ __all__ = [
     "GitHubProvider",
     "GrokCliProvider",
     "GrokProvider",
+    "KimiCliProvider",
+    "KimiProvider",
     "OpenAIProvider",
     "PerplexityProvider",
     "ProviderResult",
@@ -57,4 +65,7 @@ __all__ = [
     "is_codex_model",
     "is_deep_research_spec",
     "is_grokcli_model",
+    "is_kimi_model",
+    "is_kimicli_model",
+    "kimicli_underlying_model",
 ]

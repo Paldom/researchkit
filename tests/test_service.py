@@ -21,6 +21,7 @@ def _make_effective_models() -> EffectiveModels:
         claude="claude-test",
         github="github-test",
         glm="glm-test",
+        kimi="kimi-test",
         summarizer="summary-test",
         site_summarizer="site-summary-test",
         improver="improver-test",

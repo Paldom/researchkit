@@ -17,6 +17,7 @@ never raised: a dead link must not sink the archive of 40 live ones.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import html as html_lib
 import json
 import logging
@@ -393,10 +394,16 @@ def _write_material(
     body: str,
     content_kind: str = "",
     final_url: str = "",
+    title: str = "",
 ) -> None:
-    """Write one material file with the standard frontmatter."""
+    """Write one material file with the standard frontmatter.
+
+    The single write path for ALL materials (fetched pages, connector
+    canonical text, summary fallbacks) — shared so every file carries the
+    same frontmatter contract, including ``content_digest``.
+    """
     pairs = {
-        "title": ref.title or ref.url,
+        "title": title or ref.title or ref.url,
         "url": ref.url,
         "final_url": final_url or ref.url,
         "source_type": ref.source_type or "web",
@@ -408,6 +415,10 @@ def _write_material(
         pairs["content_kind"] = content_kind
     if ref.published:
         pairs["published"] = ref.published
+    # Content lineage for downstream knowledge tools (backlog rk+bk):
+    # detects changed source content across re-downloads and gives
+    # cross-run dedup a second key beyond the URL.
+    pairs["content_digest"] = hashlib.sha256(body.strip().encode()).hexdigest()[:16]
     atomic_write_text(path, f"{_frontmatter(pairs)}\n\n{body.strip()}\n")
 
 
@@ -547,19 +558,7 @@ def download_materials(
             logger.info("materials: no extractable text for %s", ref.url)
             continue
         title = _pick_title(ref.title, page_title, ref.url)
-        pairs = {
-            "title": title,
-            "url": ref.url,
-            "final_url": final_url,
-            "source_type": ref.source_type or "web",
-            "providers": ", ".join(ref.providers),
-            "topic": str(result.get("topic", "")),
-            "fetched_at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
-        }
-        if ref.published:
-            pairs["published"] = ref.published
-        front = _frontmatter(pairs)
-        atomic_write_text(path, f"{front}\n\n{text}\n")
+        _write_material(path, ref, result, body=text, final_url=final_url, title=title)
         entry.status = "fetched"
         entry.origin = "http"
         entry.file = filename

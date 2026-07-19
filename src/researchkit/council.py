@@ -9,9 +9,11 @@ Members are model specs and may be CLI-backed:
   - ``codex`` / ``codex:<model>``   -> Codex CLI (``codex exec``), no web search
   - ``agy`` / ``agy:<model>``       -> Antigravity CLI (``agy --print``)
   - ``grokcli`` / ``grokcli:<model>`` -> Grok CLI (``grok -p``), no web search
+  - ``kimicli`` / ``kimicli:<alias>`` -> Kimi Code CLI (``kimi -p``)
   - ``claude`` / ``claude:<model>``  -> Claude Code CLI (``claude -p``), no web
     tools (bare ``claude-*`` model ids are the legacy spelling of the same route)
-  - plain API ids (gpt-*, gemini-*, grok*, sonar*, glm-*) -> the provider API
+  - plain API ids (gpt-*, gemini-*, grok*, sonar*, glm-*, kimi-*) -> the
+    provider API
 
 The council is a drop-in replacement for :class:`PromptImprover`: it exposes
 ``improve_topic`` and ``generate_keywords``, plus :meth:`deliberate` which returns
@@ -241,6 +243,7 @@ def is_cli_backed_spec(spec: str | None) -> bool:
     from researchkit.providers.antigravity_provider import is_antigravity_model
     from researchkit.providers.codex_provider import is_codex_model
     from researchkit.providers.grokcli_provider import is_grokcli_model
+    from researchkit.providers.kimicli_provider import is_kimicli_model
 
     base, _ = split_effort_spec(spec)
     return (
@@ -248,6 +251,7 @@ def is_cli_backed_spec(spec: str | None) -> bool:
         or is_codex_model(base)
         or is_antigravity_model(base)
         or is_grokcli_model(base)
+        or is_kimicli_model(base)
     )
 
 
@@ -262,10 +266,11 @@ def complete_via_spec(
     """Run one non-search completion on the backend a model spec selects.
 
     ``codex:<m>`` -> Codex CLI, ``agy:<m>`` -> Antigravity CLI,
-    ``grokcli:<m>`` -> Grok CLI, ``claude*`` -> Claude Code CLI, anything
-    else -> the provider API. A ``@<effort>`` suffix sets per-call reasoning
-    effort where the backend supports it (codex, grokcli, claude; the
-    Antigravity CLI has no effort control and ignores it).
+    ``grokcli:<m>`` -> Grok CLI, ``kimicli:<m>`` -> Kimi Code CLI,
+    ``claude*`` -> Claude Code CLI, anything else -> the provider API. A
+    ``@<effort>`` suffix sets per-call reasoning effort where the backend
+    supports it (codex, grokcli, claude; the Antigravity and Kimi Code CLIs
+    have no effort control and ignore it).
     """
     from researchkit.providers.antigravity_provider import (
         AntigravityProvider,
@@ -281,6 +286,11 @@ def complete_via_spec(
         GrokCliProvider,
         grokcli_underlying_model,
         is_grokcli_model,
+    )
+    from researchkit.providers.kimicli_provider import (
+        KimiCliProvider,
+        is_kimicli_model,
+        kimicli_underlying_model,
     )
 
     spec, effort = split_effort_spec(model_spec)
@@ -302,6 +312,14 @@ def complete_via_spec(
             model=grokcli_underlying_model(spec), reasoning_effort=effort
         )
         text, _ = grokcli._exec(combined, web_search=False, label=label)
+        return text
+    if is_kimicli_model(spec):
+        # Same ordering rule: "kimicli:*" starts with "kimi", which the
+        # plain-id fallback would route to the Moonshot API.
+        kimicli = KimiCliProvider(
+            model=kimicli_underlying_model(spec), reasoning_effort=effort
+        )
+        text, _ = kimicli._exec(combined, web_search=False, label=label)
         return text
     if spec.lower().startswith("claude"):
         # Canonical harness-pattern spec `claude:<model>` (model passed to
@@ -399,6 +417,8 @@ def _guess_api_provider(model: str) -> str:
         return "perplexity"
     if m.startswith("glm"):
         return "glm"
+    if m.startswith(("kimi", "moonshot")):
+        return "kimi"
     return "openai"
 
 

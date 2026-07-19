@@ -25,6 +25,26 @@ def _md_link(label: str | None, url: str | None) -> str:
     return f"[{label}]({safe_url})"
 
 
+def _demote_headings(text: str) -> str:
+    """Demote ``## `` headings in embedded provider text to ``#### ``.
+
+    Raw provider outputs sit under a ``### provider`` heading, and providers
+    are now instructed to emit ``## Sources`` sections — left as-is those
+    become spurious top-level report sections, which downstream ``##``
+    chunkers (brainkit's report ingestion) turn into junk notes. Fence-aware:
+    ``## `` inside code blocks is content.
+    """
+    out: list[str] = []
+    in_fence = False
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+        if not in_fence and line.startswith("## "):
+            line = f"##{line}"
+        out.append(line)
+    return "\n".join(out)
+
+
 class Formatter:
     """
     Formats InsightBundle and ProviderResult objects for output.
@@ -234,7 +254,7 @@ class Formatter:
                 else:
                     lines.extend(
                         [
-                            result.raw_text,
+                            _demote_headings(result.raw_text),
                         ]
                     )
 

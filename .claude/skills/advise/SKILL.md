@@ -1,6 +1,6 @@
 ---
 name: advise
-description: Asks every logged-in coding-agent CLI (Claude Code, Codex, Antigravity, Grok CLI) the same question and returns each harness's answer side by side — subscription auth, zero API keys. Use when the user wants several models' independent takes, "ask all the models", "what would the other AIs say", "get second opinions on this", or to compare vendors' answers verbatim. Not for one synthesized answer (use council) or web research (use explore).
+description: Asks every logged-in coding-agent CLI (Claude Code, Codex, Antigravity, Grok CLI, Kimi Code CLI) the same question and returns each harness's answer side by side — subscription auth, zero API keys. Use when the user wants several models' independent takes, "ask all the models", "what would the other AIs say", "get second opinions on this", or to compare vendors' answers verbatim. Not for one synthesized answer (use council) or web research (use explore).
 argument-hint: "<question>"
 ---
 
@@ -32,22 +32,22 @@ requiring repo file access — members answer from model knowledge only.
 
 2. Read the output: one `## <harness-spec>` section per member. A failed
    member prints `*failed: <reason>*` and never blocks the others; the stderr
-   tail says `N/4 harnesses answered`.
+   tail says `N/5 harnesses answered`.
 
 3. Relay the answers side by side, attributed. Do not merge them into one
    answer — if the user wants synthesis, run `/council` instead.
 
 Default members come from the `harness` preset in `models.yaml`
 (claude:claude-opus-4-8@xhigh, codex:gpt-5.6-sol@xhigh,
-agy:gemini-3.5-flash@high, grokcli:grok-build). Override per run: `--harnesses codex:gpt-5.6-sol
-grokcli:grok-build` (a `@<effort>` suffix sets reasoning effort where the CLI
-supports it).
+"agy:Gemini 3.5 Flash (High)", grokcli:grok-4.5, kimicli:kimi-code/k3).
+Override per run: `--harnesses codex:gpt-5.6-sol grokcli:grok-4.5` (a
+`@<effort>` suffix sets reasoning effort where the CLI supports it).
 
 ## Failure modes
 
 - A harness that is not installed, not logged in, or **out of subscription
   quota** ("usage limit", "Individual quota reached") fails that member
   only — the reason prints inline; exit code is 1 only when ALL members fail.
-- Requires the CLIs to be signed in (`claude`, `codex`, `agy`, `grok login`) —
-  there is no API-key fallback by design.
+- Requires the CLIs to be signed in (`claude`, `codex`, `agy`, `grok login`,
+  `kimi login`) — there is no API-key fallback by design.
 - Expect ~20–60 s wall clock (parallel; slowest member dominates).

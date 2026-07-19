@@ -134,7 +134,8 @@ Site Research (optional):
         "advise",
         help=(
             "Ask each subscription CLI harness (Claude Code, Codex, Antigravity, "
-            "Grok CLI) the same question and print every answer — no API keys"
+            "Grok CLI, Kimi Code CLI) the same question and print every answer — "
+            "no API keys"
         ),
     )
     advise_parser.add_argument("question", help="The question to ask every harness")
@@ -156,6 +157,20 @@ Site Research (optional):
         "--preset",
         default="harness",
         help="Preset supplying the members (default: harness)",
+    )
+
+    # --- doctor command ---
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        help=(
+            "Preflight the active preset: CLI harnesses installed/logged in, "
+            "pinned model ids still exist, API keys present — no tokens spent"
+        ),
+    )
+    doctor_parser.add_argument(
+        "--preset",
+        default=None,
+        help="Preset to check (default: the active preset)",
     )
 
     # --- council command ---
@@ -1039,6 +1054,21 @@ def _question_with_context(args) -> str:
     return question
 
 
+def cmd_doctor(args) -> int:
+    """Handle 'doctor': preflight the preset's slots, harnesses, and keys."""
+    from researchkit.doctor import format_report, run_doctor
+    from researchkit.system_config import SystemConfigManager
+
+    preset = args.preset or SystemConfigManager().get_active_preset()
+    try:
+        results = run_doctor(args.preset)
+    except ValueError as e:  # unknown preset
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    print(format_report(results, preset))
+    return 1 if any(r.status == "fail" for r in results) else 0
+
+
 def cmd_advise(args) -> int:
     """Handle 'advise': one question, every harness's own answer, verbatim."""
     try:
@@ -1114,12 +1144,12 @@ def cmd_council(args) -> int:
 def cmd_explore(args, service: SocialResearchService) -> int:
     """Handle 'explore': boosted research on the subscription-only preset.
 
-    Providers are the four CLI harnesses; site research is off (its keyword
+    Providers are the five CLI harnesses; site research is off (its keyword
     synthesis and Exa connector are API-key paths). Everything else is the
     normal boost pipeline.
     """
     args.boost = True
-    args.providers = ["openai", "gemini", "grok", "claude"]
+    args.providers = ["openai", "gemini", "grok", "claude", "kimi"]
     args.sources = ["social", "web"]
     args.no_site_research = True
     args.preset_name = args.preset
@@ -1363,6 +1393,32 @@ def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
     return handoff_rc
 
 
+# Every registered subcommand. main() routes any OTHER first positional to
+# instant mode (a PAID research run on that token as the topic), so a
+# subcommand missing here silently becomes a paid job named after itself —
+# tests assert this set matches the registered subparsers exactly.
+SUBCOMMANDS = frozenset(
+    {
+        "create",
+        "run",
+        "list",
+        "materials",
+        "plugins",
+        "advise",
+        "council",
+        "doctor",
+        "explore",
+        "links",
+        "improve-topic",
+        "generate-keywords",
+        "add-source",
+        "remove-source",
+        "list-sources",
+        "suggest-prompt",
+    }
+)
+
+
 def main() -> int:
     """Main entry point for the CLI."""
     load_dotenv()
@@ -1373,23 +1429,7 @@ def main() -> int:
     # Decide instant-mode vs subcommand by the FIRST POSITIONAL token, skipping
     # global flags and their values. This stops "--projects-dir X list" from
     # being read as an instant run on the topic "X" (a paid job). (Review M9.)
-    subcommands = {
-        "create",
-        "run",
-        "list",
-        "materials",
-        "plugins",
-        "advise",
-        "council",
-        "explore",
-        "links",
-        "improve-topic",
-        "generate-keywords",
-        "add-source",
-        "remove-source",
-        "list-sources",
-        "suggest-prompt",
-    }
+    subcommands = SUBCOMMANDS
     value_flags = {"--projects-dir", "--log-level", "--ingest", "--materials-limit"}
 
     def _first_positional(tokens: list[str]) -> str | None:
@@ -1411,6 +1451,22 @@ def main() -> int:
     first = _first_positional(tokens)
 
     if not wants_help and first is not None and first not in subcommands:
+        # Typo guard: instant mode is a PAID run, so a single bare token
+        # that looks like a misspelled subcommand ("docter") must not
+        # silently become a research topic. Real topics are phrases; a
+        # one-word topic near a subcommand name needs explicit intent.
+        import difflib
+
+        close = difflib.get_close_matches(first, sorted(subcommands), 1, 0.75)
+        if close and " " not in first:
+            print(
+                f"Error: unknown command {first!r} — did you mean {close[0]!r}?\n"
+                f"To research {first!r} as a topic instead, use a fuller "
+                f'phrase (e.g. "{first} trends") or: researchkit create '
+                f'"{first}"',
+                file=sys.stderr,
+            )
+            return 2
         # Instant mode: the first positional is the research topic.
         instant_parser = argparse.ArgumentParser(
             prog="researchkit",
@@ -1495,6 +1551,8 @@ def main() -> int:
 
     if args.command == "create":
         return cmd_create(args, service)
+    elif args.command == "doctor":
+        return cmd_doctor(args)
     elif args.command == "advise":
         return cmd_advise(args)
     elif args.command == "council":

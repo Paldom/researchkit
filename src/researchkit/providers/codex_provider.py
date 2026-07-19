@@ -62,6 +62,15 @@ _CODEX_MIN_TIMEOUT = 300.0
 
 _TITLE_FETCH_TIMEOUT = 8.0
 _TITLE_FETCH_WORKERS = 8
+
+# Appended to research prompts so the answer carries a parseable citation
+# list — the headless CLIs return no citation array, and without the nudge
+# they often cite few or zero URLs (the agy/kimi providers ship the same
+# instruction; citation yield is the product).
+_SOURCES_INSTRUCTION = (
+    "\n\nAt the very end, add a '## Sources' section listing EVERY web source "
+    "you used, one per line as a markdown link: - [title](url)."
+)
 _BROWSER_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
@@ -299,7 +308,9 @@ class CodexProvider(BaseProvider):
     ) -> tuple[str, list[str]]:
         """Run one web-search query (Codex has no system role, so prompts join)."""
         return self._exec(
-            f"{system_prompt}\n\n{user_prompt}", web_search=True, label=label
+            f"{system_prompt}\n\n{user_prompt}{_SOURCES_INSTRUCTION}",
+            web_search=True,
+            label=label,
         )
 
     def fetch_insights(self, topic: str, days: int) -> ProviderResult:

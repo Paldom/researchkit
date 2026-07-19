@@ -40,6 +40,7 @@ _EMBEDDED_DEFAULT_CONFIG: dict[str, Any] = {
                 "claude": "claude:claude-sonnet-4-6",
                 "github": "gpt-5.4-mini",
                 "glm": "glm-5.2",
+                "kimi": "kimi-k2.6",
                 "summarizer": "gemini-3.5-flash",
                 "site_summarizer": "gemini-3-flash-preview",
                 "improver": "gpt-5.4-mini",
@@ -58,7 +59,8 @@ _EMBEDDED_DEFAULT_CONFIG: dict[str, Any] = {
 DEFAULT_COUNCIL_MEMBERS = [
     "claude:claude-opus-4-8",
     "codex:gpt-5.5",
-    "agy:gemini-3.5-flash",
+    # Antigravity model ids are display names now (`agy models` lists them).
+    "agy:Gemini 3.5 Flash (High)",
 ]
 DEFAULT_COUNCIL_BOSS = "claude:claude-opus-4-8"
 DEFAULT_BOOST_MAX_SUBPROJECTS = 5
@@ -100,6 +102,7 @@ class EffectiveModels:
     claude: str
     github: str
     glm: str
+    kimi: str
     summarizer: str
     site_summarizer: str  # Model for site research summarization
     improver: str  # Model for topic improvement and keyword generation
@@ -139,6 +142,7 @@ class EffectiveModels:
                 "claude": self.claude,
                 "github": self.github,
                 "glm": self.glm,
+                "kimi": self.kimi,
                 "summarizer": self.summarizer,
                 "site_summarizer": self.site_summarizer,
                 "improver": self.improver,
@@ -173,6 +177,7 @@ class EffectiveModels:
             "claude": self.claude,
             "github": self.github,
             "glm": self.glm,
+            "kimi": self.kimi,
             "summarizer": self.summarizer,
             "site_summarizer": self.site_summarizer,
             "improver": self.improver,
@@ -331,6 +336,7 @@ class SystemConfigManager:
             "claude",
             "github",
             "glm",
+            "kimi",
             "summarizer",
             "site_summarizer",
             "improver",
@@ -352,6 +358,7 @@ class SystemConfigManager:
             claude=models.get("claude", "claude-opus-4-7"),
             github=models.get("github", "gpt-5.5"),
             glm=models.get("glm", "glm-4.6"),
+            kimi=models.get("kimi", "kimi-k2.6"),
             summarizer=models["summarizer"],
             site_summarizer=models.get("site_summarizer", "gemini-3-flash-preview"),
             improver=models.get("improver", "gpt-5.5"),

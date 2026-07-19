@@ -1,6 +1,6 @@
 ---
 name: advise-max
-description: Asks the cutting-edge flagship of every logged-in coding-agent CLI at maximum reasoning effort (Claude Fable 5 @max, Codex GPT-5.6 Sol @ultra, Gemini 3.5 Flash (High), Grok Build @max) the same question, side by side — subscription auth, zero API keys. Use when the user wants the strongest possible second opinions, "ask the best models", "max-effort advice", "advise-max", or a hard question worth top-tier reasoning. Not for quick/cheap opinions (use advise), a synthesized answer (use council), or web research (use explore).
+description: Asks the cutting-edge flagship of every logged-in coding-agent CLI at maximum reasoning effort (Claude Fable 5 @max, Codex GPT-5.6 Sol @ultra, Gemini 3.5 Flash (High), Grok 4.5 @high, Kimi K3) the same question, side by side — subscription auth, zero API keys. Use when the user wants the strongest possible second opinions, "ask the best models", "max-effort advice", "advise-max", or a hard question worth top-tier reasoning. Not for quick/cheap opinions (use advise), a synthesized answer (use council), or web research (use explore).
 argument-hint: "<question>"
 ---
 
@@ -24,7 +24,8 @@ deserve it.
      claude:claude-fable-5@max \
      codex:gpt-5.6-sol@ultra \
      "agy:Gemini 3.5 Flash (High)" \
-     grokcli:grok-build@max
+     grokcli:grok-4.5@high \
+     kimicli:kimi-code/k3
    ```
 
    `--context-file notes.md` appends context, same as `/advise`.
@@ -38,8 +39,14 @@ subagent-orchestration mode in closed preview — enabled on this account,
 verified live), NOT a model id; `-m gpt-5.6-sol-ultra` is rejected.
 Antigravity encodes the thinking level in the display name — bare
 `gemini-3.5-flash` ignores a `@high` suffix. `@max` is verified live for
-Fable 5 and the Grok CLI. Swap in newer flagships as they land; the specs
-are just `--harnesses` arguments.
+Fable 5; the Grok CLI's effort ceiling is now `high` (as of 2026-07-18 it
+rejects `max`: "use one of: high, medium, low"; `grok models` currently
+offers `grok-4.5`, `grok-build` is gone). Kimi Code has no effort flag —
+`kimicli:kimi-code/k3` runs at the CLI config's `[thinking]` effort, which
+defaults to `max` for K3. Effort tiers and model ids drift — when a member
+fails with an "unknown effort/model" error, trust the CLI's error text over
+these notes. Swap in newer flagships as they land; the specs are just
+`--harnesses` arguments.
 
 ## Failure modes
 

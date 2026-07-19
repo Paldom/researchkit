@@ -21,7 +21,14 @@ class PromptImprover:
     By default, uses the improver model from system config (gpt-5.2).
     """
 
-    PROVIDERS: ClassVar[set[str]] = {"openai", "gemini", "grok", "perplexity", "glm"}
+    PROVIDERS: ClassVar[set[str]] = {
+        "openai",
+        "gemini",
+        "grok",
+        "perplexity",
+        "glm",
+        "kimi",
+    }
     DEFAULT_PROVIDER = "openai"
     DEFAULT_MODEL = "gpt-5.4-mini"  # Default if no system config
 
@@ -33,6 +40,7 @@ class PromptImprover:
         "grok": "grok-4.3",
         "perplexity": "sonar",
         "glm": "glm-5.2",
+        "kimi": "kimi-k2.6",
     }
 
     def __init__(
@@ -78,6 +86,7 @@ class PromptImprover:
             PromptImprover configured with system config model
         """
         from researchkit.providers.glm_provider import is_glm_model
+        from researchkit.providers.kimi_provider import is_kimi_model
 
         model = cls.DEFAULT_MODEL
         try:
@@ -93,11 +102,13 @@ class PromptImprover:
         from researchkit.council import is_cli_backed_spec
 
         # Route to the matching backend: harness spec -> CLI, GLM -> z.ai,
-        # anything else -> OpenAI.
+        # Kimi -> Moonshot, anything else -> OpenAI.
         if is_cli_backed_spec(model):
             provider = "cli"
         elif is_glm_model(model):
             provider = "glm"
+        elif is_kimi_model(model):
+            provider = "kimi"
         else:
             provider = "openai"
         return cls(provider=provider, model=model)
@@ -143,6 +154,12 @@ class PromptImprover:
         from researchkit.providers.glm_provider import make_zai_client
 
         return make_zai_client()
+
+    def _get_kimi_client(self) -> Any:
+        """Get Kimi client (OpenAI-compatible, Moonshot endpoint)."""
+        from researchkit.providers.kimi_provider import make_kimi_client
+
+        return make_kimi_client()
 
     def _parse_json_response(self, text: str, key: str) -> Any:
         """Parse JSON response and extract a key (tolerant of fences/prose).
@@ -249,6 +266,25 @@ class PromptImprover:
         )
         return response.choices[0].message.content or ""
 
+    def _call_kimi(self, system_prompt: str, user_prompt: str) -> str:
+        """Call Kimi API (OpenAI-compatible, Moonshot endpoint).
+
+        No temperature: current Kimi models run with fixed sampling params
+        and reject overrides.
+        """
+        from researchkit.providers.kimi_provider import resolve_kimi_model
+
+        client = self._get_kimi_client()
+        response = client.chat.completions.create(
+            model=resolve_kimi_model(self.model or ""),
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_format={"type": "json_object"},
+        )
+        return response.choices[0].message.content or ""
+
     def _call_provider(self, system_prompt: str, user_prompt: str) -> str:
         """Call the configured provider."""
         if self.provider == "cli":
@@ -270,6 +306,8 @@ class PromptImprover:
             return self._call_perplexity(system_prompt, user_prompt)
         elif self.provider == "glm":
             return self._call_glm(system_prompt, user_prompt)
+        elif self.provider == "kimi":
+            return self._call_kimi(system_prompt, user_prompt)
         else:
             raise ValueError(f"Unknown provider: {self.provider}")
 

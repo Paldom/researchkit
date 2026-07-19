@@ -48,3 +48,18 @@ class TestFormatter:
 
         assert "## Professional Overview" not in markdown
         assert "## Digest" in markdown
+
+
+def test_raw_provider_headings_are_demoted() -> None:
+    # Providers emit `## Sources` sections (instructed); embedded raw text
+    # must not create top-level report sections — brainkit chunks report.md
+    # on `## ` lines and would turn each into a junk note.
+    bundle = _make_bundle(None)
+    bundle.provider_results[0].raw_text = (
+        "Analysis prose.\n\n## Sources\n- [x](https://x.test)\n"
+        "```\n## inside a fence stays\n```\n"
+    )
+    report = format_as_markdown(bundle, include_raw=True)
+    assert "\n#### Sources\n" in report
+    assert "\n## Sources\n" not in report
+    assert "## inside a fence stays" in report  # fence content untouched

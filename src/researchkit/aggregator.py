@@ -500,6 +500,15 @@ class InsightAggregator:
                     "provider": provider_name,
                 },
             )
+            if ok and sources_count == 0:
+                # A cited report is the product; an uncited contribution is a
+                # silent failure mode — make it loud (and see summarizer's
+                # matching downgrade in the meta-summary input).
+                logger.warning(
+                    f"Provider {provider_name} succeeded with ZERO sources — "
+                    "its claims will be flagged as uncited in the meta-summary",
+                    extra={"stage": "provider_zero_sources", "provider": provider_name},
+                )
             results_by_name[provider_name] = result
 
             if progress:

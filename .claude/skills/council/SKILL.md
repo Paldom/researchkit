@@ -1,6 +1,6 @@
 ---
 name: council
-description: Convenes an LLM council of logged-in CLI harnesses (Claude Code, Codex, Antigravity, Grok CLI) on a question - members answer through distinct lenses, a boss model synthesizes one decisive answer with explicit convergence and dissent; subscription auth, zero API keys. Use when the user wants a deliberated or consulted answer, "convene a council", "have the models debate this", "what's the consensus", or a decision with disagreement surfaced. Not for raw side-by-side answers (use advise) or web research (use explore).
+description: Convenes an LLM council of logged-in CLI harnesses (Claude Code, Codex, Antigravity, Grok CLI, Kimi Code CLI) on a question - members answer through distinct lenses, a boss model synthesizes one decisive answer with explicit convergence and dissent; subscription auth, zero API keys. Use when the user wants a deliberated or consulted answer, "convene a council", "have the models debate this", "what's the consensus", or a decision with disagreement surfaced. Not for raw side-by-side answers (use advise) or web research (use explore).
 argument-hint: "<question>"
 ---
 
@@ -19,7 +19,8 @@ aligned the members were, and the strongest unresolved dissent. No API keys.
 Use for decisions worth a second opinion: architecture calls, adopt-or-not
 questions, risk assessments, "is this a good idea". NOT for: seeing each
 model's raw answer (that is `/advise`), sourced/cited research (that is
-`/explore`), or trivial factual lookups (a council is 5 harness calls).
+`/explore`), or trivial factual lookups (a council is 6 harness calls —
+5 members + the boss).
 
 ## Workflow
 
@@ -43,8 +44,11 @@ model's raw answer (that is `/advise`), sourced/cited research (that is
 3. If stderr warns "boss synthesis unavailable", the shown answer is the
    first valid member's (deterministic fallback) — say so when relaying.
 
-Members/boss default to the `harness` preset in `models.yaml`; override with
-`--harnesses <specs…>` and `--boss <spec>` (specs accept `@<effort>`).
+Members/boss default to the `harness` preset in `models.yaml`
+(claude:claude-opus-4-8@xhigh, codex:gpt-5.6-sol@xhigh,
+"agy:Gemini 3.5 Flash (High)", grokcli:grok-4.5, kimicli:kimi-code/k3;
+boss claude:claude-opus-4-8@xhigh); override with `--harnesses <specs…>`
+and `--boss <spec>` (specs accept `@<effort>`).
 
 ## Failure modes
 
