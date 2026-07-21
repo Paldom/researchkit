@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Codex support at Claude-Code parity: the repo's skills (advise,
+  advise-max, council, explore, researchkit) are discoverable by Codex and
+  every Agent-Skills-standard agent via `.agents/skills/` symlinks (one
+  source of truth in `.claude/skills/`); AGENTS.md was already the shared
+  instruction file. Verified live with `codex exec` in-checkout.
+
+- Trio unification seams (flagship cross-review, 2026-07-21): the research
+  pack is now a documented interchange contract
+  ([docs/research-pack.md](docs/research-pack.md) v1 — layout, frontmatter
+  keys, run-complete gate, chunking rules, additive evolution), and every
+  finished run prints the fork as runnable next steps (brainkit ingest /
+  /skill-from-research / the contract doc) instead of leaving the journey's
+  next leg as tribal knowledge.
+
+- Brave Search provider (`--providers brave`, `BRAVE_API_KEY`): the only
+  large independent English index plus its discussions vertical — result
+  dates flow to materials `published`; queries are sequentially paced for
+  starter-tier rate limits (cheap tier requires public attribution).
+- OpenAlex provider (`--providers openalex`, keyless; `OPENALEX_MAILTO`
+  optional): peer-reviewed works with DOIs, venues, citation counts, and a
+  deterministic relevance self-gate — topics with no matching scholarly
+  literature report "not relevant" with zero sources (which the uncited
+  downgrade keeps out of the consensus) instead of padding the report.
+  Lookback widens to >=1 year (scholarly publishing outpaces no news cycle).
+
 - Materials frontmatter carries a `content_digest` (sha256-16 of the body,
   written by the single shared material writer — the fetched-page path was
   routed through it too): downstream knowledge tools get content lineage

@@ -232,3 +232,4 @@ projects-remote/
 # local plugin scratch space — never committed (see PLUGIN-PLAN.md §10)
 local-plugins/
 local-plugins.txt
+.DS_Store

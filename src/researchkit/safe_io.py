@@ -131,6 +131,7 @@ _SECRET_ENV_KEYS = frozenset(
         "ANTHROPIC_API_KEY",
         "TAVILY_API_KEY",
         "EXA_API_KEY",
+        "BRAVE_API_KEY",
         "YOUTUBE_API_KEY",
         "GITHUB_TOKEN",
         "GH_TOKEN",

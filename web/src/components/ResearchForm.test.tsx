@@ -176,7 +176,7 @@ describe('ResearchForm', () => {
     // provider checkboxes: exactly the harness four checked, all locked
     for (const p of ALL_PROVIDERS) {
       const box = screen.getByLabelText<HTMLInputElement>(p)
-      expect(box.checked).toBe(['openai', 'gemini', 'grok', 'claude'].includes(p))
+      expect(box.checked).toBe(['openai', 'gemini', 'grok', 'claude', 'kimi'].includes(p))
       expect(box.disabled).toBe(true)
     }
     // site research forced off and locked, sites picker hidden
@@ -193,7 +193,7 @@ describe('ResearchForm', () => {
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
         preset: 'harness',
-        providers: ['openai', 'gemini', 'grok', 'claude'],
+        providers: ['openai', 'gemini', 'grok', 'claude', 'kimi'],
         site_research: false,
       }),
     )

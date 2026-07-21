@@ -163,6 +163,18 @@ def _make_kimi(ctx: ProviderContext) -> BaseProvider:
     return KimiProvider(sources=_sources(ctx), model=ctx.model or None)
 
 
+def _make_brave(ctx: ProviderContext) -> BaseProvider:
+    from researchkit.providers.brave_provider import BraveProvider
+
+    return BraveProvider(sources=_sources(ctx), model=ctx.model or None)
+
+
+def _make_openalex(ctx: ProviderContext) -> BaseProvider:
+    from researchkit.providers.openalex_provider import OpenAlexProvider
+
+    return OpenAlexProvider(sources=_sources(ctx), model=ctx.model or None)
+
+
 def _make_exa_provider(ctx: ProviderContext) -> BaseProvider:
     from researchkit.providers.exa_provider import ExaProvider
 
@@ -203,6 +215,16 @@ def builtin_providers() -> tuple[ProviderSpec, ...]:
         ProviderSpec("github", _make_github),
         ProviderSpec("glm", _make_glm, is_llm=True, supports_improver=True),
         ProviderSpec("kimi", _make_kimi, is_llm=True, supports_improver=True),
+        # Brave (independent index + discussions vertical) and OpenAlex
+        # (scholarly works, self-gating on relevance) are search providers
+        # like tavily/exa — no EffectiveModels slot; default_model applies.
+        ProviderSpec(
+            "brave",
+            _make_brave,
+            default_model="brave-search",
+            requires_env=("BRAVE_API_KEY",),
+        ),
+        ProviderSpec("openalex", _make_openalex, default_model="openalex"),
         # Exa is a first-class provider (like tavily) AND powers the exa
         # site-research connector below — independent registrations.
         ProviderSpec("exa", _make_exa_provider, requires_env=("EXA_API_KEY",)),

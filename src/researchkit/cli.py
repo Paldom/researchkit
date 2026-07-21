@@ -779,6 +779,7 @@ def cmd_run(args, service: SocialResearchService) -> int:
     # Output report
     print(artifacts.report_markdown)
     print(f"wrote: {project.path.resolve()}", file=sys.stderr)
+    _print_next_steps(project.path.resolve())
 
     # Show run metadata
     if args.verbose:
@@ -1054,6 +1055,21 @@ def _question_with_context(args) -> str:
     return question
 
 
+def _print_next_steps(path: Path) -> None:
+    """The trio fork, printed as runnable commands (the journey's next leg
+    is otherwise tribal knowledge — reviewer consensus, 2026-07-21)."""
+    import sys as _sys
+
+    p = str(path)
+    print(
+        "next steps:\n"
+        f"  compounding memory : brainkit --brain ./brain ingest {p!r}\n"
+        f"  one-shot skill     : /skill-from-research {p!r}  (in an agent session)\n"
+        "  pack contract      : docs/research-pack.md",
+        file=_sys.stderr,
+    )
+
+
 def cmd_doctor(args) -> int:
     """Handle 'doctor': preflight the preset's slots, harnesses, and keys."""
     from researchkit.doctor import format_report, run_doctor
@@ -1283,6 +1299,7 @@ def _cmd_instant_boosted(args, service: SocialResearchService, topic: str) -> in
                 handoff_rc = _ingest_into_brain(result.project, args.ingest)
             print(artifacts.report_markdown)
             print(f"wrote: {result.project.path.resolve()}", file=sys.stderr)
+            _print_next_steps(result.project.path.resolve())
             if args.verbose:
                 print(f"\nProject: {result.project.path}", file=sys.stderr)
             _print_article_prompt_hint(result.project)
@@ -1313,6 +1330,7 @@ def _cmd_instant_boosted(args, service: SocialResearchService, topic: str) -> in
         print("Warning: super-summary unavailable.", file=sys.stderr)
 
     print(f"wrote: {result.project.path.resolve()}", file=sys.stderr)
+    _print_next_steps(result.project.path.resolve())
     print(f"Parent project: {result.project.path}", file=sys.stderr)
     print(f"Super-summary: {result.project.super_summary_path}", file=sys.stderr)
     return handoff_rc
@@ -1370,6 +1388,7 @@ def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
     # Output report
     print(artifacts.report_markdown)
     print(f"wrote: {project.path.resolve()}", file=sys.stderr)
+    _print_next_steps(project.path.resolve())
 
     # Show run metadata
     if args.verbose:

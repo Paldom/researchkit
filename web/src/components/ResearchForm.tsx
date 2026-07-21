@@ -251,7 +251,7 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
             Harness only (no API keys)
           </label>
           <p className="mt-1 text-xs text-neutral-500">
-            Runs on logged-in CLI subscriptions (Claude Code, Codex, Antigravity, Grok CLI).
+            Runs on logged-in CLI subscriptions (Claude Code, Codex, Antigravity, Grok CLI, Kimi Code CLI).
           </p>
         </div>
       )}
