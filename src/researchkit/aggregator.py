@@ -529,6 +529,46 @@ class InsightAggregator:
             results_by_name[name] for name in valid_providers if name in results_by_name
         ]
 
+    def _load_user_link_contents(
+        self,
+        user_url_sources: Sequence[UserUrlSource],
+        user_sources_dir: Path | None,
+    ) -> dict[str, str]:
+        """Read text archived for user links into a ``{label: text}`` map.
+
+        Keyed by the URL (not the filename) so the final-article LLM can cite
+        the link the text came from — user links are citable, unlike the
+        background documents loaded by :meth:`_load_user_file_contents`.
+        """
+        if user_sources_dir is None:
+            return {}
+        contents: dict[str, str] = {}
+        total = 0
+        for entry in user_url_sources:
+            if not entry.filename:
+                continue
+            path = user_sources_dir / entry.filename
+            try:
+                raw = path.read_bytes()
+            except OSError as e:
+                logger.warning(
+                    f"Archived user link missing, skipping {path}: {e}",
+                    extra={"stage": "user_sources_skip"},
+                )
+                continue
+            remaining = _USER_FILE_TOTAL_MAX - total
+            if remaining <= 0:
+                logger.warning(
+                    "User source budget exhausted, skipping remaining links",
+                    extra={"stage": "user_sources_skip"},
+                )
+                break
+            raw = raw[: min(_USER_FILE_PER_FILE_MAX, remaining)]
+            total += len(raw)
+            kind = entry.content_kind or "article"
+            contents[f"{entry.url} ({kind})"] = raw.decode("utf-8", errors="replace")
+        return contents
+
     def _load_user_file_contents(
         self,
         user_file_sources: Sequence[UserFileSource],
@@ -839,6 +879,9 @@ class InsightAggregator:
         url_list = list(user_url_sources or [])
         file_list = list(user_file_sources or [])
         file_contents = self._load_user_file_contents(file_list, user_sources_dir)
+        # Text extracted from user links (article bodies, YouTube transcripts)
+        # joins the same channel, keyed by URL so the article can cite it.
+        file_contents.update(self._load_user_link_contents(url_list, user_sources_dir))
 
         return InsightBundle(
             topic=topic,

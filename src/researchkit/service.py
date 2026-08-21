@@ -844,6 +844,8 @@ class SocialResearchService:
             entry = UserUrlSource(url=stripped, title=title, note=note)
             if not project.add_user_url_source(entry):
                 logger.info(f"Duplicate user URL source ignored: {entry.url}")
+            else:
+                self._archive_user_link(project, entry)
             added = entry
         else:
             src_path = Path(stripped).expanduser().resolve()
@@ -851,6 +853,47 @@ class SocialResearchService:
 
         project.save_config()
         return added
+
+    @staticmethod
+    def _archive_user_link(project: Project, entry: UserUrlSource) -> None:
+        """Extract the link's text into ``user_sources/`` so the run can use it.
+
+        Best-effort: a link that cannot be read stays registered and citable,
+        it just contributes no content. The reason is logged for the caller.
+        """
+        import re as _re
+
+        from researchkit.user_links import fetch_link
+
+        content = fetch_link(entry.url)
+        if not content.ok:
+            logger.warning(
+                "user link not readable (%s): %s",
+                content.error,
+                entry.url,
+                extra={"stage": "user_link_skip"},
+            )
+            return
+        slug = _re.sub(r"[^a-z0-9]+", "-", entry.url.lower()).strip("-")[:60] or "link"
+        index = len(project.config.user_url_sources)
+        filename = f"link-{index:03d}-{slug}.md"
+        target = project.user_sources_dir
+        target.mkdir(parents=True, exist_ok=True)
+        header = (
+            f"# {entry.title or entry.url}\n\n"
+            f"Source: {entry.url}\n"
+            f"Kind: {content.kind}\n\n---\n\n"
+        )
+        (target / filename).write_text(header + content.text, encoding="utf-8")
+        entry.filename = filename
+        entry.content_kind = content.kind
+        logger.info(
+            "archived user link (%s via %s): %s",
+            content.kind,
+            content.via,
+            entry.url,
+            extra={"stage": "user_link_archived"},
+        )
 
     def remove_user_source(self, project: Project, identifier: str) -> bool:
         """

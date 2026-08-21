@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -157,6 +158,52 @@ Site Research (optional):
         "--preset",
         default="harness",
         help="Preset supplying the members (default: harness)",
+    )
+
+    # --- advise-session command ---
+    session_parser = subparsers.add_parser(
+        "advise-session",
+        help=(
+            "Like advise, but each harness answers inside a persistent session "
+            "that can see this project and be followed up. Prints a session id"
+        ),
+    )
+    session_parser.add_argument(
+        "question",
+        nargs="?",
+        default=None,
+        help="The question (omit with --list)",
+    )
+    session_parser.add_argument(
+        "--session",
+        default=None,
+        help="Continue an existing session id instead of starting a new one",
+    )
+    session_parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List stored sessions and exit",
+    )
+    session_parser.add_argument(
+        "--context-file",
+        default=None,
+        help="File whose text is appended to the question as context",
+    )
+    session_parser.add_argument(
+        "--harnesses",
+        nargs="+",
+        default=None,
+        help="Member specs override (default: the preset's council members)",
+    )
+    session_parser.add_argument(
+        "--preset",
+        default="harness",
+        help="Preset supplying the members (default: harness)",
+    )
+    session_parser.add_argument(
+        "--cwd",
+        default=None,
+        help="Project directory the session can read (default: current directory)",
     )
 
     # --- doctor command ---
@@ -1107,6 +1154,108 @@ def cmd_advise(args) -> int:
     return 0 if ok else 1
 
 
+def _print_session_list() -> int:
+    """Print stored sessions, newest first."""
+    from researchkit.harness_session import list_sessions
+
+    sessions = list_sessions()
+    if not sessions:
+        print("No sessions yet. Start one: researchkit advise-session 'QUESTION'")
+        return 0
+    for s in sessions:
+        live = sum(1 for v in s.members.values() if v)
+        print(
+            f"{s.id}  {s.updated_at}  {len(s.turns)} turn(s), "
+            f"{live}/{len(s.members)} resumable  cwd={s.cwd}"
+        )
+    return 0
+
+
+def cmd_advise_session(args) -> int:
+    """Handle 'advise-session': persistent, project-aware harness conversations."""
+    from researchkit.harness_session import (
+        AdviseSession,
+        load_session,
+        run_session_turn,
+        supports_sessions,
+    )
+    from researchkit.prompts import get_advise_session_system_prompt
+
+    if args.list:
+        return _print_session_list()
+    if not args.question:
+        print(
+            "Error: a question is required (or use --list)",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        question = _question_with_context(args)
+        if args.session:
+            session = load_session(args.session)
+        else:
+            council = _harness_council(args.preset, args.harnesses)
+            members = [m for m in council.members if supports_sessions(m)]
+            skipped = [m for m in council.members if not supports_sessions(m)]
+            if skipped:
+                print(
+                    f"Skipping non-harness member(s): {', '.join(skipped)}",
+                    file=sys.stderr,
+                )
+            if not members:
+                print(
+                    "Error: no CLI-harness members to open a session on",
+                    file=sys.stderr,
+                )
+                return 1
+            cwd = str(Path(args.cwd or Path.cwd()).resolve())
+            session = AdviseSession.create(cwd, args.preset, members)
+    except (ValueError, OSError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    members = list(session.members)
+    verb = "Resuming" if args.session else "Opening"
+    print(
+        f"{verb} {len(members)} harness session(s) in {session.cwd}: "
+        f"{', '.join(members)} …",
+        file=sys.stderr,
+    )
+
+    system_prompt = get_advise_session_system_prompt(session.cwd)
+    with ThreadPoolExecutor(max_workers=max(1, len(members))) as pool:
+        turns = list(
+            pool.map(
+                lambda m: run_session_turn(
+                    m,
+                    system_prompt,
+                    question,
+                    session_id=session.members.get(m) or None,
+                    cwd=session.cwd,
+                ),
+                members,
+            )
+        )
+
+    for t in turns:
+        print(f"\n## {t.member}\n")
+        print(t.answer if t.ok else f"*failed: {t.error}*")
+
+    session.record(question, turns)
+    path = session.save()
+    ok = sum(1 for t in turns if t.ok)
+    print(f"\n{ok}/{len(turns)} harnesses answered.", file=sys.stderr)
+    print(f"session: {session.id}  ({path})", file=sys.stderr)
+    print(
+        f"follow up: researchkit advise-session 'NEXT QUESTION' --session {session.id}",
+        file=sys.stderr,
+    )
+    # stdout so a calling agent can capture the handle without parsing prose.
+    print(f"\nsession_id: {session.id}")
+    return 0 if ok else 1
+
+
 def cmd_council(args) -> int:
     """Handle 'council': lensed member answers + boss-synthesized consultation."""
     try:
@@ -1424,6 +1573,7 @@ SUBCOMMANDS = frozenset(
         "materials",
         "plugins",
         "advise",
+        "advise-session",
         "council",
         "doctor",
         "explore",
@@ -1574,6 +1724,8 @@ def main() -> int:
         return cmd_doctor(args)
     elif args.command == "advise":
         return cmd_advise(args)
+    elif args.command == "advise-session":
+        return cmd_advise_session(args)
     elif args.command == "council":
         return cmd_council(args)
     elif args.command == "explore":

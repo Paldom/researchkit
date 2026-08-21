@@ -36,11 +36,18 @@ SUPER_SUMMARY_FILENAME = "super_summary.md"
 
 @dataclass
 class UserUrlSource:
-    """A user-supplied URL to be cited in the final article."""
+    """A user-supplied URL to be cited in the final article.
+
+    ``filename`` names the extracted text archived under ``user_sources/``
+    (a YouTube transcript, an article body). Empty when extraction failed or
+    was skipped — the URL is still citable, just not readable.
+    """
 
     url: str
     title: str | None = None
     note: str | None = None
+    filename: str | None = None
+    content_kind: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {"url": self.url}
@@ -48,6 +55,10 @@ class UserUrlSource:
             result["title"] = self.title
         if self.note:
             result["note"] = self.note
+        if self.filename:
+            result["filename"] = self.filename
+        if self.content_kind:
+            result["content_kind"] = self.content_kind
         return result
 
     @classmethod
@@ -56,6 +67,8 @@ class UserUrlSource:
             url=data["url"],
             title=data.get("title"),
             note=data.get("note"),
+            filename=data.get("filename"),
+            content_kind=data.get("content_kind"),
         )
 
 
