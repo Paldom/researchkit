@@ -362,13 +362,49 @@ class TestExploreCommand:
             no_raw=False,
             verbose=False,
             log_level="INFO",
+            providers=None,
         )
         assert cli.cmd_explore(args, service=None) == 0
         assert captured["topic"] == "agent memory"
         assert captured["boost"] is True
-        assert captured["providers"] == ["openai", "gemini", "grok", "claude", "kimi"]
+        # The five CLI harnesses plus every keyless provider: adding those keeps
+        # explore's "no API keys" promise while widening coverage.
+        assert captured["providers"] == [
+            "openai",
+            "gemini",
+            "grok",
+            "claude",
+            "kimi",
+            "hackernews",
+            "skillsh",
+            "openalex",
+        ]
         assert captured["no_site_research"] is True
         assert captured["preset_name"] == "harness"
+
+    def test_explicit_providers_override_the_default_set(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            cli,
+            "_cmd_instant_boosted",
+            lambda args, service, topic: (captured.update(vars(args)), 0)[1],
+        )
+        args = argparse.Namespace(
+            topic="t",
+            preset="harness",
+            days=7,
+            materials=False,
+            materials_limit=25,
+            ingest=None,
+            no_raw=False,
+            verbose=False,
+            log_level="INFO",
+            providers=["claude"],
+        )
+        assert cli.cmd_explore(args, service=None) == 0
+        assert captured["providers"] == ["claude"]
 
 
 class TestHarnessPreset:

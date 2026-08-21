@@ -110,9 +110,26 @@ Site Research (optional):
         help="Project folder name or path",
     )
     run_parser.add_argument(
-        "--materials",
+        "--since-last",
         action="store_true",
-        help="After the run, download cited sources into materials/",
+        help=(
+            "Re-run only what is new since the previous run: narrows the window "
+            "to the elapsed time and archives the old report under history/"
+        ),
+    )
+    run_parser.add_argument(
+        "--materials",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Download cited sources into materials/ (default: on)",
+    )
+    run_parser.add_argument(
+        "--clone-repos",
+        action="store_true",
+        help=(
+            "Shallow-clone the GitHub/skills.sh repositories the run cited into "
+            "repos/ and write repos/SUMMARY.md"
+        ),
     )
     run_parser.add_argument(
         "--materials-limit",
@@ -263,8 +280,9 @@ Site Research (optional):
     )
     explore_parser.add_argument(
         "--materials",
-        action="store_true",
-        help="Download cited sources into materials/ after the run",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Download cited sources into materials/ (default: on)",
     )
     explore_parser.add_argument(
         "--materials-limit",
@@ -285,6 +303,20 @@ Site Research (optional):
         "--preset",
         default="harness",
         help="Preset to run with (default: harness — subscription CLIs only)",
+    )
+    explore_parser.add_argument(
+        "--providers",
+        nargs="+",
+        default=None,
+        help=(
+            "Override the provider set (default: the five CLI harnesses plus "
+            "the keyless hackernews/skillsh/openalex providers)"
+        ),
+    )
+    explore_parser.add_argument(
+        "--clone-repos",
+        action="store_true",
+        help="Shallow-clone cited GitHub/skills.sh repositories into repos/",
     )
 
     # --- plugins command ---
@@ -501,8 +533,20 @@ def _add_research_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--materials",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Download cited sources into materials/ after the run "
+            "(default: on; ignored by create)"
+        ),
+    )
+    parser.add_argument(
+        "--clone-repos",
         action="store_true",
-        help="After the run, download cited sources into materials/ (ignored by create)",
+        help=(
+            "Shallow-clone cited GitHub/skills.sh repositories into repos/ "
+            "(ignored by create)"
+        ),
     )
     parser.add_argument(
         "--materials-limit",
@@ -672,6 +716,28 @@ def cmd_create(args, service: SocialResearchService) -> int:
     return 0
 
 
+def _clone_repos_for(project) -> int:
+    """Clone the repos a finished run cited; returns how many landed."""
+    import json
+
+    from researchkit.repos import clone_cited_repos
+
+    try:
+        result = json.loads(project.result_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        print(f"Could not read results for repo cloning: {e}", file=sys.stderr)
+        return 0
+    repos = clone_cited_repos(project.path, result)
+    ok = sum(1 for r in repos if r.ok)
+    if repos:
+        print(
+            f"cloned {ok}/{len(repos)} cited repositories -> "
+            f"{project.path / 'repos' / 'SUMMARY.md'}",
+            file=sys.stderr,
+        )
+    return ok
+
+
 def _download_materials_for(project, limit: int = 25, refresh: bool = False) -> int:
     """Shared materials-download step for run/instant/boost/materials commands."""
     from researchkit.materials import download_materials
@@ -781,6 +847,40 @@ def cmd_materials(args, service: SocialResearchService) -> int:
     return _download_materials_for(project, limit=args.limit, refresh=args.refresh)
 
 
+def _narrow_to_since_last(project) -> int:
+    """Point a project at the gap since its last run and stash the old report.
+
+    Mutates ``project.config.days`` in memory only: the declared window is a
+    property of the project, not of one update run, so it is not saved back.
+    Returns the window actually used (at least 1 day — a same-day update still
+    asks for today).
+    """
+    import math
+    import shutil
+    from datetime import datetime
+
+    if not project.has_results:
+        raise FileNotFoundError(
+            "--since-last needs a previous run; this project has no result.json"
+        )
+    previous = datetime.fromtimestamp(project.result_path.stat().st_mtime)
+    elapsed = (datetime.now() - previous).total_seconds() / 86400
+    window = max(1, math.ceil(elapsed))
+
+    history = project.path / "history"
+    history.mkdir(parents=True, exist_ok=True)
+    stamp = previous.strftime("%Y%m%d_%H%M%S")
+    for source, name in (
+        (project.report_path, f"report-{stamp}.md"),
+        (project.result_path, f"result-{stamp}.json"),
+    ):
+        if source.is_file():
+            shutil.copy2(source, history / name)
+
+    project.config.days = window
+    return window
+
+
 def cmd_run(args, service: SocialResearchService) -> int:
     """Handle the 'run' command."""
     project = find_project(args.project, args.projects_dir)
@@ -788,7 +888,18 @@ def cmd_run(args, service: SocialResearchService) -> int:
         print(f"Error: Project not found: {args.project}", file=sys.stderr)
         return 1
 
-    if project.has_results:
+    if getattr(args, "since_last", False):
+        try:
+            window = _narrow_to_since_last(project)
+        except FileNotFoundError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        print(
+            f"Update run: window narrowed to the last {window} day(s); "
+            f"previous report archived under history/",
+            file=sys.stderr,
+        )
+    elif project.has_results:
         print("Warning: Project already has results, overwriting...", file=sys.stderr)
 
     print(f"Running project: {project.path}", file=sys.stderr)
@@ -818,8 +929,10 @@ def cmd_run(args, service: SocialResearchService) -> int:
     # nothing cited to archive, and a hollow topic note would pollute a brain.
     handoff_rc = 0
     if not all_failed:
-        if getattr(args, "materials", False):
+        if getattr(args, "materials", True):
             _download_materials_for(project, limit=getattr(args, "materials_limit", 25))
+        if getattr(args, "clone_repos", False):
+            _clone_repos_for(project)
         if getattr(args, "ingest", None):
             handoff_rc = _ingest_into_brain(project, args.ingest)
 
@@ -1314,7 +1427,18 @@ def cmd_explore(args, service: SocialResearchService) -> int:
     normal boost pipeline.
     """
     args.boost = True
-    args.providers = ["openai", "gemini", "grok", "claude", "kimi"]
+    # The five CLI harnesses, plus every provider that needs no API key —
+    # they cost nothing and keep explore's zero-key guarantee intact.
+    args.providers = args.providers or [
+        "openai",
+        "gemini",
+        "grok",
+        "claude",
+        "kimi",
+        "hackernews",
+        "skillsh",
+        "openalex",
+    ]
     args.sources = ["social", "web"]
     args.no_site_research = True
     args.preset_name = args.preset
@@ -1440,7 +1564,7 @@ def _cmd_instant_boosted(args, service: SocialResearchService, topic: str) -> in
         artifacts = result.single_artifacts
         handoff_rc = 0
         if artifacts:
-            if getattr(args, "materials", False):
+            if getattr(args, "materials", True):
                 _download_materials_for(
                     result.project, limit=getattr(args, "materials_limit", 25)
                 )
@@ -1466,7 +1590,7 @@ def _cmd_instant_boosted(args, service: SocialResearchService, topic: str) -> in
     # parent's report cites the sub-reports, not the web, so it has no
     # materials of its own (brainkit ingests subprojects/ recursively).
     handoff_rc = 0
-    if getattr(args, "materials", False):
+    if getattr(args, "materials", True):
         for sp in result.sub_projects:
             if sp.has_results:
                 _download_materials_for(sp, limit=getattr(args, "materials_limit", 25))
@@ -1529,8 +1653,10 @@ def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
     # nothing cited to archive, and a hollow topic note would pollute a brain.
     handoff_rc = 0
     if not all_failed:
-        if getattr(args, "materials", False):
+        if getattr(args, "materials", True):
             _download_materials_for(project, limit=getattr(args, "materials_limit", 25))
+        if getattr(args, "clone_repos", False):
+            _clone_repos_for(project)
         if getattr(args, "ingest", None):
             handoff_rc = _ingest_into_brain(project, args.ingest)
 

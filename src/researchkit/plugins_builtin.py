@@ -175,6 +175,18 @@ def _make_openalex(ctx: ProviderContext) -> BaseProvider:
     return OpenAlexProvider(sources=_sources(ctx), model=ctx.model or None)
 
 
+def _make_hackernews(ctx: ProviderContext) -> BaseProvider:
+    from researchkit.providers.hackernews_provider import HackerNewsProvider
+
+    return HackerNewsProvider(sources=_sources(ctx), model=ctx.model or None)
+
+
+def _make_skillsh(ctx: ProviderContext) -> BaseProvider:
+    from researchkit.providers.skillsh_provider import SkillsShProvider
+
+    return SkillsShProvider(sources=_sources(ctx), model=ctx.model or None)
+
+
 def _make_exa_provider(ctx: ProviderContext) -> BaseProvider:
     from researchkit.providers.exa_provider import ExaProvider
 
@@ -225,6 +237,10 @@ def builtin_providers() -> tuple[ProviderSpec, ...]:
             requires_env=("BRAVE_API_KEY",),
         ),
         ProviderSpec("openalex", _make_openalex, default_model="openalex"),
+        # Engagement-scored, keyless slices: HN ranks by upvotes, skills.sh by
+        # install counts. Neither has an EffectiveModels slot.
+        ProviderSpec("hackernews", _make_hackernews, default_model="hn-algolia"),
+        ProviderSpec("skillsh", _make_skillsh, default_model="skills.sh"),
         # Exa is a first-class provider (like tavily) AND powers the exa
         # site-research connector below — independent registrations.
         ProviderSpec("exa", _make_exa_provider, requires_env=("EXA_API_KEY",)),

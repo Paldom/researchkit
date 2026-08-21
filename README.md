@@ -80,20 +80,22 @@ If you're logged into the coding-agent CLIs — Claude Code, Codex, Antigravity 
 uv run researchkit doctor                           # preflight: logins, model ids, keys — no tokens spent
 uv run researchkit advise "is X a good idea?"       # every harness answers; you read them side by side
 uv run researchkit council "is X a good idea?"      # lensed deliberation -> one boss-synthesized answer
+uv run researchkit advise-session "q" ; ... --session <id>   # persistent, project-aware follow-ups
 uv run researchkit explore "your topic" --days 7    # boosted research on CLI providers only
 ```
 
-| Command              | What it does                                                                                                                                                                                                                                                                                                                  | Typical time |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| `advise "question"`  | Every harness answers the same question; you read the raw, un-synthesized comparison side by side. `--context-file notes.md` appends context.                                                                                                                                                                                 | ~1–5 min     |
-| `council "question"` | Advisory deliberation: members answer through distinct lenses (practical / skeptic / tradeoffs), then a boss synthesizes one decisive answer with explicit **convergence and dissent**. `-v` appends every member's full answer.                                                                                              | ~2–10 min    |
-| `explore "topic"`    | Boost-mode research on the `harness` preset: the council refines and decomposes the topic, sub-investigations run across the five CLI providers (web search included), CLI-routed summaries end to end. Supports `--days`, `--materials`, `--ingest`. The web UI has the same thing as a "Harness only (no API keys)" toggle. | ~15–30 min   |
+| Command              | What it does                                                                                                                                                                                                                                                                                                                                                                                | Typical time |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `advise "question"`  | Every harness answers the same question; you read the raw, un-synthesized comparison side by side. `--context-file notes.md` appends context.                                                                                                                                                                                                                                               | ~1–5 min     |
+| `advise-session "q"` | Same harnesses, but each answers inside a **persistent session** that reads the project and remembers the last turn. Returns one session id; follow up with `--session <id>`. Read-only file access.                                                                                                                                                                                        | ~1–5 min     |
+| `council "question"` | Advisory deliberation: members answer through distinct lenses (practical / skeptic / tradeoffs), then a boss synthesizes one decisive answer with explicit **convergence and dissent**. `-v` appends every member's full answer.                                                                                                                                                            | ~2–10 min    |
+| `explore "topic"`    | Boost-mode research on the `harness` preset: the council refines and decomposes the topic, sub-investigations run across the five CLI providers plus the keyless Hacker News / skills.sh / OpenAlex providers (web search included), CLI-routed summaries end to end. Supports `--days`, `--materials`, `--ingest`. The web UI has the same thing as a "Harness only (no API keys)" toggle. | ~15–30 min   |
 
 Defaults live in the `harness` preset in [`models.yaml`](models.yaml) (`claude:claude-opus-5` @xhigh, `codex:gpt-5.6-sol` @xhigh, `agy:gemini-3.7-flash-high`, `grokcli:grok-4.6`, `kimicli:kimi-code/k3`) — members, boss, models, and per-member `@<effort>` are all editable there, or per run via `--harnesses`/`--boss`/`--preset`. Site research stays off in these flows (its Exa connector and keyword synthesis are API-key paths). Every model spec follows the same `<harness>:<model>[@<effort>]` grammar — see the [models.yaml guide](docs/models-guide.md).
 
 ### The same commands, as Agent Skills
 
-`advise`, `advise-max`, `council`, and `explore` also ship as [Agent Skills](https://agentskills.io) under [`.claude/skills/`](.claude/skills/), next to the existing `researchkit` pipeline skill — so an agent can drive them (`/advise`, `/advise-max`, `/council`, `/explore` in Claude Code from this repo); Codex and other Agent-Skills-standard agents discover the same skills via the repo's `.agents/skills/`. Install them into any of 70+ agents with the [skills CLI](https://skills.sh):
+`advise`, `advise-max`, `advise-session`, `council`, and `explore` also ship as [Agent Skills](https://agentskills.io) under [`.claude/skills/`](.claude/skills/), next to the existing `researchkit` pipeline skill — so an agent can drive them (`/advise`, `/advise-max`, `/advise-session`, `/council`, `/explore` in Claude Code from this repo); Codex and other Agent-Skills-standard agents discover the same skills via the repo's `.agents/skills/`. Install them into any of 70+ agents with the [skills CLI](https://skills.sh):
 
 ```bash
 npx skills add Paldom/researchkit          # all detected agents
@@ -106,8 +108,11 @@ The skills wrap the CLI commands above and inherit the same guarantee: logged-in
 
 Reports cite dozens of URLs; `--materials` (or the `materials` subcommand) downloads the pages themselves — SSRF-guarded, deduplicated, politely paced — into `projects/<run>/materials/` as frontmattered markdown plus an `index.json` manifest:
 
+Materials are archived **by default** — the pack is what brainkit ingests and skillskit skillifies, and the archive is what survives link rot. Opt out with `--no-materials`.
+
 ```bash
-uv run researchkit "your topic" --materials               # research + archive
+uv run researchkit "your topic"                           # research + archive (default)
+uv run researchkit "your topic" --no-materials            # report only
 uv run researchkit "your topic" --materials --boost       # boosted: each sub-project archives its own sources
 uv run researchkit "your topic" --materials --materials-limit 0   # lift the 25-source cap
 uv run researchkit materials <project> --limit 25         # archive an earlier run
@@ -170,6 +175,8 @@ Each provider sees a different slice of the web — that's the point of running 
 | Exa             | `EXA_API_KEY`                        | opt-in via `--providers`; also powers site research | Embeddings-first neural search: finds semantically related pages that keyword search misses, with full-text retrieval for deep reading — registered both as a provider (like Tavily) and as the site-research connector                                                       |
 | Brave           | `BRAVE_API_KEY`                      | opt-in via `--providers`                            | The only large independent English index (not Google/Bing-derived) plus a discussions vertical for forum/Reddit threads — catches what both big indexes miss. Sequentially paced for starter-tier rate limits; cheap tier requires public attribution                         |
 | OpenAlex        | keyless (`OPENALEX_MAILTO` optional) | opt-in via `--providers`                            | Peer-reviewed literature with DOIs, venues, and citation counts. Self-gating: when the topic has no matching scholarly works it reports "not relevant" with zero sources instead of padding the report with off-topic papers                                                  |
+| Hacker News     | keyless                              | opt-in via `--providers`                            | Developer consensus scored by upvotes rather than relevance: stories and comment counts from the Algolia HN index, windowed by `--days` and ranked by points                                                                                                                  |
+| skills.sh       | keyless                              | opt-in via `--providers`                            | The Agent Skills directory ranked by real install counts — what agents are actually being taught to do. Self-gates to "not relevant" when a topic has no matching skills                                                                                                      |
 
 All keys live in `.env` (see [`.env.example`](.env.example)). Model choices, presets, budgets, and advanced CLI-backed modes are documented in [`models.yaml`](models.yaml).
 

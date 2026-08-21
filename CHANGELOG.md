@@ -7,7 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `advise-session` — `advise` with a memory. Each harness answers inside a
+  persistent conversation pinned to a working directory, with read-only
+  access to it, and the command returns one researchkit session id the
+  caller holds instead of five per-vendor ids. Follow up with
+  `--session <id>`; `--list` shows what is open. Every CLI's resume path was
+  verified live (`claude -r`, `codex exec resume`, `grok -r`, `kimi -r`,
+  `agy --conversation`). Ships as an Agent Skill alongside the others.
+- Two keyless providers, both scored by engagement rather than relevance —
+  the idea worth taking from `mvanhorn/last30days-skill`. **Hacker News**
+  (`--providers hackernews`) ranks windowed stories by points, citing the
+  thread and the submitted article separately. **skills.sh**
+  (`--providers skillsh`) ranks the Agent Skills directory by real install
+  counts, self-gating to "not relevant" the way OpenAlex does.
+- `run --since-last`: an update run that narrows the window to the time
+  elapsed since the previous run and archives the old report and result
+  under `history/`, so successive runs are diffable. The narrowed window is
+  in-memory only — a project's declared window is not a property of one
+  update.
+- `--clone-repos`: shallow-clones the GitHub/skills.sh repositories a run
+  cited into `repos/` and writes `repos/SUMMARY.md`. A cited repo archived
+  as an HTML page loses the one thing worth having; deep links collapse to
+  their repo, non-repo namespaces are rejected, and a repo that will not
+  clone is recorded with its reason.
+- `explore` now runs the keyless Hacker News, skills.sh and OpenAlex
+  providers alongside the five CLI harnesses (they need no API key, so the
+  zero-key guarantee holds) and accepts `--providers` / `--clone-repos`.
+
 ### Changed
+
+- **Materials are archived by default** (`--no-materials` opts out). The
+  research pack is what brainkit ingests and skillskit skillifies, and the
+  archive is the part that survives link rot; making the artifact the
+  default costs one polite fetch pass over at most 25 cited sources.
+- User-supplied links are read, not just listed. A URL added with
+  `add-source` used to be metadata — the article was told the link existed
+  and nothing ever fetched it, so a YouTube link was worth its title.
+  Links are now extracted into `user_sources/` and flow into the final
+  article keyed by URL (staying citable, unlike background documents).
+  YouTube goes through `@steipete/summarize`, falling back to `npx -y` so
+  transcripts work with no install; other pages use the SSRF-guarded
+  fetcher.
+- Prompts cut against a four-harness audit: persona openers, ceremonial
+  footers, restated task lists and empty quality talk deleted; the
+  professional-overview pair rewritten (it asked for "concise but
+  comprehensive" and then "do not sacrifice completeness for brevity" —
+  completeness won, and every report inherited it); lower-bounded ranges
+  turned into caps, since a model reads "3-7 bullets" as a quota of 7. Two
+  real bugs went with them: "extend to 30 days" shrank the window whenever
+  `days > 30`, and the digest named Exa as a required input even in runs
+  without it. Every citation, injection-fence, JSON-schema and
+  Weakest-Evidence contract the audit called load-bearing was kept.
 
 - Model defaults tracked forward to current models across every preset,
   in-code fallback, skill and doc (each id verified live against the
