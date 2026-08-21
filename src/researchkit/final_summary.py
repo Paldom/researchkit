@@ -27,6 +27,7 @@ from researchkit.prompts import (
     get_super_summary_user_prompt_footer,
     get_super_summary_user_prompt_header,
 )
+from researchkit.providers.base import cli_harness_timeout
 from researchkit.providers.claude_provider import (
     deep_research_underlying_model,
     is_deep_research_spec,
@@ -44,7 +45,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 FINAL_SUMMARY_MAX_BUDGET = 1.0
-FINAL_SUMMARY_TIMEOUT_SECONDS = 300
 
 _CLI_NETWORK_SIGNATURES = (
     "connection reset",
@@ -65,9 +65,11 @@ _CLI_NETWORK_SIGNATURES = (
 
 
 def _is_cli_transient(exc: BaseException) -> bool:
-    """True if a Claude CLI subprocess error looks like a transient network issue."""
-    if isinstance(exc, subprocess.TimeoutExpired):
-        return True
+    """True if a Claude CLI subprocess error looks like a transient network issue.
+
+    A wall-clock timeout is NOT transient: the summary runs on the generous
+    harness budget, so retrying it just doubles an already long stall.
+    """
     if isinstance(exc, RuntimeError):
         msg = str(exc).lower()
         return any(sig in msg for sig in _CLI_NETWORK_SIGNATURES)
@@ -106,7 +108,7 @@ class ClaudeFinalSummaryGenerator:
 
     def __init__(
         self,
-        model: str = "claude-sonnet-4-6",
+        model: str = "claude-sonnet-5",
         max_budget: float = FINAL_SUMMARY_MAX_BUDGET,
     ) -> None:
         self.model = model
@@ -333,6 +335,7 @@ class ClaudeFinalSummaryGenerator:
             extra={"stage": f"{self.stage_name}_start"},
         )
 
+        timeout = cli_harness_timeout()
         try:
             for attempt in Retrying(
                 stop=stop_after_attempt(2),
@@ -346,7 +349,7 @@ class ClaudeFinalSummaryGenerator:
                     result = run_subprocess(
                         cmd,
                         input=user_prompt,
-                        timeout=FINAL_SUMMARY_TIMEOUT_SECONDS,
+                        timeout=timeout,
                         env=self._build_env(),
                     )
                     if result.returncode != 0:
@@ -362,7 +365,7 @@ class ClaudeFinalSummaryGenerator:
             return None
         except subprocess.TimeoutExpired:
             logger.warning(
-                f"{self.__class__.__name__}: timed out after {FINAL_SUMMARY_TIMEOUT_SECONDS}s",
+                f"{self.__class__.__name__}: timed out after {timeout:.0f}s",
                 extra={"stage": f"{self.stage_name}_error"},
             )
             return None
@@ -485,11 +488,11 @@ class SuperSummaryGenerator(ClaudeFinalSummaryGenerator):
     ) -> SuperSummaryGenerator:
         """Create the generator pinned to the council boss model."""
         if effective_models is None:
-            return cls(model="claude-opus-4-8", max_budget=SUPER_SUMMARY_MAX_BUDGET)
+            return cls(model="claude-opus-5", max_budget=SUPER_SUMMARY_MAX_BUDGET)
         # The super-summary runs via the Claude Code CLI, so it needs a Claude
         # boss; fall back to Opus if the configured boss is a non-Claude model.
         # Council member specs may carry a researchkit-only `@<effort>` suffix
-        # ("claude-opus-4-8@xhigh") — strip it, or `claude --model` gets an
+        # ("claude-opus-5@xhigh") — strip it, or `claude --model` gets an
         # invalid id and the boosted run's flagship output silently dies.
         from researchkit.council import split_effort_spec
         from researchkit.providers.claude_provider import (
@@ -499,16 +502,16 @@ class SuperSummaryGenerator(ClaudeFinalSummaryGenerator):
 
         boss, _ = split_effort_spec(effective_models.council_boss)
         if is_claude_cli_spec(boss):
-            model = claude_cli_underlying_model(boss) or "claude-opus-4-8"
+            model = claude_cli_underlying_model(boss) or "claude-opus-5"
         elif boss.lower().startswith("claude"):
             model = boss
         else:
             logger.warning(
                 "Super-summary runs via the Claude CLI but council boss is %r; "
-                "falling back to claude-opus-4-8 for the super-summary.",
+                "falling back to claude-opus-5 for the super-summary.",
                 boss,
             )
-            model = "claude-opus-4-8"
+            model = "claude-opus-5"
         return cls(
             model=model,
             max_budget=max(

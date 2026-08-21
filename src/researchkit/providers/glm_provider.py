@@ -96,7 +96,7 @@ class GLMProvider(BaseProvider):
     """
 
     provider_name = "glm"
-    model_name = "glm-4.6"
+    model_name = "glm-5.3"
 
     def __init__(
         self,
@@ -112,7 +112,7 @@ class GLMProvider(BaseProvider):
         Args:
             api_key: z.ai API key (defaults to ZAI_API_KEY env var)
             sources: Set of sources to query ("social", "web", or both)
-            model: Model to use (overrides default glm-4.6)
+            model: Model to use (overrides default glm-5.3)
             search_count: Number of web-search results per query (capped at 50)
             search_engine: z.ai search engine (default ``search_pro_jina``)
         """

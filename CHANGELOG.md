@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Model defaults tracked forward to current models across every preset,
+  in-code fallback, skill and doc (each id verified live against the
+  provider's model list or a smoke call on 2026-08-21): Gemini 3.7 Flash,
+  Claude Opus 5 / Sonnet 5, Grok 4.6, GLM 5.3, Kimi K3, and
+  `gemini-3.5-flash-lite` for the high-volume site-summarizer slot. Two
+  pins were not merely stale but dead: `glm-4.7-flashx` is gone from z.ai
+  (now `glm-5-turbo`), and Antigravity switched `agy models` from bare
+  display names to `<id>\t<display name>`, so the harness preset's
+  `"agy:Gemini 3.5 Flash (High)"` no longer resolved — it is now
+  `agy:gemini-3.7-flash-high`. The Grok CLI's effort ceiling also rose from
+  `high` to `xhigh`, which `/advise-max` now uses.
+
+  In-code provider class defaults (the fallback when nothing configures a
+  slot) now follow one rule — mirror the shipped `default` preset — instead
+  of each drifting on its own. That deliberately re-tiers three of them:
+  Gemini `gemini-3.1-pro-preview` -> `gemini-3.7-flash`, Claude
+  `claude-opus-4-7` -> `claude-sonnet-5`, Grok `grok-4-1-fast` ->
+  `grok-4.6`. Anyone constructing a provider directly without a preset gets
+  the documented default rather than a stale surprise.
+
+### Fixed
+
+- Harness CLI calls no longer die to the stopwatch mid-answer. Every
+  coding-agent CLI carried its own floor (codex 300s, grokcli/kimicli 300s,
+  agy 600s, claude 300s in the council path and 120s for keyword/summary
+  calls), each derived from `provider_http_timeout()` — an HTTP notion
+  applied to a subprocess that reasons for minutes. A dense five-question
+  prompt at the top effort tier was measured past 10 minutes on the Codex
+  CLI, so 300s killed that member three retries deep while the other four
+  answered. All five paths now take one budget from
+  `cli_harness_timeout()`, and agy's own `--print-timeout` is derived from
+  that budget (always strictly below it) instead of a hardcoded `9m`, so it
+  can no longer self-kill first. Two budgets, not one: 1800s for a full
+  answer, 300s (`CLI_QUICK_TIMEOUT`) for short pipeline steps like keyword
+  generation and per-provider summaries, which already degrade gracefully
+  and shouldn't stall a run for half an hour. `RESEARCHKIT_CLI_TIMEOUT`
+  overrides both and wins over `PROVIDER_HTTP_TIMEOUT` (which still raises,
+  never lowers, the default when the new knob is unset); non-positive or
+  non-finite values fall back. A wall-clock timeout is no longer retried on
+  the Claude paths — at a 30-minute budget, retrying only multiplies the
+  stall. The Kimi research floor rose 420s -> 900s, and the final-summary
+  CLI call joined the shared budget (it had its own fixed 300s).
+
 ### Added
 
 - Codex support at Claude-Code parity: the repo's skills (advise,

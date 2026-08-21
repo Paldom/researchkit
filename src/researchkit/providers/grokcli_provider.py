@@ -9,7 +9,7 @@ subscription rather than XAI_API_KEY per-token billing — the same story as
 
 Selecting it: set the ``grok`` model in ``models.yaml`` to ``grokcli`` (CLI
 default model) or ``grokcli:<model>`` (``grok models`` lists what your login
-offers, e.g. ``grokcli:grok-4.5``). The aggregator routes the grok slot to
+offers, e.g. ``grokcli:grok-4.6``). The aggregator routes the grok slot to
 this provider whenever :func:`is_grokcli_model` matches; it still reports
 ``provider_name = "grok"`` and is differentiated by its ``model`` field
 (``grokcli:<model>`` / ``grokcli:default``). Council members accept the same
@@ -31,7 +31,7 @@ import json
 import tempfile
 
 from researchkit.network_retry import with_network_retry
-from researchkit.providers.base import provider_http_timeout
+from researchkit.providers.base import cli_harness_timeout
 from researchkit.providers.codex_provider import CodexProvider
 from researchkit.safe_io import run_subprocess, scrubbed_env
 
@@ -49,7 +49,7 @@ def is_grokcli_model(model: str | None) -> bool:
 def grokcli_underlying_model(model: str | None) -> str | None:
     """Extract the underlying model from a ``grokcli`` spec.
 
-    ``"grokcli:grok-4.5"`` -> ``"grok-4.5"``; ``"grokcli"`` -> ``None``
+    ``"grokcli:grok-4.6"`` -> ``"grok-4.6"``; ``"grokcli"`` -> ``None``
     (CLI default model).
     """
     if not model:
@@ -175,7 +175,7 @@ class GrokCliProvider(CodexProvider):
         self, prompt: str, *, web_search: bool, label: str
     ) -> tuple[str, list[str]]:
         """Run one headless ``grok`` invocation; return (final_text, [])."""
-        timeout = max(provider_http_timeout(), 300.0)
+        timeout = cli_harness_timeout()
 
         def _call() -> tuple[str, list[str]]:
             # Prompt via file, not argv: research prompts (and the full report

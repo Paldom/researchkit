@@ -38,10 +38,12 @@ requiring repo file access — members answer from model knowledge only.
    answer — if the user wants synthesis, run `/council` instead.
 
 Default members come from the `harness` preset in `models.yaml`
-(claude:claude-opus-4-8@xhigh, codex:gpt-5.6-sol@xhigh,
-"agy:Gemini 3.5 Flash (High)", grokcli:grok-4.5, kimicli:kimi-code/k3).
-Override per run: `--harnesses codex:gpt-5.6-sol grokcli:grok-4.5` (a
+(claude:claude-opus-5@xhigh, codex:gpt-5.6-sol@xhigh,
+agy:gemini-3.7-flash-high, grokcli:grok-4.6, kimicli:kimi-code/k3).
+Override per run: `--harnesses codex:gpt-5.6-sol grokcli:grok-4.6` (a
 `@<effort>` suffix sets reasoning effort where the CLI supports it).
+`uv run researchkit doctor --preset harness` verifies every pin before
+spending anything.
 
 ## Failure modes
 
@@ -50,4 +52,8 @@ Override per run: `--harnesses codex:gpt-5.6-sol grokcli:grok-4.5` (a
   only — the reason prints inline; exit code is 1 only when ALL members fail.
 - Requires the CLIs to be signed in (`claude`, `codex`, `agy`, `grok login`,
   `kimi login`) — there is no API-key fallback by design.
-- Expect ~20–60 s wall clock (parallel; slowest member dominates).
+- Expect ~1–5 min wall clock (parallel; slowest member dominates). Each
+  harness call gets a 30-minute budget — a dense prompt at a high effort
+  tier really can take >10 minutes, and a tighter clock just turns the
+  slowest (usually codex) into a `*failed: timed out*` line. Override with
+  `RESEARCHKIT_CLI_TIMEOUT=<seconds>` if you need a hard cap.

@@ -45,15 +45,19 @@ model's raw answer (that is `/advise`), sourced/cited research (that is
    first valid member's (deterministic fallback) — say so when relaying.
 
 Members/boss default to the `harness` preset in `models.yaml`
-(claude:claude-opus-4-8@xhigh, codex:gpt-5.6-sol@xhigh,
-"agy:Gemini 3.5 Flash (High)", grokcli:grok-4.5, kimicli:kimi-code/k3;
-boss claude:claude-opus-4-8@xhigh); override with `--harnesses <specs…>`
-and `--boss <spec>` (specs accept `@<effort>`).
+(claude:claude-opus-5@xhigh, codex:gpt-5.6-sol@xhigh,
+agy:gemini-3.7-flash-high, grokcli:grok-4.6, kimicli:kimi-code/k3;
+boss claude:claude-opus-5@xhigh); override with `--harnesses <specs…>`
+and `--boss <spec>` (specs accept `@<effort>`). `uv run researchkit doctor
+--preset harness` verifies every pin before spending anything.
 
 ## Failure modes
 
 - Individual member failures are isolated; the run errors only when every
   member fails (the message lists each member's error — usually a CLI not
   installed, not logged in, or out of subscription quota).
-- Expect ~60–120 s (members in parallel, then one boss call).
+- Expect ~2–10 min (members in parallel, then one boss call). Each harness
+  call gets a 30-minute budget: a dense question at `@xhigh` can take a
+  member past 10 minutes, and a tighter clock only costs you that member's
+  answer. `RESEARCHKIT_CLI_TIMEOUT=<seconds>` overrides it.
 - Members answer from model knowledge — no web tools in deliberation.

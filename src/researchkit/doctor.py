@@ -110,9 +110,10 @@ def _model_listed(model: str, output: str) -> bool:
     """True when ``model`` appears as a whole token/name in the CLI output.
 
     Substring matching false-passes a dead ``grok-4`` pin against a listed
-    ``grok-4.5``. Ids match as whole tokens; display names containing
-    spaces (agy) must match a whole line — ``Gemini 3.5 Flash`` must not
-    pass because ``Gemini 3.5 Flash (High)`` is listed.
+    ``grok-4.5``. Ids match as whole tokens — including the id column of
+    ``agy models``' ``<id>\t<display name>`` lines. A spec containing spaces
+    must match a whole line, which is what makes a legacy agy display-name
+    pin ("Gemini 3.5 Flash (High)") fail loudly now that agy lists ids.
     """
     if " " in model:
         return any(line.strip() == model for line in output.splitlines())

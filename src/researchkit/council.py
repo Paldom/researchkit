@@ -45,7 +45,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _JSON_INSTRUCTION = "\n\nRespond ONLY with the JSON object, no preamble or fences."
-_CLAUDE_CLI_TIMEOUT = 300.0
 _DEFAULT_KEYWORD_COUNT = 10
 
 
@@ -355,6 +354,9 @@ def _run_claude_cli(
     ``model`` is passed to ``claude --model`` verbatim (alias or full id);
     ``None`` (a bare ``claude`` spec) uses the CLI's default model.
     """
+    # Local import: researchkit.providers imports council (github_provider).
+    from researchkit.providers.base import cli_harness_timeout
+
     cmd = [
         "claude",
         "-p",
@@ -381,7 +383,7 @@ def _run_claude_cli(
     proc = run_subprocess(
         cmd,
         input=user_prompt,
-        timeout=_CLAUDE_CLI_TIMEOUT,
+        timeout=cli_harness_timeout(),
         env=env,
     )
     if proc.returncode != 0:

@@ -44,16 +44,19 @@ harness path trades breadth for depth (agents that actually read pages).
    says "super-summary unavailable", the sub-reports still stand.
 
 Defaults come from the `harness` preset in `models.yaml` (providers
-codex:gpt-5.6-sol / "agy:Gemini 3.5 Flash (High)" / grokcli:grok-4.5 /
-kimicli:kimi-code/k3 / claude:claude-opus-4-8; site research off — its
+codex:gpt-5.6-sol / agy:gemini-3.7-flash-high / grokcli:grok-4.6 /
+kimicli:kimi-code/k3 / claude:claude-opus-5; site research off — its
 connectors are API-key paths). `--preset <name>` swaps the whole model set.
+`uv run researchkit doctor --preset harness` verifies every pin first — a
+20-minute run is a bad place to discover a dead model id.
 
 ## Failure modes
 
 - Providers degrade independently: a harness that fails or returns nothing
-  (observed live: codex refusing heavy research prompts, agy timing out on
-  long ones) costs its sources, not the run — Claude Code and the Grok CLI
-  carry the depth today.
+  (observed live: codex refusing heavy research prompts) costs its sources,
+  not the run — Claude Code and the Grok CLI carry the depth today. Each
+  harness call gets a 30-minute budget (`RESEARCHKIT_CLI_TIMEOUT=<seconds>`
+  overrides), so slow agents finish rather than time out.
 - All five CLIs must be signed in; there is no API fallback by design.
 - Budget note: a boosted run is many harness invocations against your
   subscriptions — don't loop it casually.

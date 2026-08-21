@@ -30,7 +30,7 @@ class Summarizer:
     - A consolidated meta-summary across all providers
     """
 
-    DEFAULT_MODEL = "gemini-3.5-flash"
+    DEFAULT_MODEL = "gemini-3.7-flash"
 
     def __init__(
         self,
@@ -42,7 +42,7 @@ class Summarizer:
 
         Args:
             api_key: Gemini API key (defaults to GEMINI_API_KEY env var)
-            model: Model to use for summarization (defaults to gemini-3.5-flash)
+            model: Model to use for summarization (defaults to gemini-3.7-flash)
         """
         self.api_key = (
             api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
@@ -301,7 +301,7 @@ class Summarizer:
                 prompt,
                 label="summarizer.generate_content:meta",
                 temperature=0.4,
-                # Thinking models (gemini-3.5-flash) spend reasoning tokens from
+                # Thinking models (gemini-3.7-flash) spend reasoning tokens from
                 # the same budget; 2500 left ~700 for text and truncated the
                 # meta-summary mid-sentence (found via brain ingestion QA).
                 max_output_tokens=8000,

@@ -33,16 +33,16 @@ _EMBEDDED_DEFAULT_CONFIG: dict[str, Any] = {
             "description": "Built-in fallback (models.yaml not found)",
             "models": {
                 "openai": "gpt-5.4-mini",
-                "gemini": "gemini-3.5-flash",
-                "grok": "grok-4.3",
+                "gemini": "gemini-3.7-flash",
+                "grok": "grok-4.6",
                 "perplexity": "sonar",
                 "tavily": "tavily-search",
-                "claude": "claude:claude-sonnet-4-6",
+                "claude": "claude:claude-sonnet-5",
                 "github": "gpt-5.4-mini",
-                "glm": "glm-5.2",
-                "kimi": "kimi-k2.6",
-                "summarizer": "gemini-3.5-flash",
-                "site_summarizer": "gemini-3-flash-preview",
+                "glm": "glm-5.3",
+                "kimi": "kimi-k3",
+                "summarizer": "gemini-3.7-flash",
+                "site_summarizer": "gemini-3.5-flash-lite",
                 "improver": "gpt-5.4-mini",
             },
             "reasoning_effort": "medium",
@@ -57,12 +57,12 @@ _EMBEDDED_DEFAULT_CONFIG: dict[str, Any] = {
 # with the boss (a strong reasoning model) synthesizing the final result. Members
 # may use CLI-backed model specs ("codex:<m>", "agy:<m>") or plain API model ids.
 DEFAULT_COUNCIL_MEMBERS = [
-    "claude:claude-opus-4-8",
-    "codex:gpt-5.5",
-    # Antigravity model ids are display names now (`agy models` lists them).
-    "agy:Gemini 3.5 Flash (High)",
+    "claude:claude-opus-5",
+    "codex:gpt-5.6-sol",
+    # `agy models` lists ids; the thinking level is baked into the id.
+    "agy:gemini-3.7-flash-high",
 ]
-DEFAULT_COUNCIL_BOSS = "claude:claude-opus-4-8"
+DEFAULT_COUNCIL_BOSS = "claude:claude-opus-5"
 DEFAULT_BOOST_MAX_SUBPROJECTS = 5
 
 
@@ -355,12 +355,12 @@ class SystemConfigManager:
             grok=models["grok"],
             perplexity=models["perplexity"],
             tavily=models.get("tavily", "tavily-search"),
-            claude=models.get("claude", "claude-opus-4-7"),
+            claude=models.get("claude", "claude:claude-sonnet-5"),
             github=models.get("github", "gpt-5.5"),
-            glm=models.get("glm", "glm-4.6"),
-            kimi=models.get("kimi", "kimi-k2.6"),
+            glm=models.get("glm", "glm-5.3"),
+            kimi=models.get("kimi", "kimi-k3"),
             summarizer=models["summarizer"],
-            site_summarizer=models.get("site_summarizer", "gemini-3-flash-preview"),
+            site_summarizer=models.get("site_summarizer", "gemini-3.5-flash-lite"),
             improver=models.get("improver", "gpt-5.5"),
             reasoning_effort=preset.get("reasoning_effort", "medium"),
             perplexity_search_type=preset.get("perplexity_search_type", "pro"),

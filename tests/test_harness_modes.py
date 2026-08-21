@@ -17,6 +17,7 @@ from researchkit.council import (
     is_cli_backed_spec,
     split_effort_spec,
 )
+from researchkit.providers.base import cli_harness_timeout
 
 
 class TestEffortSpec:
@@ -123,6 +124,96 @@ class TestRouterEffort:
         assert cmd[cmd.index("--model") + 1] == "claude-opus-4-8"  # effort stripped
         assert cmd[cmd.index("--effort") + 1] == "xhigh"
         assert cmd[cmd.index("--max-budget-usd") + 1] == "9.0"
+
+
+class TestCliHarnessTimeout:
+    """One generous budget shared by every harness subprocess."""
+
+    def test_default_floor_is_generous(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("RESEARCHKIT_CLI_TIMEOUT", raising=False)
+        monkeypatch.delenv("PROVIDER_HTTP_TIMEOUT", raising=False)
+        # Regression: 300s killed codex mid-answer on dense prompts.
+        assert cli_harness_timeout() >= 1800.0
+
+    def test_explicit_override_wins_over_http_timeout(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The dedicated knob is authoritative — a stale PROVIDER_HTTP_TIMEOUT
+        # must not silently override the cap someone deliberately set.
+        monkeypatch.setenv("RESEARCHKIT_CLI_TIMEOUT", "60")
+        for http in ("2400", "10"):
+            monkeypatch.setenv("PROVIDER_HTTP_TIMEOUT", http)
+            assert cli_harness_timeout() == 60.0
+
+    def test_http_timeout_still_raises_the_default_when_unset(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("RESEARCHKIT_CLI_TIMEOUT", raising=False)
+        monkeypatch.setenv("PROVIDER_HTTP_TIMEOUT", "2400")  # documented hatch
+        assert cli_harness_timeout() == 2400.0
+        monkeypatch.setenv("PROVIDER_HTTP_TIMEOUT", "10")  # but never lowers it
+        assert cli_harness_timeout() == 1800.0
+
+    def test_quick_budget_is_separate_and_shorter(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from researchkit.providers.base import CLI_QUICK_TIMEOUT
+
+        monkeypatch.delenv("RESEARCHKIT_CLI_TIMEOUT", raising=False)
+        monkeypatch.delenv("PROVIDER_HTTP_TIMEOUT", raising=False)
+        assert cli_harness_timeout(CLI_QUICK_TIMEOUT) == CLI_QUICK_TIMEOUT
+        assert cli_harness_timeout() > CLI_QUICK_TIMEOUT
+
+    @pytest.mark.parametrize("bad", ["soon", "", "0", "-1", "nan", "inf"])
+    def test_unusable_env_falls_back(
+        self, monkeypatch: pytest.MonkeyPatch, bad: str
+    ) -> None:
+        monkeypatch.setenv("RESEARCHKIT_CLI_TIMEOUT", bad)
+        monkeypatch.delenv("PROVIDER_HTTP_TIMEOUT", raising=False)
+        assert cli_harness_timeout() == 1800.0
+
+    def test_council_claude_uses_harness_budget(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("RESEARCHKIT_CLI_TIMEOUT", "1234")
+        monkeypatch.delenv("PROVIDER_HTTP_TIMEOUT", raising=False)
+        captured: list[float] = []
+
+        def fake_run(cmd: list[str], **kwargs: Any):
+            captured.append(kwargs["timeout"])
+            import subprocess
+
+            return subprocess.CompletedProcess(
+                cmd, 0, stdout=json.dumps({"result": "hi"}), stderr=""
+            )
+
+        monkeypatch.setattr(council_mod, "run_subprocess", fake_run)
+        complete_via_spec("claude:claude-opus-5", "s", "u", label="t")
+        assert captured == [1234.0]
+
+    def test_agy_print_timeout_tracks_the_budget(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from researchkit.providers.antigravity_provider import AntigravityProvider
+
+        monkeypatch.setenv("RESEARCHKIT_CLI_TIMEOUT", "1800")
+        monkeypatch.delenv("PROVIDER_HTTP_TIMEOUT", raising=False)
+        cmd = AntigravityProvider(model="gemini-3.7-flash-high")._build_cmd(
+            "hi", timeout=cli_harness_timeout()
+        )
+        # agy's own clock stops short of ours, so it reports its own timeout.
+        assert cmd[cmd.index("--print-timeout") + 1] == "1740s"
+        assert cmd[cmd.index("--model") + 1] == "gemini-3.7-flash-high"
+
+    @pytest.mark.parametrize("budget", [5.0, 60.0, 90.0, 300.0, 1800.0])
+    def test_agy_print_timeout_never_exceeds_the_budget(self, budget: float) -> None:
+        # A floor above the budget would invert the invariant and hand agy back
+        # to SIGKILL — the exact failure the inner clock exists to prevent.
+        from researchkit.providers.antigravity_provider import AntigravityProvider
+
+        cmd = AntigravityProvider()._build_cmd("hi", timeout=budget)
+        inner = int(cmd[cmd.index("--print-timeout") + 1].rstrip("s"))
+        assert 0 < inner < budget
 
 
 def _fake_member_json(answer: str, confidence: str = "high") -> str:
@@ -297,10 +388,10 @@ class TestHarnessPreset:
 
         em = SystemConfigManager().resolve_effective_models("harness")
         assert em.council_members == [
-            "claude:claude-opus-4-8@xhigh",
+            "claude:claude-opus-5@xhigh",
             "codex:gpt-5.6-sol@xhigh",
-            "agy:Gemini 3.5 Flash (High)",
-            "grokcli:grok-4.5",
+            "agy:gemini-3.7-flash-high",
+            "grokcli:grok-4.6",
             "kimicli:kimi-code/k3",
         ]
 
@@ -345,7 +436,7 @@ class TestClaudeSpecHelpers:
 
         em = SystemConfigManager().resolve_effective_models("harness")
         gen = ClaudeFinalSummaryGenerator.from_effective_models(em)
-        assert gen.model == "claude-opus-4-8"
+        assert gen.model == "claude-opus-5"
 
 
 class TestSuperSummaryEffortStripping:
@@ -357,7 +448,7 @@ class TestSuperSummaryEffortStripping:
 
         em = SystemConfigManager().resolve_effective_models("harness")
         gen = SuperSummaryGenerator.from_effective_models(em)
-        assert gen.model == "claude-opus-4-8"
+        assert gen.model == "claude-opus-5"
 
 
 class TestCliOnlyCouncilFallback:

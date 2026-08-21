@@ -19,11 +19,13 @@ from tenacity import (
 )
 
 from researchkit.providers.base import (
+    CLI_QUICK_TIMEOUT,
     SOCIAL_DOMAINS,
     BaseProvider,
     ProviderResult,
     Source,
     SourceType,
+    cli_harness_timeout,
     get_base_system_prompt,
     get_user_prompt,
     get_web_system_prompt,
@@ -60,7 +62,7 @@ def is_claude_cli_spec(model: str | None) -> bool:
 def claude_cli_underlying_model(model: str | None) -> str | None:
     """Extract the underlying model from a ``claude`` spec.
 
-    ``"claude:claude-opus-4-8"`` -> ``"claude-opus-4-8"``; ``"claude:opus"``
+    ``"claude:claude-opus-5"`` -> ``"claude-opus-5"``; ``"claude:opus"``
     -> ``"opus"`` (the CLI resolves aliases); ``"claude"`` -> ``None``
     (Claude CLI default model).
     """
@@ -75,7 +77,7 @@ def claude_cli_underlying_model(model: str | None) -> str | None:
 def deep_research_underlying_model(model: str | None) -> str | None:
     """Extract the underlying model from a ``deep`` spec.
 
-    ``"deep:claude-opus-4-8"`` -> ``"claude-opus-4-8"``;
+    ``"deep:claude-opus-5"`` -> ``"claude-opus-5"``;
     ``"deep"`` -> ``None`` (Claude Code CLI default model).
     """
     if not model:
@@ -159,14 +161,15 @@ def _claude_cli_retry_log(state: Any) -> None:
 def _run_claude_cli_with_retry(
     cmd: list[str],
     env: dict[str, str],
-    timeout: int,
-    retry_on_timeout: bool = True,
+    timeout: float,
+    retry_on_timeout: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """Run the Claude Code CLI with a single transient-network retry.
 
-    ``retry_on_timeout=False`` treats a wall-clock timeout as terminal —
-    appropriate for long deep-research runs where hitting the limit means
-    the workload is too big, not that the network hiccuped.
+    A wall-clock timeout is terminal by default: the budget these calls get is
+    generous enough (see ``cli_harness_timeout``) that hitting it means the
+    workload is too big, not that the network hiccuped — and retrying would
+    multiply an already long stall by the attempt count.
     """
 
     def _should_retry(exc: BaseException) -> bool:
@@ -222,7 +225,7 @@ class ClaudeProvider(BaseProvider):
     Claude Code provider using non-interactive CLI subprocess.
 
     Two modes, selected by the model spec:
-    - Plain model id (e.g. ``claude-opus-4-8``): spawns `claude -p "..."` with
+    - Plain model id (e.g. ``claude-opus-5``): spawns `claude -p "..."` with
       WebSearch + WebFetch tools for two agentic queries (social + web).
     - ``deep`` / ``deep:<model>``: runs one combined query through Claude
       Code's built-in /deep-research skill — a dynamic workflow that fans out
@@ -235,7 +238,7 @@ class ClaudeProvider(BaseProvider):
     """
 
     provider_name = "claude"
-    model_name = "claude-opus-4-7"
+    model_name = "claude-sonnet-5"
 
     def __init__(
         self,
@@ -405,7 +408,9 @@ class ClaudeProvider(BaseProvider):
             extra={"stage": "claude_subprocess", "provider": self.provider_name},
         )
 
-        result = _run_claude_cli_with_retry(cmd, env=self._build_env(), timeout=600)
+        result = _run_claude_cli_with_retry(
+            cmd, env=self._build_env(), timeout=cli_harness_timeout()
+        )
 
         text, meta = self._parse_cli_json(result.stdout)
         sources = self._build_sources(text, source_type)
@@ -576,7 +581,9 @@ class ClaudeProvider(BaseProvider):
                 "(install: npm install -g @anthropic-ai/claude-code)"
             )
         except subprocess.TimeoutExpired:
-            return self._create_error_result("Claude Code query timed out (600s limit)")
+            return self._create_error_result(
+                f"Claude Code query timed out ({cli_harness_timeout():.0f}s limit)"
+            )
         except Exception as e:
             return self._create_error_result(f"Claude Code error: {e}")
 
@@ -611,7 +618,9 @@ class ClaudeProvider(BaseProvider):
 
             try:
                 result = _run_claude_cli_with_retry(
-                    cmd, env=self._build_env(), timeout=120
+                    cmd,
+                    env=self._build_env(),
+                    timeout=cli_harness_timeout(CLI_QUICK_TIMEOUT),
                 )
             except (RuntimeError, subprocess.TimeoutExpired):
                 return []
@@ -657,7 +666,9 @@ class ClaudeProvider(BaseProvider):
 
             try:
                 result = _run_claude_cli_with_retry(
-                    cmd, env=self._build_env(), timeout=120
+                    cmd,
+                    env=self._build_env(),
+                    timeout=cli_harness_timeout(CLI_QUICK_TIMEOUT),
                 )
             except (RuntimeError, subprocess.TimeoutExpired):
                 return f"*Summarization failed*\n\n{raw_text[:500]}..."

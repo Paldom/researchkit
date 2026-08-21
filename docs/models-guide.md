@@ -13,20 +13,20 @@ presets:
     description: One line shown in the CLI/UI
     models:
       openai: gpt-5.4-mini # provider slots — one per provider
-      gemini: "agy:Gemini 3.5 Flash (High)"
-      grok: grokcli:grok-4.5
-      claude: claude:claude-sonnet-4-6
+      gemini: agy:gemini-3.7-flash-high
+      grok: grokcli:grok-4.6
+      claude: claude:claude-sonnet-5
       kimi: kimicli:kimi-code/k3
-      summarizer: gemini-3.5-flash # cross-provider meta-summary
-      site_summarizer: gemini-3-flash-preview
+      summarizer: gemini-3.7-flash # cross-provider meta-summary
+      site_summarizer: gemini-3.5-flash-lite
       improver: gpt-5.4-mini # topic improvement + keyword generation
     reasoning_effort: medium # providers that support it
     perplexity_search_type: fast # fast | auto | pro
     tavily_search_depth: fast # basic | advanced | fast | ultra-fast
     claude_max_budget: 5.0 # USD cap per Claude CLI call
     council: # boost/advise/council members
-      members: [claude:claude-opus-4-8@xhigh, codex:gpt-5.5]
-      boss: claude:claude-opus-4-8
+      members: [claude:claude-opus-5@xhigh, codex:gpt-5.6-sol]
+      boss: claude:claude-opus-5
     boost:
       enabled: false # `--boost`/`explore` force it per run
       max_subprojects: 5
@@ -40,12 +40,12 @@ spec** that routes the step through a logged-in coding-agent CLI
 
 | Spec                | Backend                      | Auth                | Example                                                     |
 | ------------------- | ---------------------------- | ------------------- | ----------------------------------------------------------- |
-| plain id            | provider API                 | API key from `.env` | `gpt-5.4-mini`, `grok-4.3`                                  |
+| plain id            | provider API                 | API key from `.env` | `gpt-5.4-mini`, `grok-4.6`                                  |
 | `codex[:<model>]`   | Codex CLI (`codex exec`)     | ChatGPT login       | `codex:gpt-5.6-sol`                                         |
-| `agy[:<model>]`     | Antigravity CLI              | Google account      | `agy:Gemini 3.5 Flash (High)` (`agy models` lists ids)      |
-| `grokcli[:<model>]` | Grok CLI (`grok -p`)         | `grok login`        | `grokcli:grok-4.5` (`grok models` lists ids)                |
+| `agy[:<model>]`     | Antigravity CLI              | Google account      | `agy:gemini-3.7-flash-high` (`agy models` lists ids)        |
+| `grokcli[:<model>]` | Grok CLI (`grok -p`)         | `grok login`        | `grokcli:grok-4.6` (`grok models` lists ids)                |
 | `kimicli[:<alias>]` | Kimi Code CLI (`kimi -p`)    | `kimi login`        | `kimicli:kimi-code/k3`, `kimicli:kimi-code/kimi-for-coding` |
-| `claude[:<model>]`  | Claude Code CLI              | Claude subscription | `claude:opus`, `claude:claude-sonnet-4-6`                   |
+| `claude[:<model>]`  | Claude Code CLI              | Claude subscription | `claude:opus`, `claude:claude-sonnet-5`                     |
 | `deep[:<model>]`    | Claude Code `/deep-research` | Claude subscription | `deep:claude-sonnet-5` (opt-in only — slow, expensive)      |
 
 Rules:
@@ -56,8 +56,9 @@ Rules:
   remain accepted as the legacy spelling of `claude:<id>`.
 - **`@<effort>` suffix** (council members and the boss): per-member
   reasoning effort where the CLI supports it — `codex:gpt-5.6-sol@xhigh`,
-  `claude:claude-opus-4-8@xhigh`. Antigravity bakes effort into the model id
-  (`(High)`); Kimi Code takes it from its own config.toml `[thinking]`.
+  `claude:claude-opus-5@xhigh`, `grokcli:grok-4.6@xhigh`. Antigravity bakes
+  effort into the model id (`-high`/`-medium`/`-low`); Kimi Code takes it
+  from its own config.toml `[thinking]`.
 - CLI-backed specs work in **every slot**: provider slots, council
   members/boss, `summarizer`, `site_summarizer`, and `improver` (prefer
   codex/agy/grokcli in summary slots; `claude:` runs under the default $3
@@ -66,8 +67,19 @@ Rules:
   connector only summarizes fetched transcripts (native video understanding
   needs the Gemini API).
 - Keys `models:` doesn't recognize as built-in slots become **plugin model
-  slots** (e.g. `youtube: gemini-3.5-flash`); a sibling `plugins:` block
+  slots** (e.g. `youtube: gemini-3.7-flash`); a sibling `plugins:` block
   passes per-plugin option dicts.
+- **Model ids drift.** `researchkit doctor [--preset <name>]` checks every
+  pin in a preset against the live CLI model lists and your `.env` keys
+  before a run spends anything.
+- **CLI-backed slots get a 30-minute wall clock** for a full answer, and 5
+  minutes for short pipeline steps (keyword generation, per-provider
+  summaries) that already degrade gracefully. Harnesses reason for minutes:
+  a dense prompt at a top effort tier can run past 10, and a tighter clock
+  loses that slot's answer entirely. `RESEARCHKIT_CLI_TIMEOUT=<seconds>`
+  overrides both, and takes precedence over `PROVIDER_HTTP_TIMEOUT`. A
+  wall-clock timeout is never retried — at these budgets it means the
+  workload is too big, not that the network hiccuped.
 
 ## The presets that ship
 

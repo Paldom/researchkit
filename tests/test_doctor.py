@@ -112,16 +112,17 @@ class TestSpecRouting:
         monkeypatch.setattr(
             doctor_mod,
             "run_subprocess",
-            lambda cmd, **k: _proc(0, stdout="grok-4.5\nGemini 3.5 Flash (High)\n"),
+            lambda cmd, **k: _proc(
+                0, stdout="grok-4.6\ngemini-3.7-flash-high\tGemini 3.7 Flash (High)\n"
+            ),
         )
         probe = _CliProbe()
-        assert _check_spec("grok", "grokcli:grok-4.5@high", probe).status == "ok"
-        assert (
-            _check_spec("gemini", "agy:Gemini 3.5 Flash (High)", probe).status == "ok"
-        )
+        assert _check_spec("grok", "grokcli:grok-4.6@high", probe).status == "ok"
+        # `agy models` prints `<id>\t<display name>`; the id is what --model takes.
+        assert _check_spec("gemini", "agy:gemini-3.7-flash-high", probe).status == "ok"
         assert _check_spec("openai", "codex:gpt-5.6-sol@xhigh", probe).status == "ok"
         assert _check_spec("kimi", "kimicli:kimi-code/k3", probe).status == "ok"
-        assert _check_spec("claude", "claude:claude-opus-4-8", probe).status == "ok"
+        assert _check_spec("claude", "claude:claude-opus-5", probe).status == "ok"
         assert _check_spec("claude", "deep:claude-sonnet-5", probe).status == "ok"
 
     def test_plain_id_routes_to_key_check(
@@ -141,7 +142,9 @@ class TestRunDoctorAndReport:
         monkeypatch.setattr(
             doctor_mod,
             "run_subprocess",
-            lambda cmd, **k: _proc(0, stdout="grok-4.5\nGemini 3.5 Flash (High)\n"),
+            lambda cmd, **k: _proc(
+                0, stdout="grok-4.6\ngemini-3.7-flash-high\tGemini 3.7 Flash (High)\n"
+            ),
         )
         results = run_doctor("harness")
         slots = [r.slot for r in results]
@@ -156,7 +159,7 @@ class TestRunDoctorAndReport:
         monkeypatch.setattr(
             doctor_mod,
             "run_subprocess",
-            lambda cmd, **k: _proc(0, stdout="grok-4.5\n"),  # agy list lacks the model
+            lambda cmd, **k: _proc(0, stdout="grok-4.6\n"),  # agy list lacks the model
         )
         results = run_doctor("harness")
         gemini = next(r for r in results if r.slot == "gemini")
@@ -173,7 +176,9 @@ class TestRunDoctorAndReport:
         monkeypatch.setattr(
             doctor_mod,
             "run_subprocess",
-            lambda cmd, **k: _proc(0, stdout="grok-4.5\nGemini 3.5 Flash (High)\n"),
+            lambda cmd, **k: _proc(
+                0, stdout="grok-4.6\ngemini-3.7-flash-high\tGemini 3.7 Flash (High)\n"
+            ),
         )
         results = run_doctor("harness")
         kimi_slot = next(r for r in results if r.slot == "kimi")

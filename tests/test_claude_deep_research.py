@@ -213,7 +213,7 @@ class TestFinalSummaryUnwrapsDeepSpec:
 
         em = SimpleNamespace(claude="deep", claude_max_budget=5.0)
         gen = DigestGenerator.from_effective_models(em)  # type: ignore[arg-type]
-        assert gen.model == "claude-sonnet-4-6"
+        assert gen.model == "claude-sonnet-5"
 
     def test_plain_model_passes_through(self) -> None:
         from types import SimpleNamespace

@@ -49,7 +49,7 @@ class GeminiProvider(BaseProvider):
     """
 
     provider_name = "gemini"
-    model_name = "gemini-3.1-pro-preview"
+    model_name = "gemini-3.7-flash"
 
     def __init__(
         self,
@@ -63,7 +63,7 @@ class GeminiProvider(BaseProvider):
         Args:
             api_key: Google AI API key (defaults to GEMINI_API_KEY or GOOGLE_API_KEY env var)
             sources: Set of sources to query ("social", "web", or both)
-            model: Model to use (overrides default gemini-3.1-pro-preview)
+            model: Model to use (overrides default gemini-3.7-flash)
         """
         self.api_key = (
             api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")

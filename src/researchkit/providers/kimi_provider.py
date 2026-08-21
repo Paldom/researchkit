@@ -127,7 +127,7 @@ _MAX_TOOL_ROUNDS = 6
 # routinely exceed the 180s default HTTP timeout, so research calls get a
 # higher floor (mirrors codex/agy). Improver/summarizer calls keep the
 # default via make_kimi_client.
-_KIMI_RESEARCH_MIN_TIMEOUT = 420.0
+_KIMI_RESEARCH_MIN_TIMEOUT = 900.0
 
 # Markdown [title](url) links in the answer carry titles for free.
 _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
@@ -192,7 +192,7 @@ class KimiProvider(BaseProvider):
     """
 
     provider_name = "kimi"
-    model_name = "kimi-k2.6"
+    model_name = "kimi-k3"
 
     def __init__(
         self,
@@ -207,7 +207,7 @@ class KimiProvider(BaseProvider):
             api_key: Moonshot API key (defaults to MOONSHOT_API_KEY /
                 KIMI_API_KEY env vars)
             sources: Set of sources to query ("social", "web", or both)
-            model: Model to use (overrides default kimi-k2.6)
+            model: Model to use (overrides default kimi-k3)
         """
         self.api_key = get_kimi_api_key(api_key)
         self.sources = sources or {"social", "web"}

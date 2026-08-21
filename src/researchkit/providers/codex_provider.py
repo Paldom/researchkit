@@ -38,11 +38,11 @@ from researchkit.providers.base import (
     ProviderResult,
     Source,
     SourceType,
+    cli_harness_timeout,
     get_base_system_prompt,
     get_user_prompt,
     get_web_system_prompt,
     get_web_user_prompt,
-    provider_http_timeout,
 )
 from researchkit.safe_io import (
     extract_urls_balanced,
@@ -55,10 +55,6 @@ logger = logging.getLogger(__name__)
 
 # First <title>...</title> of an HTML page, for source title backfill.
 _TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
-
-# Codex web search can run many tool calls + reasoning; give it ample headroom
-# over the default provider timeout.
-_CODEX_MIN_TIMEOUT = 300.0
 
 _TITLE_FETCH_TIMEOUT = 8.0
 _TITLE_FETCH_WORKERS = 8
@@ -231,7 +227,7 @@ class CodexProvider(BaseProvider):
     ) -> tuple[str, list[str]]:
         """Run one ``codex exec`` invocation; return (final_text, opened_urls)."""
         cmd = self._build_cmd(web_search)
-        timeout = max(provider_http_timeout(), _CODEX_MIN_TIMEOUT)
+        timeout = cli_harness_timeout()
 
         def _call() -> subprocess.CompletedProcess[str]:
             # Own process group + kill-on-timeout (C2), UTF-8 decode (L26), and a

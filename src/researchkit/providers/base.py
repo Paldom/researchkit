@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -20,11 +21,13 @@ from researchkit.prompts import (
 
 # Explicit public surface (mypy strict: re-exported prompt helpers included).
 __all__ = [
+    "CLI_QUICK_TIMEOUT",
     "SOCIAL_DOMAINS",
     "BaseProvider",
     "ProviderResult",
     "Source",
     "SourceType",
+    "cli_harness_timeout",
     "get_base_system_prompt",
     "get_user_prompt",
     "get_web_system_prompt",
@@ -143,6 +146,44 @@ def provider_http_timeout(default: float = 180.0) -> float:
         return float(os.getenv("PROVIDER_HTTP_TIMEOUT", default))
     except (TypeError, ValueError):
         return default
+
+
+# Budget for one coding-agent CLI answer. A harness reasons for minutes, not
+# seconds: a dense five-question prompt at the top effort tier was measured past
+# 10 minutes on `codex exec`, and 300s killed that member while the other four
+# answered. Losing a council member to the stopwatch costs more than waiting.
+_CLI_HARNESS_TIMEOUT = 1800.0
+
+# Budget for short-prompt pipeline steps on the same CLIs — keyword generation
+# and per-provider summaries. They sit on the critical path and already degrade
+# gracefully (empty keyword list, "summarization failed" stub), so a wedged one
+# should cost minutes, not the full answer budget.
+CLI_QUICK_TIMEOUT = 300.0
+
+
+def cli_harness_timeout(default: float = _CLI_HARNESS_TIMEOUT) -> float:
+    """Wall-clock timeout (seconds) for one coding-agent CLI subprocess.
+
+    Deliberately separate from :func:`provider_http_timeout`: an HTTP request
+    stalled for half an hour is dead, while ``codex exec`` at ``ultra`` effort
+    is still thinking. Every harness path (codex, agy, grokcli, kimicli,
+    claude) takes its budget from here so one env var moves all of them.
+
+    ``RESEARCHKIT_CLI_TIMEOUT`` (seconds) wins outright when set — it is *the*
+    knob, so a stale ``PROVIDER_HTTP_TIMEOUT`` must never silently override it.
+    With it unset, ``PROVIDER_HTTP_TIMEOUT`` still raises (never lowers) the
+    default, keeping the previously documented escape hatch working. Values
+    that aren't a positive, finite number of seconds fall back to ``default``.
+    """
+    raw = os.getenv("RESEARCHKIT_CLI_TIMEOUT")
+    if raw:
+        try:
+            explicit = float(raw)
+        except ValueError:
+            explicit = 0.0
+        if math.isfinite(explicit) and explicit > 0:
+            return explicit
+    return max(default, provider_http_timeout(0.0))
 
 
 def recency_to_perplexity_filter(days: int) -> str:

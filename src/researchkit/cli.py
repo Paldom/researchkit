@@ -149,7 +149,7 @@ Site Research (optional):
         nargs="+",
         default=None,
         help=(
-            "Member specs override, e.g. claude:claude-opus-4-8@xhigh codex:gpt-5.6-sol "
+            "Member specs override, e.g. claude:claude-opus-5@xhigh codex:gpt-5.6-sol "
             "(default: the harness preset's council members)"
         ),
     )

@@ -27,7 +27,7 @@
 # - `claude: claude:<model>` is the canonical Claude spec (Claude Code CLI,
 #   Claude-subscription billing). The part after `claude:` goes to
 #   `claude --model` verbatim — an alias (`claude:opus`) or full id
-#   (`claude:claude-sonnet-4-6`). Bare ids (`claude-sonnet-4-6`) are the
+#   (`claude:claude-sonnet-5`). Bare ids (`claude-sonnet-5`) are the
 #   legacy spelling of the same route.
 # - `claude: deep` or `deep:<model>` routes the Claude step through Claude
 #   Code's /deep-research workflow (fan-out searches, verified claims, cited
@@ -44,17 +44,17 @@ presets:
   default:
     description: Latest models with best quality
     models:
-      openai: gpt-5.4-mini
-      gemini: gemini-3.5-flash
-      grok: grok-4.3
+      openai: gpt-5.4-mini # latest mini tier (5.5/5.6 ship no mini)
+      gemini: gemini-3.7-flash
+      grok: grok-4.6
       perplexity: sonar
       tavily: tavily-search # display name only (search API)
-      claude: claude:claude-sonnet-4-6 # plain two-query mode; `deep:<model>` opt-in (see header)
+      claude: claude:claude-sonnet-5 # plain two-query mode; `deep:<model>` opt-in (see header)
       github: gpt-5.4-mini
-      glm: glm-5.2
-      kimi: kimi-k2.6 # Moonshot API (opt-in via --providers kimi)
-      summarizer: gemini-3.5-flash # cross-provider meta-summary
-      site_summarizer: gemini-3-flash-preview # site-research summarization
+      glm: glm-5.3
+      kimi: kimi-k3 # Moonshot API (opt-in via --providers kimi)
+      summarizer: gemini-3.7-flash # cross-provider meta-summary
+      site_summarizer: gemini-3.5-flash-lite # site-research summarization (high volume — keep it cheap)
       improver: gpt-5.4-mini # topic improvement + keyword generation
     reasoning_effort: medium
     perplexity_search_type: pro # fast | auto | pro
@@ -64,10 +64,10 @@ presets:
     # Members accept CLI specs (codex:<m>, agy:<m>) or plain model ids.
     council:
       members:
-        - claude:claude-opus-4-8
+        - claude:claude-opus-5
         - gpt-5.5
-        - gemini-3.5-flash
-      boss: claude:claude-opus-4-8
+        - gemini-3.7-flash
+      boss: claude:claude-opus-5
     # Boost fans a topic out into parallel sub-projects topped by a
     # super-summary. Off by default: a boosted run multiplies cost by the
     # number of sub-projects. Enable deliberately (or per-run via --boost).
@@ -76,19 +76,19 @@ presets:
       max_subprojects: 5
 
   optimal:
-    description: Best balance — fastest, cheapest, summary within noise of the best (bench winner 0.91)
+    description: Best balance — fastest, cheapest, summary within noise of the best (the cheap+fast shape won a 9-setup bench at 0.91; pins tracked forward to current models)
     models:
       openai: gpt-5.4-nano
-      gemini: gemini-3-flash-preview
-      grok: grok-4.3
+      gemini: gemini-3.5-flash-lite
+      grok: grok-4.6
       perplexity: sonar
       tavily: tavily-search
       claude: claude:claude-haiku-4-5
       github: gpt-5.4-mini
-      glm: glm-4.7-flashx
-      kimi: kimi-k2.6
-      summarizer: gemini-3-flash-preview
-      site_summarizer: gemini-3-flash-preview
+      glm: glm-5-turbo # z.ai retired glm-4.7-flashx; turbo is the cheap tier now
+      kimi: kimi-k3
+      summarizer: gemini-3.5-flash-lite
+      site_summarizer: gemini-3.5-flash-lite
       improver: gpt-5.4-nano
     reasoning_effort: low
     perplexity_search_type: fast # fast = more sources, less time/cost
@@ -96,19 +96,19 @@ presets:
     claude_max_budget: 3.0
 
   optimal_quality:
-    description: Quality cushion — sweet-spot models, more sources, robust on harder topics (bench 0.74)
+    description: Quality cushion — sweet-spot models, more sources, robust on harder topics (bench 0.74; pins tracked forward to current models)
     models:
       openai: gpt-5.4-mini
-      gemini: gemini-3.5-flash
-      grok: grok-4.3
+      gemini: gemini-3.7-flash
+      grok: grok-4.6
       perplexity: sonar-pro
       tavily: tavily-search
-      claude: claude:claude-sonnet-4-6
+      claude: claude:claude-sonnet-5
       github: gpt-5.4-mini
-      glm: glm-4.7
-      kimi: kimi-k2.6
-      summarizer: gemini-3.5-flash
-      site_summarizer: gemini-3-flash-preview
+      glm: glm-5.3
+      kimi: kimi-k3
+      summarizer: gemini-3.7-flash
+      site_summarizer: gemini-3.5-flash-lite
       improver: gpt-5.4-mini
     reasoning_effort: low
     perplexity_search_type: fast
@@ -119,16 +119,16 @@ presets:
     description: Cost-effective models for faster iteration
     models:
       openai: gpt-5.4-mini
-      gemini: gemini-3-flash-preview
-      grok: grok-4.3
+      gemini: gemini-3.5-flash-lite
+      grok: grok-4.6
       perplexity: sonar
       tavily: tavily-search
-      claude: claude:claude-sonnet-4-6
+      claude: claude:claude-sonnet-5
       github: gpt-5.4-mini
-      glm: glm-5.2
-      kimi: kimi-k2.6
-      summarizer: gemini-3.5-flash
-      site_summarizer: gemini-3-flash-preview
+      glm: glm-5.3
+      kimi: kimi-k3
+      summarizer: gemini-3.7-flash
+      site_summarizer: gemini-3.5-flash-lite
       improver: gpt-5.4-mini
     reasoning_effort: medium
     perplexity_search_type: fast
@@ -139,13 +139,13 @@ presets:
     description: Subscription-only — every step runs on logged-in CLI harnesses (Codex, Antigravity, Grok CLI, Kimi Code CLI, Claude Code); no API keys. Used by `advise`/`council`/`explore` and the UI's "harness only" mode.
     models:
       openai: codex:gpt-5.6-sol # Codex CLI, ChatGPT-subscription billing
-      gemini: "agy:Gemini 3.5 Flash (High)" # Antigravity CLI, Google account (`agy models` ids are display names)
-      grok: grokcli:grok-4.5 # Grok CLI, grok.com subscription (`grok models` lists ids)
+      gemini: agy:gemini-3.7-flash-high # Antigravity CLI, Google account (`agy models` lists ids; effort is baked into the id)
+      grok: grokcli:grok-4.6 # Grok CLI, grok.com subscription (`grok models` lists ids)
       perplexity: sonar # unused: not in the harness provider set
       tavily: tavily-search # unused
-      claude: claude:claude-opus-4-8 # Claude Code CLI, Claude subscription
+      claude: claude:claude-opus-5 # Claude Code CLI, Claude subscription
       github: gpt-5.4-mini # unused
-      glm: glm-5.2 # unused
+      glm: glm-5.3 # unused
       kimi: kimicli:kimi-code/k3 # Kimi Code CLI, kimi.com subscription
       summarizer: codex:gpt-5.6-sol # meta-summary via CLI (no API key; codex handles long prompts reliably)
       site_summarizer: codex:gpt-5.6-sol # CLI too (site research off by default in harness flows; connector SEARCH keys still apply if enabled)
@@ -157,12 +157,12 @@ presets:
     council:
       # <spec>@<effort> sets per-member reasoning effort where supported.
       members:
-        - claude:claude-opus-4-8@xhigh
+        - claude:claude-opus-5@xhigh
         - codex:gpt-5.6-sol@xhigh
-        - "agy:Gemini 3.5 Flash (High)" # effort is part of the agy model id now
-        - grokcli:grok-4.5
+        - agy:gemini-3.7-flash-high # effort is part of the agy model id
+        - grokcli:grok-4.6
         - kimicli:kimi-code/k3 # effort comes from the CLI's config.toml [thinking]
-      boss: claude:claude-opus-4-8@xhigh
+      boss: claude:claude-opus-5@xhigh
     boost:
       enabled: true
       max_subprojects: 3 # harness sub-runs are slow; keep the fan-out tight
@@ -171,16 +171,16 @@ presets:
     description: Harnesses + search APIs + site research combined — CLI subscriptions for reasoning, API endpoints for breadth
     models:
       openai: codex:gpt-5.6-sol # harness (ChatGPT subscription)
-      gemini: gemini-3.5-flash # API — keeps one fast native search-grounded provider
-      grok: grokcli:grok-4.5 # harness (grok.com subscription)
+      gemini: gemini-3.7-flash # API — keeps one fast native search-grounded provider
+      grok: grokcli:grok-4.6 # harness (grok.com subscription)
       perplexity: sonar # search API
       tavily: tavily-search # search API
-      claude: claude:claude-opus-4-8 # harness (Claude subscription)
+      claude: claude:claude-opus-5 # harness (Claude subscription)
       github: gpt-5.4-mini
-      glm: glm-5.2
+      glm: glm-5.3
       kimi: kimicli:kimi-code/kimi-for-coding # harness (kimi.com subscription; K2.7, faster than k3)
       summarizer: codex:gpt-5.6-sol # meta-summary on the CLI
-      site_summarizer: gemini-3-flash-preview # API: site research is high-volume, keep it fast/cheap
+      site_summarizer: gemini-3.5-flash-lite # API: site research is high-volume, keep it fast/cheap
       improver: codex:gpt-5.6-sol # keyword synthesis / improve-topic on the CLI
     reasoning_effort: high
     perplexity_search_type: fast
@@ -190,10 +190,10 @@ presets:
       members:
         - claude:claude-fable-5@xhigh
         - codex:gpt-5.6-sol@xhigh
-        - gemini-3.5-flash # API member — mixing works here too
-        - grokcli:grok-4.5
+        - gemini-3.7-flash # API member — mixing works here too
+        - grokcli:grok-4.6
         - kimicli:kimi-code/kimi-for-coding
-      boss: claude:claude-opus-4-8@xhigh
+      boss: claude:claude-opus-5@xhigh
     boost:
       enabled: false
       max_subprojects: 4

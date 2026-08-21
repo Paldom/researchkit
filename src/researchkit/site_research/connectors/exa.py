@@ -93,7 +93,7 @@ class ExaConnector(BaseSiteConnector):
         self,
         api_key: str | None = None,
         gemini_api_key: str | None = None,
-        gemini_model: str = "gemini-3-flash-preview",
+        gemini_model: str = "gemini-3.5-flash-lite",
         search_type: str = "deep",
         num_results: int = 100,
         include_context: bool = True,

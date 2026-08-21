@@ -7,9 +7,12 @@ query. The draw is billing: ``agy`` runs on the Google/Antigravity sign-in
 session rather than a ``GEMINI_API_KEY``.
 
 Selecting it: set the ``gemini`` model in ``models.yaml`` to ``agy`` /
-``antigravity`` (agy default model) or ``agy:<model>``. Current agy model ids
-are display names — ``agy models`` lists them, e.g.
-``agy:Gemini 3.5 Flash (High)``. The aggregator routes the Gemini step to this provider
+``antigravity`` (agy default model) or ``agy:<model>``. ``agy models`` lists
+ids alongside their display names (``<id>\t<display name>``) — pass the ID,
+e.g. ``agy:gemini-3.7-flash-high``; the thinking level is baked into it, so a
+researchkit ``@<effort>`` suffix does nothing here. (Older agy builds listed
+only display names; those pins no longer resolve and ``researchkit doctor``
+fails them.) The aggregator routes the Gemini step to this provider
 whenever :func:`is_antigravity_model` matches. It still reports
 ``provider_name = "gemini"`` so it slots into the existing "gemini" provider
 slot; the run is differentiated by its ``model`` field, reported as
@@ -40,11 +43,11 @@ from researchkit.providers.base import (
     ProviderResult,
     Source,
     SourceType,
+    cli_harness_timeout,
     get_base_system_prompt,
     get_user_prompt,
     get_web_system_prompt,
     get_web_user_prompt,
-    provider_http_timeout,
 )
 from researchkit.safe_io import run_subprocess, scrubbed_env
 
@@ -58,10 +61,11 @@ _URL_RE = re.compile(r"https?://[^\s)\]<>\"']+")
 _GROUNDING_MARKER = "grounding-api-redirect"
 _UA = "Mozilla/5.0 (compatible; SocialResearch/1.0)"
 
-# agy web search + reasoning can run a while; floor the subprocess timeout.
-_AGY_MIN_TIMEOUT = 600.0
-# Duration string passed to `agy --print-timeout`.
-_AGY_PRINT_TIMEOUT = "9m"
+# Margin (seconds) between agy's own `--print-timeout` and our subprocess kill,
+# so agy reports its own timeout instead of dying to SIGKILL with no message.
+# 60s, not 30: our clock starts at spawn while agy's starts after binary
+# startup and sign-in, and it still needs to flush and exit inside the gap.
+_AGY_PRINT_MARGIN = 60.0
 
 # Model prefixes (before the first ':') that select this CLI path.
 _AGY_PREFIXES = frozenset({"agy", "antigravity"})
@@ -87,7 +91,7 @@ def is_antigravity_model(model: str | None) -> bool:
 def antigravity_underlying_model(model: str | None) -> str | None:
     """Extract the underlying model from an ``agy`` spec.
 
-    ``"agy:Gemini 3.5 Flash (High)"`` -> ``"Gemini 3.5 Flash (High)"``;
+    ``"agy:gemini-3.7-flash-high"`` -> ``"gemini-3.7-flash-high"``;
     ``"agy"`` -> ``None`` (agy default model).
     """
     if not model:
@@ -187,20 +191,26 @@ class AntigravityProvider(BaseProvider):
         """Differentiated model string reported on results."""
         return f"agy:{self.model_name}" if self.model_name else "agy:default"
 
-    def _build_cmd(
-        self, prompt: str, *, print_timeout: str = _AGY_PRINT_TIMEOUT
-    ) -> list[str]:
-        """Assemble an ``agy --print`` command for a single prompt."""
+    def _build_cmd(self, prompt: str, *, timeout: float) -> list[str]:
+        """Assemble an ``agy --print`` command for a single prompt.
+
+        ``--print-timeout`` is derived from the subprocess budget (Go duration
+        string) and always lands strictly *below* it, so agy times out on its
+        own clock and prints a real error instead of dying to SIGKILL with an
+        empty stdout. No floor: a floor above the budget would invert exactly
+        the invariant this exists to hold.
+        """
         cmd = [self.agy_bin, "--dangerously-skip-permissions"]
         if self.model_name:
             cmd += ["--model", self.model_name]
+        print_timeout = f"{max(int(timeout - _AGY_PRINT_MARGIN), 1)}s"
         cmd += ["--print-timeout", print_timeout, "-p", prompt]
         return cmd
 
     def _run_cli(self, prompt: str, label: str) -> str:
         """Run ``agy`` non-interactively and return its printed response text."""
-        cmd = self._build_cmd(prompt)
-        timeout = max(provider_http_timeout(), _AGY_MIN_TIMEOUT)
+        timeout = cli_harness_timeout()
+        cmd = self._build_cmd(prompt, timeout=timeout)
 
         def _call() -> subprocess.CompletedProcess[str]:
             # agy runs --dangerously-skip-permissions with no read-only flag

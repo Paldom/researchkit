@@ -261,7 +261,7 @@ class InsightAggregator:
 
         try:
             # Get site_summarizer model from effective_models
-            summarizer_model = "gemini-3-flash-preview"
+            summarizer_model = "gemini-3.5-flash-lite"
             if self.effective_models:
                 summarizer_model = self.effective_models.site_summarizer
 

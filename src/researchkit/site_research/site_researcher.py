@@ -357,7 +357,7 @@ class SiteResearcher:
 
 def create_site_researcher(
     sites: list[str] | None = None,
-    summarizer_model: str = "gemini-3-flash-preview",
+    summarizer_model: str = "gemini-3.5-flash-lite",
     exa_config: dict[str, Any] | None = None,
     plugin_options: dict[str, dict[str, Any]] | None = None,
 ) -> SiteResearcher:

@@ -45,7 +45,7 @@ class GrokProvider(BaseProvider):
     """
 
     provider_name = "grok"
-    model_name = "grok-4-1-fast"
+    model_name = "grok-4.6"
 
     def __init__(
         self,
@@ -59,7 +59,7 @@ class GrokProvider(BaseProvider):
         Args:
             api_key: xAI API key (defaults to XAI_API_KEY env var)
             sources: Set of sources to query ("social", "web", or both)
-            model: Model to use (overrides default grok-4-1-fast)
+            model: Model to use (overrides default grok-4.6)
         """
         self.api_key = api_key or os.getenv("XAI_API_KEY")
         self.sources = sources or {"social", "web"}
