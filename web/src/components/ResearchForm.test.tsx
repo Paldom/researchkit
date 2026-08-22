@@ -14,6 +14,23 @@ const ALL_PROVIDERS = [
   'glm',
 ]
 
+// The set harness mode locks to: the five CLI harnesses plus every keyless
+// provider. Kept in step with HARNESS_PROVIDERS in ResearchForm.tsx. Not added
+// to ALL_PROVIDERS: that fixture is what the *config* reports, and other tests
+// assert exact payloads built from it.
+const HARNESS_SET = [
+  'openai',
+  'gemini',
+  'grok',
+  'claude',
+  'kimi',
+  'hackernews',
+  'skillsh',
+  'arxiv',
+  'stackexchange',
+  'openalex',
+]
+
 const ALL_CONNECTORS = ['exa', 'crawler']
 
 const config: ConfigResponse = {
@@ -176,7 +193,7 @@ describe('ResearchForm', () => {
     // provider checkboxes: exactly the harness four checked, all locked
     for (const p of ALL_PROVIDERS) {
       const box = screen.getByLabelText<HTMLInputElement>(p)
-      expect(box.checked).toBe(['openai', 'gemini', 'grok', 'claude', 'kimi'].includes(p))
+      expect(box.checked).toBe(HARNESS_SET.includes(p))
       expect(box.disabled).toBe(true)
     }
     // site research forced off and locked, sites picker hidden
@@ -193,7 +210,7 @@ describe('ResearchForm', () => {
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
         preset: 'harness',
-        providers: ['openai', 'gemini', 'grok', 'claude', 'kimi'],
+        providers: HARNESS_SET,
         site_research: false,
       }),
     )
