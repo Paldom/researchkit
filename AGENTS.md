@@ -24,6 +24,27 @@ Python >=3.11, managed entirely by uv.
 - Tool versions are pinned (ruff==0.15.20, mypy==2.1.0); don't work around a
   pin, update it deliberately.
 
+## Running the tool costs real money
+
+Every live run spends. Test with the smallest thing that proves the change:
+
+- **Prefer the harness path.** `--preset harness` / `advise` / `council` bill
+  logged-in CLI subscriptions, not API keys. For pipeline smoke tests the
+  keyless providers cost nothing at all — use them first:
+  `--providers hackernews skillsh arxiv stackexchange openalex`
+- **Minimum iterations.** One small run, then stop. Do not re-run to admire
+  the output. `--days 7`, a narrow `--providers`, `--no-site-research`.
+- **Never boost to smoke-test.** `--boost` and `explore` fan out into many
+  sub-runs and multiply cost by the fan-out. They are for real research, not
+  verification.
+- **Verify what actually ran, not what you typed.** `provider_models` in
+  `result.json` names the resolved model per slot. A plain id (`grok-4.6`)
+  means the API billed you; `grokcli:grok-4.6` means the subscription did.
+  Check it before claiming a run was free.
+- Some providers bill **per source**, not per token, and a boosted run can
+  fan out into many sub-runs. Cost scales with the fan-out, not with how
+  long you waited.
+
 ## Strictness policy — exemptions only shrink
 
 This repo is strict from day one. Never loosen a gate to get green:
