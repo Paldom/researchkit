@@ -187,6 +187,22 @@ def _make_skillsh(ctx: ProviderContext) -> BaseProvider:
     return SkillsShProvider(sources=_sources(ctx), model=ctx.model or None)
 
 
+def _make_arxiv(ctx: ProviderContext) -> BaseProvider:
+    from researchkit.providers.arxiv_provider import ArxivProvider
+
+    return ArxivProvider(sources=_sources(ctx), model=ctx.model or None)
+
+
+def _make_stackexchange(ctx: ProviderContext) -> BaseProvider:
+    from researchkit.providers.stackexchange_provider import StackExchangeProvider
+
+    return StackExchangeProvider(
+        sources=_sources(ctx),
+        model=ctx.model or None,
+        site=str(ctx.options.get("site", "stackoverflow")),
+    )
+
+
 def _make_exa_provider(ctx: ProviderContext) -> BaseProvider:
     from researchkit.providers.exa_provider import ExaProvider
 
@@ -241,6 +257,10 @@ def builtin_providers() -> tuple[ProviderSpec, ...]:
         # install counts. Neither has an EffectiveModels slot.
         ProviderSpec("hackernews", _make_hackernews, default_model="hn-algolia"),
         ProviderSpec("skillsh", _make_skillsh, default_model="skills.sh"),
+        ProviderSpec("arxiv", _make_arxiv, default_model="arxiv-atom"),
+        ProviderSpec(
+            "stackexchange", _make_stackexchange, default_model="stackexchange"
+        ),
         # Exa is a first-class provider (like tavily) AND powers the exa
         # site-research connector below — independent registrations.
         ProviderSpec("exa", _make_exa_provider, requires_env=("EXA_API_KEY",)),

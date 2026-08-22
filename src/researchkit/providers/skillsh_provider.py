@@ -141,7 +141,9 @@ class SkillsShProvider(BaseProvider):
             text = (
                 "# Agent Skills (skills.sh)\n\n"
                 f"{len(hits)} published skills match this topic, ranked by "
-                f"installs.\n\n{self._format(hits)}"
+                "installs. Install counts measure adoption, not quality or "
+                "correctness: they show what people reached for, and are not "
+                f"evidence that a skill works.\n\n{self._format(hits)}"
             )
             sources = self._to_sources(hits)
             self._log_done(len(sources), len(text))

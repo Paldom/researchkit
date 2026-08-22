@@ -377,6 +377,8 @@ class TestExploreCommand:
             "kimi",
             "hackernews",
             "skillsh",
+            "arxiv",
+            "stackexchange",
             "openalex",
         ]
         assert captured["no_site_research"] is True

@@ -13,7 +13,21 @@ const DAY_PRESETS = [7, 30, 90, 180, 365]
 const SOURCE_TABS = ['Files', 'Links', 'Text'] as const
 type SourceTab = (typeof SOURCE_TABS)[number]
 
-const HARNESS_PROVIDERS = ['openai', 'gemini', 'grok', 'claude', 'kimi']
+// The five CLI harnesses plus every keyless provider — same set the `explore`
+// command runs, so the toggle and the CLI produce the same research. The
+// keyless ones need no API key, which is what the toggle promises.
+const HARNESS_PROVIDERS = [
+  'openai',
+  'gemini',
+  'grok',
+  'claude',
+  'kimi',
+  'hackernews',
+  'skillsh',
+  'arxiv',
+  'stackexchange',
+  'openalex',
+]
 
 const FILE_PATTERN = /\.(md|markdown|txt|rst)$/i
 const MAX_FILES = 10
@@ -251,7 +265,8 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
             Harness only (no API keys)
           </label>
           <p className="mt-1 text-xs text-neutral-500">
-            Runs on logged-in CLI subscriptions (Claude Code, Codex, Antigravity, Grok CLI, Kimi Code CLI).
+            Runs on logged-in CLI subscriptions (Claude Code, Codex, Antigravity, Grok CLI, Kimi
+            Code CLI).
           </p>
         </div>
       )}

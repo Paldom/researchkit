@@ -24,6 +24,19 @@ from researchkit.observability.logging_setup import init_app_logging
 from researchkit.project import PROJECTS_DIR, find_project, list_projects
 from researchkit.service import SocialResearchService
 
+# The cutting-edge flagship of each harness at its top reasoning tier — the
+# `advise-max` set. Kept here so `advise --max`, `advise-session --max` and the
+# advise-max skill cannot drift apart. Effort tiers verified live 2026-08-21:
+# grok's ceiling is xhigh (it rejects max); agy bakes effort into the model id;
+# Kimi Code takes it from its own config.toml.
+MAX_EFFORT_HARNESSES = [
+    "claude:claude-fable-5@max",
+    "codex:gpt-5.6-sol@ultra",
+    "agy:gemini-3.7-flash-high",
+    "grokcli:grok-4.6@xhigh",
+    "kimicli:kimi-code/k3",
+]
+
 
 def _default_projects_dir() -> Path:
     """Projects dir default: $RESEARCHKIT_PROJECTS_DIR, else ./projects.
@@ -176,6 +189,15 @@ Site Research (optional):
         default="harness",
         help="Preset supplying the members (default: harness)",
     )
+    advise_parser.add_argument(
+        "--max",
+        action="store_true",
+        dest="max_effort",
+        help=(
+            "Use each harness's flagship at its top reasoning tier "
+            "(the advise-max set) instead of the preset's members"
+        ),
+    )
 
     # --- advise-session command ---
     session_parser = subparsers.add_parser(
@@ -221,6 +243,15 @@ Site Research (optional):
         "--cwd",
         default=None,
         help="Project directory the session can read (default: current directory)",
+    )
+    session_parser.add_argument(
+        "--max",
+        action="store_true",
+        dest="max_effort",
+        help=(
+            "Use each harness's flagship at its top reasoning tier "
+            "(the advise-max set) instead of the preset's members"
+        ),
     )
 
     # --- doctor command ---
@@ -727,7 +758,21 @@ def _clone_repos_for(project) -> int:
     except (OSError, ValueError) as e:
         print(f"Could not read results for repo cloning: {e}", file=sys.stderr)
         return 0
-    repos = clone_cited_repos(project.path, result)
+    from researchkit.system_config import SystemConfigManager
+
+    try:
+        models = SystemConfigManager().resolve_effective_models(
+            project.config.preset_name
+        )
+        summarizer = models.summarizer
+    except Exception:
+        summarizer = ""
+    repos = clone_cited_repos(
+        project.path,
+        result,
+        topic=project.config.topic,
+        model_spec=summarizer,
+    )
     ok = sum(1 for r in repos if r.ok)
     if repos:
         print(
@@ -1248,7 +1293,10 @@ def cmd_doctor(args) -> int:
 def cmd_advise(args) -> int:
     """Handle 'advise': one question, every harness's own answer, verbatim."""
     try:
-        council = _harness_council(args.preset, args.harnesses)
+        harnesses = args.harnesses
+        if getattr(args, "max_effort", False) and not harnesses:
+            harnesses = MAX_EFFORT_HARNESSES
+        council = _harness_council(args.preset, harnesses)
         question = _question_with_context(args)
     except (ValueError, OSError) as e:
         print(f"Error: {e}", file=sys.stderr)
@@ -1308,7 +1356,10 @@ def cmd_advise_session(args) -> int:
         if args.session:
             session = load_session(args.session)
         else:
-            council = _harness_council(args.preset, args.harnesses)
+            harnesses = args.harnesses
+            if getattr(args, "max_effort", False) and not harnesses:
+                harnesses = MAX_EFFORT_HARNESSES
+            council = _harness_council(args.preset, harnesses)
             members = [m for m in council.members if supports_sessions(m)]
             skipped = [m for m in council.members if not supports_sessions(m)]
             if skipped:
@@ -1437,6 +1488,8 @@ def cmd_explore(args, service: SocialResearchService) -> int:
         "kimi",
         "hackernews",
         "skillsh",
+        "arxiv",
+        "stackexchange",
         "openalex",
     ]
     args.sources = ["social", "web"]

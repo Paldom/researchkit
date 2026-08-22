@@ -48,6 +48,20 @@ decisive verdict (`/council`), or web research (`/explore`).
 Useful flags: `--cwd <dir>` points the session at another project, `--harnesses`
 overrides the members, `--context-file notes.md` appends context to a turn.
 
+### `--max` — the advise-max set, with memory
+
+`--max` swaps the preset's members for each harness's flagship at its top
+reasoning tier (the same set `/advise-max` uses):
+
+```bash
+uv run researchkit advise-session "QUESTION" --max
+```
+
+It is **not** the default, deliberately: at `@max`/`@ultra` a single turn can
+run past 10 minutes, and a session exists to be asked five questions. Open with
+`--max` when the first question is the hard one; the session keeps those models
+for every follow-up, since resuming inherits the model from the live session.
+
 ## What the harnesses can and cannot do
 
 Read-only, deliberately. They may read, glob and grep the project; they cannot

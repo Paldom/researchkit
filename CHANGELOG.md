@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--session <id>`; `--list` shows what is open. Every CLI's resume path was
   verified live (`claude -r`, `codex exec resume`, `grok -r`, `kimi -r`,
   `agy --conversation`). Ships as an Agent Skill alongside the others.
+- Two more keyless providers: **arXiv** (`--providers arxiv`) for preprints,
+  which land months before peer review indexes them, and **Stack Exchange**
+  (`--providers stackexchange`) for vote-scored practitioner Q&A. Reddit and
+  Polymarket were evaluated and deliberately left out: Reddit's JSON API now
+  returns 403 without OAuth (it belongs in the browser-session plugin, not a
+  keyless provider), and Polymarket was unreachable from here, so shipping it
+  would have meant shipping something unverified.
+- Engagement-ranked providers now say so in their own output: points and
+  install counts measure attention and adoption, never correctness. Taken
+  from an `explore` run's own finding that link validity (>94%) and relevance
+  (>80%) diverge sharply from claim-level factual support (39–77%).
 - Two keyless providers, both scored by engagement rather than relevance —
   the idea worth taking from `mvanhorn/last30days-skill`. **Hacker News**
   (`--providers hackernews`) ranks windowed stories by points, citing the
@@ -32,9 +43,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as an HTML page loses the one thing worth having; deep links collapse to
   their repo, non-repo namespaces are rejected, and a repo that will not
   clone is recorded with its reason.
-- `explore` now runs the keyless Hacker News, skills.sh and OpenAlex
-  providers alongside the five CLI harnesses (they need no API key, so the
-  zero-key guarantee holds) and accepts `--providers` / `--clone-repos`.
+- `explore` now runs every keyless provider (Hacker News, skills.sh, arXiv,
+  Stack Exchange, OpenAlex) alongside the five CLI harnesses — they need no
+  API key, so the zero-key guarantee holds — and accepts `--providers` /
+  `--clone-repos`. The web UI's "Harness only" toggle was widened to the
+  same set, so the toggle and the CLI now produce the same research.
+- `advise --max` / `advise-session --max` select each harness's flagship at
+  its top reasoning tier (the `advise-max` set), defined once in
+  `MAX_EFFORT_HARNESSES` so the two commands and the skill cannot drift.
+  Not the default for sessions: at `@max`/`@ultra` one turn can run past ten
+  minutes, and a session exists to be asked several questions.
+- `repos/SUMMARY.md` now opens with a model-written section on what the
+  cloned repositories contribute _to this topic_; the structural facts say
+  what a repo is, not why it mattered. Falls back to the structural summary
+  alone when the model is unavailable.
 
 ### Changed
 

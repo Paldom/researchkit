@@ -160,7 +160,10 @@ class HackerNewsProvider(BaseProvider):
             text = (
                 "# Hacker News\n\n"
                 f"{len(hits)} stories in the last {days} days, ranked by points "
-                f"(top: {int(top.get('points') or 0)}).\n\n"
+                f"(top: {int(top.get('points') or 0)}). Points measure "
+                "attention, not correctness: treat them as a signal of what "
+                "developers engaged with, never as evidence a claim is true."
+                "\n\n"
                 f"{self._format(hits)}"
             )
             self._log_done(len(sources), len(text))
