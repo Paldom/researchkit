@@ -77,6 +77,11 @@ class ResearchIn(BaseModel):
     # Boost: LLM council refines the topic and may fan out into parallel
     # sub-projects (manual keywords and custom sources are ignored there).
     boost: bool = False
+    # Materials default ON, matching the CLI: the archived pack is what
+    # brainkit ingests and skillskit skillifies, and it is the part that
+    # survives link rot. A report with dead citations is not a research pack.
+    materials: bool = True
+    materials_limit: int = Field(default=25, ge=0, le=500)
     user_urls: list[str] = Field(default_factory=list, max_length=25)
     user_files: list[UserFileIn] = Field(default_factory=list, max_length=10)
     user_texts: list[str] = Field(default_factory=list, max_length=5)
@@ -229,6 +234,49 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Unknown run id")
         return state
 
+    def _archive_materials(run_svc: Any, state: _RunState, params: ResearchIn) -> None:
+        """Download the sources the finished run cited into materials/.
+
+        Best-effort by design: the report already exists, so a failed archive
+        must degrade the pack, never fail the run. Boosted runs archive per
+        sub-project, since the parent cites the sub-reports rather than the web.
+        """
+        if not params.materials or not state.project:
+            return
+        from researchkit.materials import download_materials
+        from researchkit.project import find_project
+
+        try:
+            projects_dir = getattr(run_svc, "projects_dir", None) or PROJECTS_DIR
+            project = find_project(state.project, Path(projects_dir))
+            targets = project.list_subprojects() or [project] if project else []
+        except Exception as e:  # locating the pack must not fail the run either
+            logger.warning("Materials archive skipped (%s)", e)
+            return
+        for target in targets:
+            try:
+                state.events.put(
+                    {
+                        "stage": "materials_start",
+                        "message": f"Archiving sources for {target.name}",
+                    }
+                )
+                manifest = download_materials(target, limit=params.materials_limit)
+                state.events.put(
+                    {
+                        "stage": "materials_done",
+                        "message": (
+                            f"Archived {manifest['fetched']}/"
+                            f"{manifest['total_cited']} sources for {target.name}"
+                        ),
+                    }
+                )
+            except Exception as e:
+                logger.warning("Materials archive failed for %s: %s", target.name, e)
+                state.events.put(
+                    {"stage": "materials_error", "message": f"Archive failed: {e}"}
+                )
+
     def _execute(state: _RunState, params: ResearchIn) -> None:
         try:
             # Fresh service per run unless one was injected (tests): isolates
@@ -283,6 +331,7 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
                     progress=state.events.put,
                 )
                 state.project = project.name
+            _archive_materials(run_svc, state, params)
             state.status = "done"
         except Exception as e:  # surface any pipeline failure to the client
             logger.exception("Research run failed")
