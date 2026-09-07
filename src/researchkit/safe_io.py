@@ -77,12 +77,19 @@ def run_subprocess(
 
     ``TimeoutExpired`` is re-raised after cleanup so existing callers' handling is
     unchanged.
+
+    Every child is stamped with ``NESTED_ENV_VAR`` (see below) so an agent CLI we
+    launch cannot turn around and start a researchkit run. Stamping here rather
+    than at the entrypoints makes that hold however researchkit was started —
+    console script, ``uvicorn ... --factory``, MCP stdio, or embedded as a library.
     """
+    child_env = dict(os.environ if env is None else env)
+    child_env[NESTED_ENV_VAR] = str(os.getpid())
     popen_kwargs: dict[str, object] = {
         "stdin": subprocess.PIPE if input is not None else subprocess.DEVNULL,
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
-        "env": env,
+        "env": child_env,
         "cwd": cwd,
         "text": True,
         "encoding": "utf-8",
@@ -139,6 +146,52 @@ _SECRET_ENV_KEYS = frozenset(
         "X_RAPIDAPI_KEY",
     }
 )
+
+
+# researchkit NEVER invokes itself: `explore`/`--boost` fan out in-process. So a
+# researchkit entrypoint reached from inside a researchkit-spawned agent CLI can
+# only be that agent deciding, on its own, to shell out to us — and each run it
+# starts spawns more agents that do the same. That is exponential, not a fan-out:
+# one topic produced ~200 runs in 45 minutes before this guard existed.
+#
+# `run_subprocess` stamps this into EVERY child env it builds, so the block does
+# not depend on which env builder a provider used (`scrubbed_env` here, or the
+# `{**os.environ}` copies in claude_provider/council/final_summary) — nor on
+# researchkit having been started through one of its console scripts. The value
+# is the stamping process's PID, so only a genuinely separate process is refused.
+NESTED_ENV_VAR = "RESEARCHKIT_NESTED"
+
+_NESTED_ERROR = (
+    "Refusing to run: RESEARCHKIT_NESTED names another process, so this one is "
+    "a descendant of a coding-agent CLI that researchkit itself started.\n"
+    "researchkit never calls itself — boosted runs fan out in-process — so this "
+    "is an agent shelling out to researchkit on its own initiative, which "
+    "recurses exponentially.\n"
+    "Do not retry, and do not work around this: research the topic with your "
+    "own web search and report what you find."
+)
+# Deliberately no copy-pasteable bypass here. The reader of this message is
+# usually the very agent that just tried to recurse, and it will follow a
+# printed command far more readily than it will reason about an env var.
+
+
+def guard_no_nested_run() -> str | None:
+    """Refuse re-entry from a researchkit-spawned agent CLI; else claim the marker.
+
+    Returns an error message for the caller to print before exiting non-zero, or
+    ``None`` when the run may proceed — in which case the marker is set so every
+    agent CLI this process spawns inherits it.
+
+    The marker holds the PID that claimed it, not a flag: a *child* sees a
+    foreign PID and is refused, while re-entering an entrypoint inside the same
+    process (tests, embedding researchkit as a library) is not.
+    """
+    claimed_by = os.environ.get(NESTED_ENV_VAR)
+    mine = str(os.getpid())
+    if claimed_by and claimed_by != mine:
+        return _NESTED_ERROR
+    os.environ[NESTED_ENV_VAR] = mine
+    return None
 
 
 def scrubbed_env(*, keep: frozenset[str] = frozenset()) -> dict[str, str]:

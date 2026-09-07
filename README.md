@@ -34,7 +34,7 @@ cp .env.example .env    # add at least one provider API key
 uv run researchkit "developer sentiment on AI coding agents" --days 7
 ```
 
-Expected result: a progress log per provider, then a new `projects/<timestamp>_<topic>/` folder containing `report.md` (the cited report), `result.json`, and `run.log`. Providers without keys are skipped gracefully — one key is enough to try it.
+Expected result: a progress log per provider, then a new `projects/<timestamp>_<topic>/` folder containing `report.md` (the cited report), `result.json`, and `run.log`, plus the handoff artifacts written once the research is in: `article.md` (a publication-ready article), `skill/SKILL.md` (a single-file Agent Skill distilled from the findings, skipped when the research is too thin for one), `materials/` (the archived sources) and `brain/` (a brainkit brain over those materials). The four Claude Code writers (overview, digest, article, skill) run concurrently. Providers without keys are skipped gracefully — one key is enough to try it.
 
 ## Use it from an AI agent (MCP)
 
@@ -68,7 +68,7 @@ cd web && npm install && npm run build && cd ..
 uv run researchkit-server
 ```
 
-Open `http://127.0.0.1:8000` — submit a topic, watch live per-provider progress, read the rendered report, browse past runs. The API is documented at `/api/docs`.
+Open `http://127.0.0.1:8000` — submit a topic, watch live per-provider progress, read the rendered report, browse past runs. Each project has tabs for the report, the article, the skill (copy or download `SKILL.md`), and the brain — its index and every topic, report and source note, navigable by wiki-link — beside the prompt, raw JSON, links and log. The API is documented at `/api/docs`.
 
 The server binds `127.0.0.1` and is unauthenticated by default. To expose it beyond localhost, set `RESEARCHKIT_AUTH_TOKEN` (clients send `Authorization: Bearer <token>`) — the server refuses to bind a non-loopback host without it.
 
@@ -82,20 +82,23 @@ uv run researchkit advise "is X a good idea?"       # every harness answers; you
 uv run researchkit council "is X a good idea?"      # lensed deliberation -> one boss-synthesized answer
 uv run researchkit advise-session "q" ; ... --session <id>   # persistent, project-aware follow-ups
 uv run researchkit explore "your topic" --days 7    # boosted research on CLI providers only
+RESEARCHKIT_CLI_TIMEOUT=900 uv run researchkit explore "your topic" --preset harness-fast \
+  --providers gemini grok kimi hackernews skillsh arxiv stackexchange openalex   # the same, time-boxed
 ```
 
-| Command              | What it does                                                                                                                                                                                                                                                                                                                                                                                | Typical time |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| `advise "question"`  | Every harness answers the same question; you read the raw, un-synthesized comparison side by side. `--context-file notes.md` appends context.                                                                                                                                                                                                                                               | ~1–5 min     |
-| `advise-session "q"` | Same harnesses, but each answers inside a **persistent session** that reads the project and remembers the last turn. Returns one session id; follow up with `--session <id>`. Read-only file access.                                                                                                                                                                                        | ~1–5 min     |
-| `council "question"` | Advisory deliberation: members answer through distinct lenses (practical / skeptic / tradeoffs), then a boss synthesizes one decisive answer with explicit **convergence and dissent**. `-v` appends every member's full answer.                                                                                                                                                            | ~2–10 min    |
-| `explore "topic"`    | Boost-mode research on the `harness` preset: the council refines and decomposes the topic, sub-investigations run across the five CLI providers plus the keyless Hacker News / skills.sh / OpenAlex providers (web search included), CLI-routed summaries end to end. Supports `--days`, `--materials`, `--ingest`. The web UI has the same thing as a "Harness only (no API keys)" toggle. | ~15–30 min   |
+| Command                                                                                                                                   | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                      | Typical time |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `advise "question"`                                                                                                                       | Every harness answers the same question; you read the raw, un-synthesized comparison side by side. `--context-file notes.md` appends context.                                                                                                                                                                                                                                                                                                     | ~1–5 min     |
+| `advise-session "q"`                                                                                                                      | Same harnesses, but each answers inside a **persistent session** that reads the project and remembers the last turn. Returns one session id; follow up with `--session <id>`. Read-only file access.                                                                                                                                                                                                                                              | ~1–5 min     |
+| `council "question"`                                                                                                                      | Advisory deliberation: members answer through distinct lenses (practical / skeptic / tradeoffs), then a boss synthesizes one decisive answer with explicit **convergence and dissent**. `-v` appends every member's full answer.                                                                                                                                                                                                                  | ~2–10 min    |
+| `explore "topic"`                                                                                                                         | Boost-mode research on the `harness` preset: the council refines and decomposes the topic, sub-investigations run across the five CLI providers plus the keyless Hacker News / skills.sh / OpenAlex providers (web search included), CLI-routed summaries end to end. Supports `--days`, `--materials`, `--ingest`. The web UI has the same thing as a "Harness only (no API keys)" toggle.                                                       | ~15–30 min   |
+| `explore … --preset harness-fast --providers gemini grok kimi hackernews skillsh arxiv stackexchange openalex` (the `explore-fast` skill) | The same pipeline, time-boxed. Providers run concurrently, so a run is as slow as its slowest member: the Codex research slot measured 30–55 min per call and Opus at max effort 11–17, while Antigravity, Grok CLI and Kimi finish in 1–4. `harness-fast` drops Codex from research and the council and lets Sonnet write the summaries; `RESEARCHKIT_CLI_TIMEOUT=900` turns any straggler into a dropped provider instead of an hour-long wait. | ~15–25 min   |
 
-Defaults live in the `harness` preset in [`models.yaml`](models.yaml) (`claude:claude-opus-5` @xhigh, `codex:gpt-5.6-sol` @xhigh, `agy:gemini-3.7-flash-high`, `grokcli:grok-4.6`, `kimicli:kimi-code/k3`) — members, boss, models, and per-member `@<effort>` are all editable there, or per run via `--harnesses`/`--boss`/`--preset`. Site research stays off in these flows (its Exa connector and keyword synthesis are API-key paths). Every model spec follows the same `<harness>:<model>[@<effort>]` grammar — see the [models.yaml guide](docs/models-guide.md).
+Defaults live in the `harness` preset in [`models.yaml`](models.yaml) (`claude:claude-opus-5` @xhigh, `codex:gpt-6-astra` @xhigh, `agy:gemini-3.7-flash-high`, `grokcli:grok-4.6`, `kimicli:kimi-code/k3`) — members, boss, models, and per-member `@<effort>` are all editable there, or per run via `--harnesses`/`--boss`/`--preset`. Site research stays off in these flows (its Exa connector and keyword synthesis are API-key paths). Every model spec follows the same `<harness>:<model>[@<effort>]` grammar — see the [models.yaml guide](docs/models-guide.md).
 
 ### The same commands, as Agent Skills
 
-`advise`, `advise-max`, `advise-session`, `council`, and `explore` also ship as [Agent Skills](https://agentskills.io) under [`.claude/skills/`](.claude/skills/), next to the existing `researchkit` pipeline skill — so an agent can drive them (`/advise`, `/advise-max`, `/advise-session`, `/council`, `/explore` in Claude Code from this repo); Codex and other Agent-Skills-standard agents discover the same skills via the repo's `.agents/skills/`. Install them into any of 70+ agents with the [skills CLI](https://skills.sh):
+`advise`, `advise-max`, `advise-session`, `council`, `explore`, and `explore-fast` also ship as [Agent Skills](https://agentskills.io) under [`.claude/skills/`](.claude/skills/), next to the existing `researchkit` pipeline skill — so an agent can drive them (`/advise`, `/advise-max`, `/advise-session`, `/council`, `/explore`, `/explore-fast` in Claude Code from this repo); Codex and other Agent-Skills-standard agents discover the same skills via the repo's `.agents/skills/`. Install them into any of 70+ agents with the [skills CLI](https://skills.sh):
 
 ```bash
 npx skills add Paldom/researchkit          # all detected agents
@@ -108,21 +111,206 @@ The skills wrap the CLI commands above and inherit the same guarantee: logged-in
 
 Reports cite dozens of URLs; `--materials` (or the `materials` subcommand) downloads the pages themselves — SSRF-guarded, deduplicated, politely paced — into `projects/<run>/materials/` as frontmattered markdown plus an `index.json` manifest:
 
-Materials are archived **by default** — the pack is what brainkit ingests and skillskit skillifies, and the archive is what survives link rot. Opt out with `--no-materials`.
+Materials are archived **by default**, and by default **every** cited source is fetched — the pack is what brainkit ingests and skillskit skillifies, and a truncated archive silently drops evidence the report cites. Opt out with `--no-materials`; cap a run with `--materials-limit N`.
 
 ```bash
-uv run researchkit "your topic"                           # research + archive (default)
+uv run researchkit "your topic"                           # research + archive every source (default)
 uv run researchkit "your topic" --no-materials            # report only
 uv run researchkit "your topic" --materials --boost       # boosted: each sub-project archives its own sources
-uv run researchkit "your topic" --materials --materials-limit 0   # lift the 25-source cap
-uv run researchkit materials <project> --limit 25         # archive an earlier run
+uv run researchkit "your topic" --materials-limit 25      # cap the fetch at 25 sources
+uv run researchkit materials <project>                    # archive an earlier run
 ```
 
-In boost mode the cited URLs live in the sub-projects (the parent report cites the sub-reports, not the web), so materials are archived per sub-project. When the default cap of 25 truncates a bigger citation set, the summary line says so and how to lift it. Every run prints an absolute `wrote: <path>` line, and `RESEARCHKIT_PROJECTS_DIR` pins output somewhere predictable for wrappers invoking via `uv run --directory`.
+Runs started from the web UI archive on the same terms — same default, same completeness.
+
+In boost mode the cited URLs live in the sub-projects (the parent report cites the sub-reports, not the web), so materials are archived per sub-project. When a `--materials-limit` truncates a bigger citation set, the summary line says so and how to lift it. Every run prints an absolute `wrote: <path>` line, and `RESEARCHKIT_PROJECTS_DIR` pins output somewhere predictable for wrappers invoking via `uv run --directory`.
+
+## Remote access over MCP
+
+Run research on one machine — the one with the CLI subscriptions logged in —
+and drive it from anywhere else. The MCP server speaks stdio by default (the
+client spawns it) or Streamable HTTP, which is what makes it remote:
+
+```bash
+# on the research machine
+uv run researchkit-mcp --http --host 0.0.0.0 --port 8765
+```
+
+Then point a client at it. Pick one:
+
+```bash
+# Claude Code
+claude mcp add --transport http researchkit http://<host>:8765/mcp
+
+# Codex CLI
+codex mcp add researchkit --transport http --url http://<host>:8765/mcp
+```
+
+Claude Desktop / Cursor / anything reading a JSON config:
+
+```json
+{
+  "mcpServers": {
+    "researchkit": { "type": "http", "url": "http://<host>:8765/mcp" }
+  }
+}
+```
+
+Local-only (no network at all) — the client spawns the process itself:
+
+```json
+{ "mcpServers": { "researchkit": { "command": "researchkit-mcp" } } }
+```
+
+Verify with `claude mcp list`, or by hand:
+
+```bash
+curl -s -X POST http://<host>:8765/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
+```
+
+### The tools
+
+| Tool                                                     | What it does                                                           |
+| -------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `explore_start(topic, days, materials)`                  | Starts a boosted subscription-only run, returns a `run_id` immediately |
+| `explore_status(run_id)`                                 | status / stage / elapsed — poll this                                   |
+| `explore_report(run_id)`                                 | the super-summary once it's done                                       |
+| `research(topic, days, providers, preset)`               | One plain run, blocking (1–5 min)                                      |
+| `list_research_projects()` / `get_research_report(name)` | Read the archive on that machine                                       |
+
+Explore is start/poll/read rather than one call because a run takes 15–40
+minutes — far longer than any MCP client holds a tool call open. Run ids live
+in memory, so a server restart forgets them; the finished projects are still on
+disk.
+
+### There is no authentication
+
+By design — this is meant to be as simple as possible. What that means in
+practice: **anyone who can reach the port can start research runs that spend
+your subscription quota.** Two things reduce the blast radius:
+
+- It binds `127.0.0.1` unless you pass `--host`, so it is local-only by default.
+- `Host`/`Origin` are validated (DNS-rebinding defense), so a browser on your
+  machine cannot be tricked into driving it. Reaching the server by a name it
+  cannot guess — a tunnel or LAN hostname — needs
+  `--allow-host name:port` (repeatable), or `--allow-host '*'` to turn the
+  check off.
+
+The recommended shape is a private tunnel rather than a public bind:
+
+```bash
+# on the research machine — loopback only
+uv run researchkit-mcp --http --port 8765
+
+# from the client machine
+ssh -N -L 8765:127.0.0.1:8765 you@research-machine
+claude mcp add --transport http researchkit http://127.0.0.1:8765/mcp
+```
+
+Tailscale works the same way: bind to the tailnet address and pass
+`--allow-host <machine>.<tailnet>.ts.net:8765`. If you do expose it more
+widely, put a reverse proxy with auth in front of it.
+
+The `explore-remote` skill wraps all of this: it starts the run on the remote,
+polls, and relays the write-up.
+
+## Runaway protection
+
+Every run holds one of a fixed number of slots while it collects from
+providers, so no combination of terminals, web-UI requests, scripts or fan-outs
+can put more than `RESEARCHKIT_MAX_CONCURRENT_RUNS` (default 10) runs on the
+wire at once:
+
+```bash
+uv run researchkit runs        # what is collecting right now, and the cap
+```
+
+The slots live in `~/.researchkit/runs` and are claimed with `O_EXCL`, so the
+ceiling holds **across processes** — the kernel picks the winner when two runs
+race for the last slot. A slot whose owning process died (kill -9, crash,
+reboot) is reclaimed by the next arrival, so a crash can't shrink the pool.
+
+Three stages, in order: it **alerts** (log + `run_slots_high` progress event)
+as the pool fills, **pauses** a run that finds no slot until one frees, and
+only then **fails** it with `TooManyConcurrentRuns` naming the PIDs to check.
+Tune with `RESEARCHKIT_MAX_CONCURRENT_RUNS` and `RESEARCHKIT_RUN_SLOT_WAIT_S`
+(seconds to wait, default 300); `0` disables the cap. Note a boosted run takes
+one slot per sub-query.
+
+This complements the recursion guard: researchkit never invokes itself, so any
+researchkit process started from inside a coding-agent CLI that researchkit
+spawned is refused outright (`RESEARCHKIT_NESTED`).
+
+## Mine the cited repositories
+
+Runs cite GitHub repos — primary artifacts, not articles about artifacts.
+Archiving one as an HTML page throws away everything worth having, so
+researchkit clones each cited repo, reads it, and keeps the reading:
+
+This runs **inside every run by default**: between provider collection and the
+final analysis, so the extracts are evidence the report is written from, not a
+sibling artifact nobody reads.
+
+```bash
+uv run researchkit run <project>                   # harvest + feed the analysis (default)
+uv run researchkit run <project> --no-repos        # skip it
+uv run researchkit run <project> --keep-clones     # keep the source trees too
+uv run researchkit repos <project>                 # or after the fact, on a finished run
+```
+
+The step is bounded so it can never cost you a report you already paid for: 3
+workers, 30s per repo, a 90-second hard deadline, top 5 cited repos. Whatever
+finished by the deadline is used, the rest are abandoned, and the run says so
+(`Repository grounding: 3/5 harvested, 2 unavailable in time`). Nothing in it
+can raise.
+
+Only a compact card per repo reaches the analysis prompt — manifest facts,
+structure, public surface, a documentation lead — wrapped in the same
+untrusted-data delimiters as provider text, with the precedence stated: a
+repository is authoritative about _itself_, and its README's claims about the
+wider field are claims, not corroboration. The full extract stays on disk under
+`repos/`, and a copy (`materials/repo-<owner>-<name>.md`) is listed in
+`materials/index.json` with `origin: repo_extract`, so one manifest describes
+the whole pack and names only files inside `materials/` — the contract brainkit
+fails closed on.
+
+Each repo becomes `projects/<run>/repos/<owner>-<name>.md` holding its package
+manifest (name, description, dependencies), its documentation (README plus
+`docs/`, within a budget), its public surface (exported functions, classes),
+and its directory shape — then **the clone is deleted**. A source tree is the
+bulkiest thing a pack can carry and the least re-readable later; the extract is
+a few hundred KB an agent can load, and the URL is right there when you want
+the code itself. `psf/requests` and `sindresorhus/slugify` together came to 68 KB.
+
+Tests count toward the structure but are excluded from the docs and the public
+surface — harvesting them filled the whole API budget with `conftest` helpers
+and pushed the real documentation out. The extracts carry the same flat
+frontmatter as `materials/`, so brainkit ingests them without special-casing,
+and `repos/SUMMARY.md` indexes the set with a model's take on what they
+contribute to the topic.
+
+The clone is removed only after its extract is written, so a failed write
+leaves the tree rather than losing the repo.
+
+## Resume an interrupted run
+
+Each provider's answer is written to `projects/<run>/partial/<provider>.json` the moment it lands, so a run that is killed keeps everything it already paid for. Re-running the project reuses those answers instead of buying them twice:
+
+```bash
+uv run researchkit run <project>               # resumes from partial/ (default)
+uv run researchkit run <project> --no-resume   # re-query every provider
+```
+
+The run prints which providers it is reusing. `partial/` is deleted once `result.json` supersedes it.
 
 ## Build a brain from your research
 
-Pair researchkit with [brainkit](https://github.com/Paldom/brainkit) to turn any number of runs into a portable, citation-backed knowledge base that AI agents can query later — every answer traces back to a research run and a source URL:
+Every run already carries its own brain: once the materials are archived, `projects/<run>/brain/` is built with [brainkit](https://github.com/Paldom/brainkit) when it is installed in the environment (`uv pip install -e ../brainkit --python .venv/bin/python`) — a topic note, one note per archived source, the report's sections, and an `index.md` to descend from. The web UI's Brain tab browses it; `brainkit --brain projects/<run>/brain search "question"` queries it. Boosted runs get one per sub-project and one over the whole study on the parent. `researchkit materials <run> --refresh` rebuilds it.
+
+Beyond one run, pair researchkit with brainkit to turn any number of runs into a portable, citation-backed knowledge base that AI agents can query later — every answer traces back to a research run and a source URL:
 
 ```bash
 # side-by-side checkouts
@@ -269,7 +457,13 @@ Rules that keep everyone sane:
   results to appear in runs, reports, and the materials archive.
 - Optional hooks: `search_batch` (replaces per-keyword search),
   `summarize_batch` (adds a digest section), `popularity_label` (report
-  display like `Views: 1.2M`), `sequential = True` (hard rate limits).
+  display like `Views: 1.2M`), `sequential = True` (hard rate limits),
+  `needs_keywords = False` (works from the topic alone, so it starts with
+  the providers instead of after keyword synthesis).
+- Every connector runs concurrently with the others and with the provider
+  phase where it can; `sequential` only orders a connector's own queries.
+  A connector that holds a resource nobody can share (one browser profile,
+  say) serializes on it itself.
 - Configure per-plugin options in a preset's `plugins:` block and a model
   via a `models: {example: some-model}` key; both arrive in your factory's
   context.

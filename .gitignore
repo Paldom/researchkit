@@ -233,3 +233,6 @@ projects-remote/
 local-plugins/
 local-plugins.txt
 .DS_Store
+
+# playwright-cli page snapshots (local scratch)
+.playwright-cli/

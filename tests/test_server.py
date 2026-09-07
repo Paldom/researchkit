@@ -353,6 +353,51 @@ def test_project_output_endpoints(tmp_path: Path, monkeypatch: Any) -> None:
     assert client.get("/api/projects/20260706_full/links?mode=bad").status_code == 422
 
 
+def test_handoff_artifact_endpoints(tmp_path: Path, monkeypatch: Any) -> None:
+    """article.md, skill/SKILL.md and the brain are served for the UI tabs."""
+    import researchkit.server.app as app_module
+
+    project = _project_with_outputs(tmp_path)
+    monkeypatch.setattr(app_module, "list_projects", lambda _dir: [project])
+    client = TestClient(create_app(FakeService(tmp_path)))  # type: ignore[arg-type]
+    base = "/api/projects/20260706_full"
+
+    # Nothing generated yet: 404s the UI turns into "not available" hints.
+    assert client.get(f"{base}/article").status_code == 404
+    assert client.get(f"{base}/skill").status_code == 404
+    assert client.get(f"{base}/brain").status_code == 404
+
+    project.save_article("# Headline\n\nBody")
+    project.save_skill("---\nname: x\n---\nbody\n")
+    notes = project.brain_dir / "notes" / "topics"
+    notes.mkdir(parents=True)
+    (project.brain_dir / "index.md").write_text("# Brain index", encoding="utf-8")
+    (notes / "t1.md").write_text(
+        '---\ntitle: "T"\ntype: "topic"\n---\nx', encoding="utf-8"
+    )
+    (tmp_path / "secret.md").write_text("nope", encoding="utf-8")
+
+    assert client.get(f"{base}/article").text.startswith("# Headline")
+    assert client.get(f"{base}/skill").text.startswith("---\nname: x")
+    brain = client.get(f"{base}/brain").json()
+    assert brain["index"] == "# Brain index"
+    assert brain["notes"] == [
+        {
+            "path": "notes/topics/t1.md",
+            "slug": "t1",
+            "title": "T",
+            "type": "topic",
+            "url": "",
+        }
+    ]
+    assert client.get(f"{base}/brain/note", params={"path": "notes/topics/t1.md"}).text
+    # The brain directory is the trust boundary for note paths.
+    escaped = client.get(f"{base}/brain/note", params={"path": "../../secret.md"})
+    assert escaped.status_code == 404
+    listing = client.get("/api/projects").json()[0]
+    assert listing["has_article"] and listing["has_skill"] and listing["has_brain"]
+
+
 def test_improve_topic_and_keywords_endpoints(tmp_path: Path, monkeypatch: Any) -> None:
     import researchkit.prompt_improver as pi
 

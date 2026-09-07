@@ -21,7 +21,9 @@ import hashlib
 import html as html_lib
 import json
 import logging
+import shutil
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
@@ -37,10 +39,17 @@ logger = logging.getLogger(__name__)
 MATERIALS_DIRNAME = "materials"
 MANIFEST_FILENAME = "index.json"
 
-DEFAULT_LIMIT = 25
+# 0 = fetch every cited source. The archive IS the knowledge base a run
+# hands to brainkit/skillskit, so a truncated one silently drops evidence
+# the report cites. Cap it per-run with --materials-limit when you must.
+DEFAULT_LIMIT = 0
 DEFAULT_TIMEOUT_S = 10.0
 DEFAULT_MAX_BYTES = 500_000
 DEFAULT_DELAY_S = 0.2
+# Fetches run this wide; the delay above still paces each worker. A run cites
+# a few hundred URLs across many hosts, so serial fetching was minutes of
+# waiting on timeouts one at a time.
+DEFAULT_WORKERS = 8
 MIN_EXTRACT_CHARS = 200
 # The frozen manifest grammar: origins are "http", "cached", "summary", or
 # "connector:<kind>" with kind in this set. Downstream consumers (brainkit)
@@ -446,6 +455,42 @@ def _write_summary_fallback(
     return True
 
 
+def _repo_extract_entries(
+    project: Project, result: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Manifest rows for repo extracts already written under ``repos/``.
+
+    Recorded, never re-fetched: the extract was harvested during the run from a
+    clone that no longer exists. The manifest may only name files inside
+    ``materials/`` (brainkit fails closed on anything else, by design), so the
+    extract is copied in under a ``repo-`` prefix and marked with its origin so
+    consumers can tell it apart from a fetched web page.
+    """
+    rows: list[dict[str, Any]] = []
+    materials_dir = project.path / MATERIALS_DIRNAME
+    for extract in result.get("repo_extracts") or []:
+        if not isinstance(extract, dict) or not extract.get("extract_file"):
+            continue
+        path = project.path / "repos" / str(extract["extract_file"])
+        if not path.is_file():
+            continue
+        copy_name = f"repo-{Path(str(extract['extract_file'])).name}"
+        materials_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, materials_dir / copy_name)
+        rows.append(
+            {
+                "url": str(extract.get("url") or ""),
+                "status": "fetched",
+                "origin": "repo_extract",
+                "file": copy_name,
+                "title": str(extract.get("slug") or ""),
+                "source_type": "repository",
+                "chars": path.stat().st_size,
+            }
+        )
+    return rows
+
+
 def download_materials(
     project: Project,
     *,
@@ -454,6 +499,7 @@ def download_materials(
     max_bytes: int = DEFAULT_MAX_BYTES,
     delay: float = DEFAULT_DELAY_S,
     refresh: bool = False,
+    workers: int = DEFAULT_WORKERS,
 ) -> dict[str, Any]:
     """Fetch a project's cited sources into ``materials/`` and write a manifest.
 
@@ -463,8 +509,10 @@ def download_materials(
             ``skipped_limit`` so downstream consumers see the full citation set.
         timeout: Per-request timeout in seconds.
         max_bytes: Per-page size cap.
-        delay: Pause between fetches (politeness; also smooths rate limits).
+        delay: Pause before each fetch, per worker (politeness; also smooths
+            rate limits).
         refresh: Re-fetch URLs whose material file already exists.
+        workers: How many fetches run at once.
 
     Returns:
         The manifest dict (also written to ``materials/index.json``).
@@ -482,8 +530,8 @@ def download_materials(
     materials_dir.mkdir(exist_ok=True)
 
     entries: list[MaterialEntry] = []
-    fetched = 0
-    attempts = 0  # network attempts — the limit bounds these, not successes
+    # (ref, entry, path, filename) still needing the network, fetched below.
+    pending: list[tuple[SourceRef, MaterialEntry, Path, str]] = []
     for position, ref in enumerate(refs, start=1):
         entry = MaterialEntry(
             url=ref.url,
@@ -498,7 +546,7 @@ def download_materials(
         if scheme not in ("http", "https"):
             entry.status = "skipped_scheme"
             continue
-        if limit and attempts >= limit:
+        if limit and len(pending) >= limit:
             entry.status = "skipped_limit"
             continue
 
@@ -509,7 +557,6 @@ def download_materials(
             entry.origin = "cached"
             entry.file = filename
             entry.chars = len(path.read_text(encoding="utf-8"))
-            fetched += 1
             continue
 
         if ref.content:
@@ -523,12 +570,14 @@ def download_materials(
             entry.file = filename
             entry.title = ref.title or ref.url
             entry.chars = len(ref.content)
-            fetched += 1
             continue
 
-        if attempts:
+        pending.append((ref, entry, path, filename))
+
+    def _fetch_one(job: tuple[SourceRef, MaterialEntry, Path, str]) -> None:
+        ref, entry, path, filename = job
+        if delay:
             time.sleep(delay)
-        attempts += 1
         body, final_url = safe_fetch_text(
             _fetch_url(ref.url),
             timeout=timeout,
@@ -537,26 +586,24 @@ def download_materials(
         )
         if body is None:
             if _write_summary_fallback(path, ref, result, entry, filename):
-                fetched += 1
-                continue
+                return
             entry.status = "failed"
             logger.info("materials: fetch failed/blocked for %s", ref.url)
-            continue
+            return
         if body.lstrip().startswith(_BINARY_MARKERS):
             entry.status = "binary"
             logger.info("materials: binary payload skipped for %s", ref.url)
-            continue
+            return
 
         page_title, text = extract_readable_text(body)
         if len(text) < MIN_EXTRACT_CHARS:
             if _write_summary_fallback(path, ref, result, entry, filename):
-                fetched += 1
-                continue
+                return
             # JS shells (x.com, app-only pages) return chrome with no content;
             # record the citation but don't pollute the archive with husks.
             entry.status = "empty"
             logger.info("materials: no extractable text for %s", ref.url)
-            continue
+            return
         title = _pick_title(ref.title, page_title, ref.url)
         _write_material(path, ref, result, body=text, final_url=final_url, title=title)
         entry.status = "fetched"
@@ -565,7 +612,21 @@ def download_materials(
         entry.final_url = final_url
         entry.title = title
         entry.chars = len(text)
-        fetched += 1
+
+    # Each job owns its own entry and file, so the workers never share state;
+    # the manifest below reads the entries only after every job has finished.
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        for _ in pool.map(_fetch_one, pending):
+            pass  # re-raises a worker's exception (none expected past safe_fetch_text)
+
+    fetched = sum(1 for e in entries if e.status == "fetched")
+    attempts = len(pending)  # network attempts — the limit bounds these, not successes
+
+    # Repository extracts are materials too: they are archived source text a
+    # downstream brain should ingest, and listing them here means one manifest
+    # describes the whole pack instead of two half-descriptions of it. They are
+    # already on disk under repos/, so this records rather than re-fetches.
+    repo_entries = _repo_extract_entries(project, result)
 
     manifest = {
         "topic": result.get("topic", ""),
@@ -573,7 +634,8 @@ def download_materials(
         "total_cited": len(refs),
         "fetched": fetched,
         "attempted": attempts,
-        "entries": [e.to_dict() for e in entries],
+        "repo_extracts": len(repo_entries),
+        "entries": [e.to_dict() for e in entries] + repo_entries,
     }
     atomic_write_text(
         materials_dir / MANIFEST_FILENAME,

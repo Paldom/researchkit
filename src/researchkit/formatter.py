@@ -57,7 +57,6 @@ class Formatter:
         self,
         bundle: InsightBundle,
         include_raw: bool = True,
-        system_config: dict[str, Any] | None = None,
         digest_markdown: str | None = None,
     ) -> str:
         """
@@ -65,8 +64,9 @@ class Formatter:
 
         Args:
             bundle: The InsightBundle to format
-            include_raw: Whether to include raw provider outputs
-            system_config: Optional system config snapshot to display
+            include_raw: Whether to include raw provider outputs and the
+                per-provider summaries they were distilled into
+            digest_markdown: Optional digest section rendered after the overview
         """
         lines = [
             "# Research Report",
@@ -85,28 +85,10 @@ class Formatter:
                 "**Keywords (synthesized from findings):** "
                 + ", ".join(bundle.synthesized_keywords)
             )
-        if bundle.provider_keywords:
-            lines.append("")
-            lines.append("**Provider keyword contributions:**")
-            for provider, kws in bundle.provider_keywords.items():
-                preview = ", ".join(kws[:5])
-                suffix = f", ... ({len(kws)} total)" if len(kws) > 5 else ""
-                lines.append(f"- *{provider}*: {preview}{suffix}")
-
-        lines.extend(
-            [
-                f"**Time Window:** Last {bundle.days} days",
-                f"**Providers:** {', '.join(bundle.providers_queried)}",
-            ]
-        )
-
-        # Add system config info if available
-        if system_config:
-            preset = system_config.get("preset_name", "default")
-            fingerprint = system_config.get("fingerprint", "")
-            lines.append(f"**Model Preset:** {preset} (config: `{fingerprint}`)")
-
-        lines.append("")
+        # Per-provider keyword lists, preset fingerprint, provider roster: all
+        # pipeline bookkeeping. They stay in result.json; the report is about
+        # the topic.
+        lines.extend([f"**Time Window:** Last {bundle.days} days", ""])
 
         if bundle.professional_overview_markdown:
             lines.extend(
@@ -167,8 +149,8 @@ class Formatter:
                 )
             )
 
-        # Individual summaries
-        if bundle.individual_summaries:
+        # Individual summaries: intermediate material, shown with the raw outputs
+        if include_raw and bundle.individual_summaries:
             lines.extend(
                 [
                     "## Provider Summaries",
@@ -186,45 +168,17 @@ class Formatter:
                 )
             lines.extend(["---", ""])
 
-        # Analytics summary
+        # Coverage, one line. Per-provider status and models live in result.json.
         successful_results = [r for r in bundle.provider_results if r.is_success]
         total_sources = sum(self.count_sources(r) for r in successful_results)
-
-        lines.extend(
-            [
-                "## Analytics",
-                "",
-            ]
+        failed = [r.provider for r in bundle.provider_results if not r.is_success]
+        coverage = (
+            f"**Coverage:** {len(successful_results)}/{len(bundle.provider_results)} "
+            f"providers succeeded, {total_sources} sources cited"
         )
-
-        lines.extend(
-            [
-                "| Provider | Status | Model | Sources |",
-                "|----------|--------|-------|---------|",
-            ]
-        )
-
-        for result in bundle.provider_results:
-            status = "✓ Success" if result.is_success else "✗ Failed"
-            source_count = self.count_sources(result) if result.is_success else "-"
-            lines.append(
-                f"| {result.provider.title()} | {status} | {result.model} | {source_count} |"
-            )
-
-        lines.extend(
-            [
-                "",
-                f"**Total:** {len(successful_results)}/{len(bundle.provider_results)} providers succeeded, {total_sources} sources cited",
-                "",
-            ]
-        )
-
-        lines.extend(
-            [
-                "---",
-                "",
-            ]
-        )
+        if failed:
+            coverage += f" (failed: {', '.join(failed)})"
+        lines.extend([coverage, "", "---", ""])
 
         # Raw outputs
         if include_raw:
@@ -240,7 +194,7 @@ class Formatter:
                 source_info = f" | {source_count} sources" if source_count > 0 else ""
                 lines.extend(
                     [
-                        f"### {status} {result.provider.title()} ({result.model}){source_info}",
+                        f"### {status} {result.provider.title()}{source_info}",
                         "",
                     ]
                 )
@@ -714,7 +668,6 @@ default_formatter = Formatter()
 def format_as_markdown(
     bundle: InsightBundle,
     include_raw: bool = True,
-    system_config: dict[str, Any] | None = None,
     digest_markdown: str | None = None,
 ) -> str:
     """
@@ -722,14 +675,12 @@ def format_as_markdown(
 
     Args:
         bundle: The InsightBundle to format
-        include_raw: Whether to include raw provider outputs
-        system_config: Optional system config snapshot to display
+        include_raw: Whether to include raw provider outputs and summaries
         digest_markdown: Optional digest summary to include after header
     """
     return default_formatter.format_markdown(
         bundle,
         include_raw,
-        system_config=system_config,
         digest_markdown=digest_markdown,
     )
 

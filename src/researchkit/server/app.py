@@ -31,7 +31,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from researchkit import __version__
+from researchkit.materials import DEFAULT_LIMIT
 from researchkit.project import PROJECTS_DIR, Project, list_projects
+from researchkit.safe_io import guard_no_nested_run
 from researchkit.service import SocialResearchService
 
 logger = logging.getLogger(__name__)
@@ -81,7 +83,9 @@ class ResearchIn(BaseModel):
     # brainkit ingests and skillskit skillifies, and it is the part that
     # survives link rot. A report with dead citations is not a research pack.
     materials: bool = True
-    materials_limit: int = Field(default=25, ge=0, le=500)
+    # 0 = every cited source, matching the CLI default: a UI run must produce
+    # the same complete pack as a terminal one, not a 25-source subset of it.
+    materials_limit: int = Field(default=DEFAULT_LIMIT, ge=0, le=500)
     user_urls: list[str] = Field(default_factory=list, max_length=25)
     user_files: list[UserFileIn] = Field(default_factory=list, max_length=10)
     user_texts: list[str] = Field(default_factory=list, max_length=5)
@@ -276,6 +280,23 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
                 state.events.put(
                     {"stage": "materials_error", "message": f"Archive failed: {e}"}
                 )
+        # The pack's brain is derived from the archive: one per target, and
+        # one over the whole study on a boosted parent (brainkit recurses).
+        from researchkit.brain import build_brain
+
+        for target in [*targets, *([project] if project and len(targets) > 1 else [])]:
+            state.events.put(
+                {"stage": "brain_start", "message": f"Building brain for {target.name}"}
+            )
+            built = build_brain(target)
+            state.events.put(
+                {
+                    "stage": "brain_done" if built else "brain_skipped",
+                    "message": f"Brain built for {target.name}"
+                    if built
+                    else f"Brain skipped for {target.name}",
+                }
+            )
 
     def _execute(state: _RunState, params: ResearchIn) -> None:
         try:
@@ -462,6 +483,35 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="No result yet")
         return JSONResponse(json.loads(path.read_text(encoding="utf-8")))
 
+    @app.get("/api/projects/{name}/article")
+    def project_article(name: str) -> PlainTextResponse:
+        return _project_text(name, "article.md", "text/markdown")
+
+    @app.get("/api/projects/{name}/skill")
+    def project_skill(name: str) -> PlainTextResponse:
+        return _project_text(name, "skill/SKILL.md", "text/markdown")
+
+    @app.get("/api/projects/{name}/brain")
+    def project_brain(name: str) -> JSONResponse:
+        """The brain's map: its index page plus every note for navigation."""
+        from researchkit.brain import brain_notes, read_brain_file
+
+        brain_dir = _find_project(name).brain_dir
+        index = read_brain_file(brain_dir, "index.md")
+        if index is None:
+            raise HTTPException(status_code=404, detail="No brain yet")
+        return JSONResponse({"index": index, "notes": brain_notes(brain_dir)})
+
+    @app.get("/api/projects/{name}/brain/note")
+    def project_brain_note(name: str, path: str) -> PlainTextResponse:
+        """One brain file by brain-relative path (index pages included)."""
+        from researchkit.brain import read_brain_file
+
+        text = read_brain_file(_find_project(name).brain_dir, path)
+        if text is None:
+            raise HTTPException(status_code=404, detail="No such note")
+        return PlainTextResponse(text, media_type="text/markdown")
+
     @app.get("/api/projects/{name}/prompt")
     def project_prompt(name: str) -> PlainTextResponse:
         from researchkit.article_prompt import build_article_prompt
@@ -531,6 +581,11 @@ def main() -> None:
     """Entry point for the ``researchkit-server`` console script."""
     import uvicorn
 
+    nested = guard_no_nested_run()
+    if nested is not None:
+        raise SystemExit(nested)
+    # Every project this server creates is tagged as web-started.
+    os.environ.setdefault("RESEARCHKIT_ORIGIN", "web")
     host = os.getenv("RESEARCHKIT_HOST", "127.0.0.1")
     port = int(os.getenv("RESEARCHKIT_PORT", "8000"))
     loopback = host in {"127.0.0.1", "::1", "localhost"}

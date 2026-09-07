@@ -34,9 +34,22 @@ Every live run spends. Test with the smallest thing that proves the change:
   `--providers hackernews skillsh arxiv stackexchange openalex`
 - **Minimum iterations.** One small run, then stop. Do not re-run to admire
   the output. `--days 7`, a narrow `--providers`, `--no-site-research`.
+- **Every run ends in four Claude Code writers** (overview, digest, article,
+  skill), concurrent, billed to the subscription. Even a keyless smoke run
+  pays for those four; the brain that follows is free (stdlib brainkit).
 - **Never boost to smoke-test.** `--boost` and `explore` fan out into many
   sub-runs and multiply cost by the fan-out. They are for real research, not
   verification.
+- **Ten runs at once, machine-wide.** Every run holds one of
+  `RESEARCHKIT_MAX_CONCURRENT_RUNS` (default 10) cross-process slots. Over the
+  cap a run waits, then fails — it does not queue forever silently. Check what
+  is spending with `researchkit runs`; a boosted run takes one slot per
+  sub-query.
+- **researchkit never invokes researchkit.** If you are a coding-agent CLI that
+  researchkit spawned (`RESEARCHKIT_NESTED` is in your env), do not shell out to
+  `researchkit`/`uv run researchkit` — answer from your own web search. Every
+  entrypoint refuses that call anyway (exit 2): each nested run starts more
+  agents that do the same, which is exponential, not a fan-out.
 - **Verify what actually ran, not what you typed.** `provider_models` in
   `result.json` names the resolved model per slot. A plain id (`grok-4.6`)
   means the API billed you; `grokcli:grok-4.6` means the subscription did.

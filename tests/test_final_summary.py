@@ -79,8 +79,10 @@ class TestClaudeFinalSummaryGenerator:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         generator = DigestGenerator(model="claude-test", max_budget=0.1)
+        seen: list[list[str]] = []
 
         def fake_run(*args, **kwargs) -> SimpleNamespace:
+            seen.append(args[0])
             return SimpleNamespace(
                 returncode=0,
                 stdout=json.dumps({"result": "## TL;DR\nDigest content"}),
@@ -97,6 +99,9 @@ class TestClaudeFinalSummaryGenerator:
         )
 
         assert result == "## TL;DR\nDigest content"
+        # Headless writer: the repo's Stop hook must not run (and answer) here.
+        cmd = seen[0]
+        assert cmd[cmd.index("--settings") + 1] == '{"disableAllHooks":true}'
 
     def test_generate_falls_back_to_plain_text(
         self, monkeypatch: pytest.MonkeyPatch
@@ -120,6 +125,51 @@ class TestClaudeFinalSummaryGenerator:
         )
 
         assert result == "Plain text digest"
+
+    @pytest.mark.parametrize(
+        ("stdout", "expected"),
+        [
+            # A fenced file is unwrapped: line 1 must be the frontmatter.
+            ("```markdown\n---\nname: x\n---\nbody\n```", "---\nname: x\n---\nbody\n"),
+            # The writer declined: nothing is saved.
+            ("NO-SKILL: research too thin for a skill", None),
+            # Preamble before the frontmatter is not a loadable skill file.
+            ("Here is the skill:\n---\nname: x\n---\n", None),
+            ("", None),
+        ],
+    )
+    def test_skill_generator_saves_only_a_real_skill_file(
+        self, monkeypatch: pytest.MonkeyPatch, stdout: str, expected: str | None
+    ) -> None:
+        from researchkit.final_summary import SkillGenerator
+
+        generator = SkillGenerator(model="claude-test", max_budget=0.1)
+        monkeypatch.setattr(
+            "researchkit.final_summary.run_subprocess",
+            lambda *a, **k: SimpleNamespace(
+                returncode=0, stdout=json.dumps({"result": stdout}), stderr=""
+            ),
+        )
+        result = generator.generate(
+            meta_summary="m", individual_summaries={}, topic="t", days=7
+        )
+        assert result == expected
+
+    def test_article_and_skill_are_distinct_writers(self) -> None:
+        from researchkit.final_summary import (
+            ArticleGenerator,
+            ProfessionalOverviewGenerator,
+            SkillGenerator,
+        )
+
+        article = ArticleGenerator().get_system_prompt()
+        assert "H1" in article
+        assert article != ProfessionalOverviewGenerator().get_system_prompt()
+        assert "NO-SKILL" in SkillGenerator().get_system_prompt()
+        assert (ArticleGenerator.stage_name, SkillGenerator.stage_name) == (
+            "article",
+            "skill",
+        )
 
     def test_generate_returns_none_on_timeout(
         self, monkeypatch: pytest.MonkeyPatch

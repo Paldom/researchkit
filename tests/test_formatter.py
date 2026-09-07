@@ -50,6 +50,30 @@ class TestFormatter:
         assert "## Digest" in markdown
 
 
+def test_report_carries_no_pipeline_metadata() -> None:
+    # The report is about the topic: no model ids, preset fingerprints,
+    # per-provider keyword lists or status tables. Those stay in result.json.
+    bundle = _make_bundle("Overview text.")
+    bundle.provider_keywords = {"openai": ["kw1", "kw2"]}
+    bundle.provider_results.append(
+        ProviderResult(provider="glm", model="glm-test", raw_text="", error="boom")
+    )
+    lean = format_as_markdown(bundle, include_raw=False)
+    assert "gpt-test" not in lean
+    assert "Provider keyword contributions" not in lean
+    assert "**Providers:**" not in lean
+    assert "## Analytics" not in lean
+    assert "## Provider Summaries" not in lean  # intermediate, raw-only
+    assert (
+        "**Coverage:** 1/2 providers succeeded, 0 sources cited (failed: glm)" in lean
+    )
+
+    full = format_as_markdown(bundle, include_raw=True)
+    assert "## Provider Summaries" in full
+    assert "### ✓ Openai" in full
+    assert "gpt-test" not in full
+
+
 def test_raw_provider_headings_are_demoted() -> None:
     # Providers emit `## Sources` sections (instructed); embedded raw text
     # must not create top-level report sections — brainkit chunks report.md

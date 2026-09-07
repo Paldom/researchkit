@@ -80,6 +80,22 @@ class Source:
             result["last_updated"] = self.last_updated
         return result
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Source:
+        """Rebuild a Source from :meth:`to_dict` output (partial-result reload)."""
+        try:
+            source_type = SourceType(data.get("source_type") or "unknown")
+        except ValueError:
+            source_type = SourceType.UNKNOWN
+        return cls(
+            url=data["url"],
+            title=data.get("title"),
+            snippet=data.get("snippet"),
+            date=data.get("date"),
+            last_updated=data.get("last_updated"),
+            source_type=source_type,
+        )
+
 
 @dataclass
 class ProviderResult:
@@ -96,6 +112,34 @@ class ProviderResult:
     def is_success(self) -> bool:
         """Check if the result was successful."""
         return self.error is None and bool(self.raw_text)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Full serialization, including ``raw_text`` — this is the paid output.
+
+        The bundle's own ``to_dict`` summarizes results for the report; this one
+        must round-trip losslessly so an interrupted run can resume without
+        re-buying what a provider already returned.
+        """
+        return {
+            "provider": self.provider,
+            "model": self.model,
+            "raw_text": self.raw_text,
+            "sources": [s.to_dict() for s in self.sources],
+            "meta": self.meta,
+            "error": self.error,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ProviderResult:
+        """Rebuild a ProviderResult written by :meth:`to_dict`."""
+        return cls(
+            provider=data["provider"],
+            model=data.get("model", "unknown"),
+            raw_text=data.get("raw_text", ""),
+            sources=[Source.from_dict(s) for s in data.get("sources", [])],
+            meta=data.get("meta", {}) or {},
+            error=data.get("error"),
+        )
 
 
 # Domain lists for filtering searches to social/discussion sources
@@ -159,6 +203,14 @@ _CLI_HARNESS_TIMEOUT = 1800.0
 # gracefully (empty keyword list, "summarization failed" stub), so a wedged one
 # should cost minutes, not the full answer budget.
 CLI_QUICK_TIMEOUT = 300.0
+
+# Every headless `claude -p` researchkit spawns passes these. Hooks are the
+# operator's interactive tooling, not the writer's: a repo Stop hook that runs
+# the test gate turns the summary into "the hook failed" prose, and plugin
+# SessionStart hooks inject personas into it. Verified on 2.1.258: --settings
+# JSON overrides project/user settings; --bare would also drop OAuth, which is
+# the whole point of the harness path.
+CLAUDE_HEADLESS_ARGS = ("--settings", '{"disableAllHooks":true}')
 
 
 def cli_harness_timeout(default: float = _CLI_HARNESS_TIMEOUT) -> float:

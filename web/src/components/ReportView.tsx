@@ -38,9 +38,10 @@ export function CopyButton({ text, label = 'Copy' }: { text: string; label?: str
 interface Props {
   name: string
   markdown: string
+  filename?: string // download name; defaults to <project>.md (the report)
 }
 
-export default function ReportView({ name, markdown }: Props) {
+export default function ReportView({ name, markdown, filename = `${name}.md` }: Props) {
   return (
     <section aria-label="Report">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -49,7 +50,7 @@ export default function ReportView({ name, markdown }: Props) {
           <CopyButton text={markdown} label="Copy markdown" />
           <button
             type="button"
-            onClick={() => downloadText(`${name}.md`, markdown, 'text/markdown')}
+            onClick={() => downloadText(filename, markdown, 'text/markdown')}
             className={actionButtonClass}
           >
             Download .md

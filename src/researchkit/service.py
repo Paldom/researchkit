@@ -18,9 +18,11 @@ from typing import Any
 
 from researchkit.aggregator import InsightAggregator, InsightBundle
 from researchkit.final_summary import (
+    ArticleGenerator,
     ClaudeFinalSummaryGenerator,
     DigestGenerator,
     ProfessionalOverviewGenerator,
+    SkillGenerator,
     SuperSummaryGenerator,
 )
 from researchkit.formatter import format_as_markdown
@@ -36,6 +38,7 @@ from researchkit.project import (
     create_subproject,
 )
 from researchkit.prompts import run_context_note_scope
+from researchkit.run_limit import run_slot
 from researchkit.system_config import EffectiveModels, SystemConfigManager
 from researchkit.utils import slugify
 
@@ -83,6 +86,10 @@ class ResearchArtifacts:
     report_json: dict[str, Any]
     report_path: Path | None = None
     log_path: Path | None = None
+    # Handoff writers that ran alongside the overview and digest. None when the
+    # writer was skipped, failed, or (skill) declined for thin research.
+    article_markdown: str | None = None
+    skill_markdown: str | None = None
 
 
 @dataclass
@@ -172,9 +179,11 @@ class SocialResearchService:
         bundle: InsightBundle,
         topic: str,
         days: int,
+        repo_cards: list[str] | None = None,
     ) -> str | None:
         """Generate a final Claude-based report summary."""
         return generator.generate(
+            repo_cards=repo_cards or [],
             meta_summary=bundle.meta_summary,
             individual_summaries=bundle.individual_summaries,
             topic=topic,
@@ -186,6 +195,73 @@ class SocialResearchService:
             user_file_contents=bundle.user_file_contents,
         )
 
+    @staticmethod
+    def _enrich_with_repos(
+        repo_dir: Path,
+        bundle: InsightBundle,
+        emit: ProgressCallback,
+        *,
+        keep_clones: bool = False,
+    ) -> list[str]:
+        """Harvest the repos this run cited; return compact cards for the prompt.
+
+        Bounded and fail-open by construction: the providers' answers are
+        already paid for and on disk by the time this runs, so nothing here is
+        allowed to raise or to run past its deadline. Partial results are
+        reported plainly rather than passed off as complete — a report that
+        quietly dropped its grounding reads as more authoritative than it is.
+        """
+        from researchkit.repos import (
+            extract_repo_urls,
+            extract_repos_for_run,
+            render_repo_card,
+        )
+
+        result = bundle.to_dict()
+        wanted = extract_repo_urls(result)
+        if not wanted:
+            return []
+
+        emit(
+            {
+                "stage": "repos_start",
+                "message": f"Harvesting {len(wanted)} cited repositor(y/ies)",
+                "count": len(wanted),
+            }
+        )
+        try:
+            repos = extract_repos_for_run(repo_dir, result, keep_clones=keep_clones)
+        except Exception as e:  # defence in depth; the helper already swallows
+            logger.warning("repo enrichment failed outright: %s", e)
+            repos = []
+
+        usable = [r for r in repos if r.ok]
+        bundle.repo_extracts = [
+            {
+                "slug": r.slug,
+                "url": r.url,
+                "extract_file": r.extract_file,
+                "docs": len(r.docs),
+                "declarations": len(r.api),
+                "clone_deleted": r.deleted,
+                "error": r.error,
+            }
+            for r in repos
+        ]
+        missing = len(wanted) - len(usable)
+        emit(
+            {
+                "stage": "repos_done",
+                "message": (
+                    f"Repository grounding: {len(usable)}/{len(wanted)} harvested"
+                    + (f", {missing} unavailable in time" if missing else "")
+                ),
+                "harvested": len(usable),
+                "requested": len(wanted),
+            }
+        )
+        return [render_repo_card(r) for r in usable]
+
     def run(
         self,
         req: ResearchRequest,
@@ -196,6 +272,11 @@ class SocialResearchService:
         progress: ProgressCallback | None = None,
         log_dir: Path = Path(".logs"),
         log_level: str = "DEBUG",
+        partial_sink: Callable[[Any], None] | None = None,
+        preloaded_results: dict[str, Any] | None = None,
+        repos_enabled: bool = True,
+        repo_dir: Path | None = None,
+        repo_keep_clones: bool = False,
     ) -> ResearchArtifacts:
         """
         Run a complete research workflow.
@@ -208,6 +289,15 @@ class SocialResearchService:
             progress: Optional callback for progress events
             log_dir: Directory for log files (default: .logs)
             log_level: Log level for per-run log file (default: DEBUG)
+            partial_sink: Called with each ProviderResult as it lands, so an
+                interrupted run keeps what it already paid for.
+            preloaded_results: Provider results restored from an interrupted
+                run; those providers are not queried again.
+            repos_enabled: Clone and harvest the GitHub repos this run cites,
+                feeding compact cards to the final analysis (default on).
+            repo_dir: Project directory to write ``repos/`` into. Without one
+                there is nowhere to keep the extracts, so the step is skipped.
+            repo_keep_clones: Keep the cloned source trees on disk.
 
         Returns:
             ResearchArtifacts containing the bundle, formatted reports, paths, and run_id
@@ -232,6 +322,9 @@ class SocialResearchService:
                 level=log_level,
             ) as run_log_path,
             run_context_note_scope(req.run_context_note),
+            # Held for the whole run: every frontend reaches providers through
+            # here, so this is the one place a machine-wide ceiling can hold.
+            run_slot(topic=req.topic, run_id=run_id, progress=emit),
         ):
             # The sibling-awareness note is scoped to this run (and reset on
             # exit) so it can't leak into a later run on the same thread.
@@ -256,6 +349,8 @@ class SocialResearchService:
                 effective_models=effective_models,
                 site_research_enabled=req.site_research_enabled,
                 site_research_sites=list(req.site_research_sites),
+                partial_sink=partial_sink,
+                preloaded_results=preloaded_results,
             )
 
             emit(
@@ -277,15 +372,31 @@ class SocialResearchService:
                 user_sources_dir=req.user_sources_dir,
             )
 
-            digest_md: str | None = None
-            professional_overview_md: str | None = None
+            # --- Repository enrichment -------------------------------------
+            # Between collection and final analysis: the providers' findings
+            # are already bought and saved by the partial sink, and the digest
+            # and overview below are the analysis that should see the repos.
+            # Hard-bounded, never raises — a slow clone degrades the grounding,
+            # it does not cost the report. (Design reviewed by the flagship
+            # council: bound it, never block on it, keep the bulk on disk.)
+            repo_cards: list[str] = []
+            if repos_enabled and repo_dir is not None:
+                repo_cards = self._enrich_with_repos(
+                    repo_dir, bundle, emit, keep_clones=repo_keep_clones
+                )
 
-            # Skip the two Claude CLI summary generations entirely when no
-            # provider succeeded — otherwise they spend budget summarizing the
-            # "*All providers failed*" notice. (Review L2; mirrors the
-            # keyword-gen gate in the aggregator.)
+            # Every writer's output by stage; None = skipped, failed, declined.
+            written: dict[str, str | None] = {}
+
+            # Skip the Claude CLI writers entirely when no provider succeeded —
+            # otherwise they spend budget summarizing the "*All providers
+            # failed*" notice. (Review L2; mirrors the keyword-gen gate in the
+            # aggregator.)
             any_success = any(r.is_success for r in bundle.provider_results)
 
+            # All four writers see the same research body and run at once: the
+            # research is bought, so the only thing left to wait on is wall
+            # clock, and these are independent of each other.
             summary_specs: dict[
                 str,
                 tuple[str, str, str, ClaudeFinalSummaryGenerator],
@@ -303,6 +414,18 @@ class SocialResearchService:
                     ProfessionalOverviewGenerator.from_effective_models(
                         effective_models
                     ),
+                ),
+                "article": (
+                    "Writing article",
+                    "Article written",
+                    "Article skipped",
+                    ArticleGenerator.from_effective_models(effective_models),
+                ),
+                "skill": (
+                    "Distilling skill",
+                    "Skill distilled",
+                    "Skill skipped",
+                    SkillGenerator.from_effective_models(effective_models),
                 ),
             }
             if not any_success:
@@ -332,6 +455,7 @@ class SocialResearchService:
                         bundle,
                         req.topic,
                         req.days,
+                        repo_cards,
                     )
                     future_map[future] = stage
 
@@ -347,10 +471,7 @@ class SocialResearchService:
                         )
                         text = None
 
-                    if stage == "digest":
-                        digest_md = text
-                    else:
-                        professional_overview_md = text
+                    written[stage] = text
 
                     emit(
                         {
@@ -359,7 +480,7 @@ class SocialResearchService:
                         }
                     )
 
-            bundle.professional_overview_markdown = professional_overview_md
+            bundle.professional_overview_markdown = written.get("professional_overview")
 
             emit(
                 {
@@ -371,8 +492,7 @@ class SocialResearchService:
             md = format_as_markdown(
                 bundle,
                 include_raw=req.include_raw,
-                system_config=effective_models.to_dict() if effective_models else None,
-                digest_markdown=digest_md,
+                digest_markdown=written.get("digest"),
             )
 
             report_path: Path | None = None
@@ -410,6 +530,8 @@ class SocialResearchService:
                 report_json=bundle.to_dict(),
                 report_path=report_path,
                 log_path=run_log_path,
+                article_markdown=written.get("article"),
+                skill_markdown=written.get("skill"),
             )
 
     def create_project(
@@ -460,18 +582,39 @@ class SocialResearchService:
         *,
         progress: ProgressCallback | None = None,
         log_level: str = "DEBUG",
+        resume: bool = True,
+        repos_enabled: bool = True,
+        repo_keep_clones: bool = False,
     ) -> ResearchArtifacts:
         """
         Run research for an existing project and save results to the project folder.
+
+        Provider results are written to ``partial/`` as they land, so a run that
+        is killed keeps everything it already paid for; re-running the project
+        reuses them instead of buying the same answers twice.
 
         Args:
             project: The project to run
             progress: Optional callback for progress events
             log_level: Log level for per-run log file
+            resume: Reuse provider results left by an interrupted run (default
+                on — they cost money). Pass False to re-query everything.
+            repos_enabled: Harvest the GitHub repos this run cites into
+                ``repos/`` and feed compact cards to the final analysis.
+            repo_keep_clones: Keep the cloned source trees on disk.
 
         Returns:
             ResearchArtifacts with results saved to project folder
         """
+        from researchkit.providers.base import ProviderResult
+
+        preloaded: dict[str, ProviderResult] = {}
+        if resume:
+            for name, payload in project.load_partials().items():
+                try:
+                    preloaded[name] = ProviderResult.from_dict(payload)
+                except (KeyError, TypeError, ValueError) as e:
+                    logger.warning(f"Ignoring unusable partial for {name}: {e}")
         # Convert project config to research request
         req = ResearchRequest(
             topic=project.config.topic,
@@ -500,10 +643,23 @@ class SocialResearchService:
             progress=progress,
             log_dir=project.path,
             log_level=log_level,
+            partial_sink=lambda result: project.save_partial(
+                result.provider, result.to_dict()
+            ),
+            preloaded_results=preloaded,
+            repos_enabled=repos_enabled,
+            repo_dir=project.path,
+            repo_keep_clones=repo_keep_clones,
         )
 
         # Save results to project folder
         project.save_results(artifacts.report_json, artifacts.report_markdown)
+        if artifacts.article_markdown:
+            project.save_article(artifacts.article_markdown)
+        if artifacts.skill_markdown:
+            project.save_skill(artifacts.skill_markdown)
+        # result.json now supersedes the per-provider partials.
+        project.clear_partials()
 
         # Move the run log to the standard project log location
         if artifacts.log_path and artifacts.log_path.exists():
@@ -517,6 +673,8 @@ class SocialResearchService:
             report_json=artifacts.report_json,
             report_path=project.report_path,
             log_path=project.log_path,
+            article_markdown=artifacts.article_markdown,
+            skill_markdown=artifacts.skill_markdown,
         )
 
     def create_and_run_project(
@@ -532,6 +690,8 @@ class SocialResearchService:
         site_research_sites: list[str] | None = None,
         progress: ProgressCallback | None = None,
         log_level: str = "DEBUG",
+        repos_enabled: bool = True,
+        repo_keep_clones: bool = False,
     ) -> tuple[Project, ResearchArtifacts]:
         """
         Create a project and immediately run research (instant mode).
@@ -568,6 +728,8 @@ class SocialResearchService:
             project,
             progress=progress,
             log_level=log_level,
+            repos_enabled=repos_enabled,
+            repo_keep_clones=repo_keep_clones,
         )
 
         return project, artifacts

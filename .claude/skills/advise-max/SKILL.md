@@ -1,6 +1,6 @@
 ---
 name: advise-max
-description: Asks the cutting-edge flagship of every logged-in coding-agent CLI at maximum reasoning effort (Claude Fable 5 @max, Codex GPT-5.6 Sol @ultra, Gemini 3.7 Flash High, Grok 4.6 @xhigh, Kimi K3) the same question, side by side — subscription auth, zero API keys. Use when the user wants the strongest possible second opinions, "ask the best models", "max-effort advice", "advise-max", or a hard question worth top-tier reasoning. Not for quick/cheap opinions (use advise), a synthesized answer (use council), or web research (use explore).
+description: Asks the cutting-edge flagship of every logged-in coding-agent CLI at maximum reasoning effort (Claude Fable 5 @max, Codex GPT-6 Astra @ultra, Gemini 3.7 Flash High, Grok 4.6 @xhigh, Kimi K3) the same question, side by side — subscription auth, zero API keys. Use when the user wants the strongest possible second opinions, "ask the best models", "max-effort advice", "advise-max", or a hard question worth top-tier reasoning. Not for quick/cheap opinions (use advise), a synthesized answer (use council), or web research (use explore).
 argument-hint: "<question>"
 ---
 
@@ -20,7 +20,7 @@ deserve it.
    ```bash
    uv run researchkit advise "QUESTION" --harnesses \
      claude:claude-fable-5@max \
-     codex:gpt-5.6-sol@ultra \
+     codex:gpt-6-astra@ultra \
      agy:gemini-3.7-flash-high \
      grokcli:grok-4.6@xhigh \
      kimicli:kimi-code/k3
@@ -31,10 +31,13 @@ deserve it.
 2. Relay each `## <harness-spec>` answer side by side, attributed — no
    merging (run `/council` with these same `--harnesses` for synthesis).
 
-Model notes (checked 2026-08-21, each verified live): Codex "Sol Ultra" is
-the `ultra` REASONING tier on `gpt-5.6-sol`
-(`model_reasoning_effort=ultra`), NOT a model id; `-m gpt-5.6-sol-ultra` is
-rejected. Antigravity now lists real ids (`agy models` prints
+Model notes (Codex re-verified live 2026-09-07; the rest 2026-08-21):
+`gpt-6-astra` is the current Codex flagship, and it supersedes
+`gpt-5.6-sol`. Effort is a REASONING TIER, never part of the model id —
+pass `-m gpt-6-astra` with `model_reasoning_effort`, since an id like
+`gpt-6-astra-ultra` does not exist. Astra accepts both `ultra` and `xhigh`
+(both answered a probe cleanly); `ultra` is what this skill uses and
+`xhigh` is what `codex`'s own config defaults to. Antigravity now lists real ids (`agy models` prints
 `<id>\t<display name>`) and bakes the thinking level into the id, so pass
 `agy:gemini-3.7-flash-high` — no quoting, and a `@high` suffix does
 nothing. The Grok CLI's effort ceiling rose to `xhigh` (`max` is still

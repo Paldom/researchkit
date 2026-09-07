@@ -46,163 +46,97 @@ class SiteResearcher:
     async def run(
         self,
         topic: str,
-        keywords: list[str],
+        keywords: list[str] | asyncio.Future[list[str]],
         days: int,
         config: SiteResearchConfig,
     ) -> SiteResearchBundle:
         """
-        Run site research across all configured sites.
+        Run site research across all configured sites, concurrently.
+
+        Every site is an independent pipeline (search, per-item summaries,
+        batch summary) and they all run at once; a connector's ``sequential``
+        flag only orders its own keyword queries. ``keywords`` may be a Future:
+        connectors with ``needs_keywords = False`` start immediately while the
+        rest wait for the future to resolve, so a slow topic-only connector
+        overlaps the provider phase instead of trailing it.
 
         Args:
             topic: The research topic
-            keywords: List of search keywords
+            keywords: Search keywords, or a Future that will deliver them
             days: Lookback window in days
             config: Site research configuration
 
         Returns:
             SiteResearchBundle with results
         """
-        logger.info(
-            f"Starting site research: {len(keywords)} keywords, "
-            f"sites={config.sites}, days={days}"
-        )
+        logger.info(f"Starting site research: sites={config.sites}, days={days}")
 
         published_after = datetime.now(UTC) - timedelta(days=days)
-        used_keywords = [k.strip() for k in keywords if k.strip()][
-            : config.max_keywords_used
-        ]
+        if isinstance(keywords, asyncio.Future):
+            keywords_ready = keywords
+        else:
+            keywords_ready = asyncio.get_running_loop().create_future()
+            keywords_ready.set_result(list(keywords))
 
         bundle = SiteResearchBundle(
             config=config.to_dict(),
             items_by_site={},
             errors=[],
         )
+        skipped_for_keywords: list[str] = []
 
-        if not used_keywords:
-            bundle.errors.append("No keywords provided for site research")
-            return bundle
+        async def used_keywords() -> list[str]:
+            raw = await keywords_ready
+            return [k.strip() for k in raw if k.strip()][: config.max_keywords_used]
 
-        # Phase 1: Search all sites x keywords
-        # Sites that require sequential requests due to rate limiting
-        # Sites whose APIs rate-limit hard enough to need sequential queries
-        # (declared by the connector itself).
-        sequential_sites: set[str] = {
-            site for site, c in self.connectors.items() if c.sequential
-        }
-
-        async def _search(connector: BaseSiteConnector, query: str) -> list[SiteItem]:
-            return await asyncio.to_thread(
-                connector.search,
-                query,
-                published_after,
-                config.per_keyword_max_results,
-            )
-
-        for site in config.sites:
-            if site not in self.connectors:
+        async def research_site(site: str) -> list[SiteItem] | None:
+            connector = self.connectors.get(site)
+            if connector is None:
                 bundle.errors.append(f"Site connector not found: {site}")
-                continue
-
-            connector = self.connectors[site]
-            if not connector.is_available():
-                bundle.errors.append(
-                    f"Site connector not available (missing API key): {site}"
-                )
-                continue
-
-            all_items: list[SiteItem] = []
-
-            # Exclusive batch hook: a connector may serve the whole request
-            # in one call (exa does); non-None replaces per-keyword search.
-            batch_items: list[SiteItem] | None = None
+                return None
             try:
-                batch_items = await asyncio.to_thread(
-                    connector.search_batch,
+                if not connector.is_available():
+                    bundle.errors.append(
+                        f"Site connector not available (missing API key): {site}"
+                    )
+                    return None
+                site_keywords: list[str] = []
+                if connector.needs_keywords:
+                    site_keywords = await used_keywords()
+                    if not site_keywords:
+                        skipped_for_keywords.append(site)
+                        return None
+                items = await self._search_site(
+                    site,
+                    connector,
                     topic,
-                    used_keywords,
+                    site_keywords,
                     published_after,
-                    config.get_max_items(site),
+                    config,
+                    bundle,
                 )
-            except Exception as e:
-                logger.warning(f"{site} batch search error: {e}")
-                bundle.errors.append(f"{site} search error: {str(e)[:100]}")
+                await self._summarize_items(topic, site, items, bundle)
+                await self._batch_summarize(topic, site, items, bundle)
+            except Exception as e:  # one site's crash must not cost the others
+                logger.warning(f"{site} site research failed: {e}")
+                bundle.errors.append(f"{site} failed: {str(e)[:100]}")
+                return None
+            return items
 
-            if batch_items is not None:
-                all_items.extend(batch_items)
-            elif site in sequential_sites:
-                # Run searches sequentially for rate-limited APIs
-                for query in used_keywords:
-                    try:
-                        items = await _search(connector, query)
-                        all_items.extend(items)
-                        # Small delay between requests to avoid rate limiting
-                        await asyncio.sleep(0.5)
-                    except Exception as e:
-                        logger.warning(f"Search error for {site} query '{query}': {e}")
-                        bundle.errors.append(f"{site} search error: {str(e)[:100]}")
-            else:
-                # Run searches in parallel for sites that support it
-                search_semaphore = asyncio.Semaphore(4)
-
-                async def _search_with_semaphore(
-                    query: str,
-                    _sem: asyncio.Semaphore = search_semaphore,
-                    _connector: BaseSiteConnector = connector,
-                ) -> list[SiteItem]:
-                    async with _sem:
-                        return await _search(_connector, query)
-
-                tasks = [
-                    asyncio.create_task(_search_with_semaphore(query))
-                    for query in used_keywords
-                ]
-
-                for task in asyncio.as_completed(tasks):
-                    try:
-                        items = await task
-                        all_items.extend(items)
-                    except Exception as e:
-                        logger.warning(f"Search error for {site}: {e}")
-                        bundle.errors.append(f"{site} search error: {str(e)[:100]}")
-
-            # Connector-rendered popularity for report display (kept on the
-            # item so formatting stays connector-agnostic).
-            for item in all_items:
-                if not item.popularity_display:
-                    # display-only; never fatal
-                    with contextlib.suppress(Exception):
-                        item.popularity_display = connector.popularity_label(item)
-
-            # Dedupe by URL
-            seen_urls: set[str] = set()
-            unique_items: list[SiteItem] = []
-            for item in all_items:
-                if item.url and item.url not in seen_urls:
-                    seen_urls.add(item.url)
-                    unique_items.append(item)
-
-            # Sort by popularity
-            unique_items.sort(
-                key=lambda x: connector.popularity_score(x),
-                reverse=True,
+        results = await asyncio.gather(*(research_site(s) for s in config.sites))
+        # Assemble in configured order: the report lists sites as configured,
+        # not in the order their searches happened to finish.
+        for site, items in zip(config.sites, results, strict=True):
+            if items is not None:
+                bundle.items_by_site[site] = items
+        if skipped_for_keywords:
+            bundle.errors.append(
+                "No keywords provided for site research (skipped: "
+                + ", ".join(skipped_for_keywords)
+                + ")"
             )
 
-            # Take top N (per-site limit)
-            max_items = config.get_max_items(site)
-            bundle.items_by_site[site] = unique_items[:max_items]
-
-            logger.info(
-                f"Site {site}: found {len(all_items)} items, "
-                f"unique={len(unique_items)}, selected={len(bundle.items_by_site[site])} (max={max_items})"
-            )
-
-        # Phase 2: Summarize selected items (using connector.summarize())
-        await self._summarize_items(topic, bundle)
-
-        # Phase 3: Batch summarization for Exa (single Gemini call)
-        await self._batch_summarize(topic, bundle)
-
-        # Phase 4: Generate digest markdown
+        # Digest markdown across everything that ran
         bundle.digest_markdown = self._generate_digest(bundle)
 
         logger.info(
@@ -212,21 +146,126 @@ class SiteResearcher:
 
         return bundle
 
+    async def _search_site(
+        self,
+        site: str,
+        connector: BaseSiteConnector,
+        topic: str,
+        used_keywords: list[str],
+        published_after: datetime,
+        config: SiteResearchConfig,
+        bundle: SiteResearchBundle,
+    ) -> list[SiteItem]:
+        """Search one site: batch hook, else per-keyword (serial or fanned out)."""
+        errors = bundle.errors
+
+        async def _search(query: str) -> list[SiteItem]:
+            return await asyncio.to_thread(
+                connector.search,
+                query,
+                published_after,
+                config.per_keyword_max_results,
+            )
+
+        all_items: list[SiteItem] = []
+
+        # Exclusive batch hook: a connector may serve the whole request
+        # in one call (exa does); non-None replaces per-keyword search.
+        batch_items: list[SiteItem] | None = None
+        try:
+            batch_items = await asyncio.to_thread(
+                connector.search_batch,
+                topic,
+                used_keywords,
+                published_after,
+                config.get_max_items(site),
+            )
+        except Exception as e:
+            logger.warning(f"{site} batch search error: {e}")
+            errors.append(f"{site} search error: {str(e)[:100]}")
+
+        if batch_items is not None:
+            all_items.extend(batch_items)
+        elif connector.sequential:
+            # Run searches sequentially for rate-limited APIs
+            for query in used_keywords:
+                try:
+                    all_items.extend(await _search(query))
+                    # Small delay between requests to avoid rate limiting
+                    await asyncio.sleep(0.5)
+                except Exception as e:
+                    logger.warning(f"Search error for {site} query '{query}': {e}")
+                    errors.append(f"{site} search error: {str(e)[:100]}")
+        else:
+            # Run searches in parallel for sites that support it
+            search_semaphore = asyncio.Semaphore(4)
+
+            async def _search_with_semaphore(query: str) -> list[SiteItem]:
+                async with search_semaphore:
+                    return await _search(query)
+
+            tasks = [
+                asyncio.create_task(_search_with_semaphore(query))
+                for query in used_keywords
+            ]
+
+            for task in asyncio.as_completed(tasks):
+                try:
+                    all_items.extend(await task)
+                except Exception as e:
+                    logger.warning(f"Search error for {site}: {e}")
+                    errors.append(f"{site} search error: {str(e)[:100]}")
+
+        # Connector-rendered popularity for report display (kept on the
+        # item so formatting stays connector-agnostic).
+        for item in all_items:
+            if not item.popularity_display:
+                # display-only; never fatal
+                with contextlib.suppress(Exception):
+                    item.popularity_display = connector.popularity_label(item)
+
+        # Dedupe by URL
+        seen_urls: set[str] = set()
+        unique_items: list[SiteItem] = []
+        for item in all_items:
+            if item.url and item.url not in seen_urls:
+                seen_urls.add(item.url)
+                unique_items.append(item)
+
+        # Sort by popularity
+        unique_items.sort(
+            key=lambda x: connector.popularity_score(x),
+            reverse=True,
+        )
+
+        # Take top N (per-site limit)
+        max_items = config.get_max_items(site)
+        selected = unique_items[:max_items]
+
+        logger.info(
+            f"Site {site}: found {len(all_items)} items, "
+            f"unique={len(unique_items)}, selected={len(selected)} (max={max_items})"
+        )
+        return selected
+
     async def _summarize_items(
         self,
         topic: str,
+        site: str,
+        items: list[SiteItem],
         bundle: SiteResearchBundle,
     ) -> None:
-        """Summarize all items using each connector's summarize method."""
+        """Summarize one site's items using its connector's summarize method."""
+        connector = self.connectors.get(site)
+        semaphore = asyncio.Semaphore(
+            connector.summarize_concurrency if connector else 3
+        )
 
-        async def _summarize(
-            site: str, item: SiteItem, semaphore: asyncio.Semaphore
-        ) -> None:
+        async def _summarize(item: SiteItem) -> None:
             # Mutates item.summary in place. Handles its own errors so a single
             # failed summarization keeps the item (with an error summary) rather
             # than dropping it from the list. (Review M11.)
             async with semaphore:
-                connector = self.connectors.get(site)
                 if connector and connector.summarizer_is_available():
                     try:
                         item.summary = await asyncio.to_thread(
@@ -249,44 +288,36 @@ class SiteResearcher:
                         summarization_error=f"Summarizer not available for {site}",
                     )
 
-        for site, items in bundle.items_by_site.items():
-            connector = self.connectors.get(site)
-            concurrency = connector.summarize_concurrency if connector else 3
-            summarize_semaphore = asyncio.Semaphore(concurrency)
-
-            tasks = [
-                asyncio.create_task(_summarize(site, item, summarize_semaphore))
-                for item in items
-            ]
-
-            # Run for side effects only; items are mutated in place, so the
-            # original popularity-sorted order (Phase 1) is preserved instead of
-            # being scrambled into task-completion order. (Review M11.)
-            await asyncio.gather(*tasks, return_exceptions=True)
+        # Run for side effects only; items are mutated in place, so the
+        # original popularity-sorted order is preserved instead of being
+        # scrambled into task-completion order. (Review M11.)
+        await asyncio.gather(
+            *(asyncio.create_task(_summarize(item)) for item in items),
+            return_exceptions=True,
+        )
 
     async def _batch_summarize(
         self,
         topic: str,
+        site: str,
+        items: list[SiteItem],
         bundle: SiteResearchBundle,
     ) -> None:
-        """Additive batch summaries for connectors that provide them."""
-        for site, items in bundle.items_by_site.items():
-            connector = self.connectors.get(site)
-            if not connector or not items:
-                continue
-            try:
-                batch_summary = await asyncio.to_thread(
-                    connector.summarize_batch, topic, items
-                )
-            except Exception as e:
-                logger.warning(f"{site} batch summarization failed: {e}")
-                bundle.errors.append(
-                    f"{site} batch summarization error: {str(e)[:100]}"
-                )
-                continue
-            if batch_summary:
-                bundle.batch_summaries[site] = batch_summary
-                logger.info(f"{site} batch summarization complete")
+        """Additive batch summary for one site, if its connector provides one."""
+        connector = self.connectors.get(site)
+        if not connector or not items:
+            return
+        try:
+            batch_summary = await asyncio.to_thread(
+                connector.summarize_batch, topic, items
+            )
+        except Exception as e:
+            logger.warning(f"{site} batch summarization failed: {e}")
+            bundle.errors.append(f"{site} batch summarization error: {str(e)[:100]}")
+            return
+        if batch_summary:
+            bundle.batch_summaries[site] = batch_summary
+            logger.info(f"{site} batch summarization complete")
 
     def _generate_digest(self, bundle: SiteResearchBundle) -> str:
         """Generate an enhanced markdown digest with detailed summaries."""

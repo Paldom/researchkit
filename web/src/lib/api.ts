@@ -43,6 +43,16 @@ export interface Project {
   providers: string[]
   created_at: string
   has_report: boolean
+  // Traceability. Projects created before provenance existed report
+  // origin "unknown" and omit the rest, so these are all optional.
+  origin?: string
+  origin_pid?: number
+  preset?: string
+  has_materials?: boolean
+  has_article?: boolean
+  has_skill?: boolean
+  has_brain?: boolean
+  is_subproject?: boolean
 }
 
 export interface LinkSummary {
@@ -127,6 +137,37 @@ export function getLog(name: string): Promise<string> {
 
 export function getResult(name: string): Promise<unknown> {
   return requestJson(`/api/projects/${encodeURIComponent(name)}/result`)
+}
+
+export function getArticle(name: string): Promise<string> {
+  return requestText(`/api/projects/${encodeURIComponent(name)}/article`)
+}
+
+export function getSkill(name: string): Promise<string> {
+  return requestText(`/api/projects/${encodeURIComponent(name)}/skill`)
+}
+
+export interface BrainNote {
+  path: string // brain-relative, e.g. notes/topics/<slug>.md
+  slug: string
+  title: string
+  type: string // topic | source | report | domain | note
+  url: string
+}
+
+export interface BrainResponse {
+  index: string
+  notes: BrainNote[]
+}
+
+export function getBrain(name: string): Promise<BrainResponse> {
+  return requestJson(`/api/projects/${encodeURIComponent(name)}/brain`)
+}
+
+export function getBrainNote(name: string, path: string): Promise<string> {
+  return requestText(
+    `/api/projects/${encodeURIComponent(name)}/brain/note?path=${encodeURIComponent(path)}`,
+  )
 }
 
 export function getLinks(name: string, mode: LinksMode): Promise<LinksResponse> {

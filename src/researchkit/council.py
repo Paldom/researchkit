@@ -226,7 +226,7 @@ class ConsultResult:
 def split_effort_spec(spec: str) -> tuple[str, str | None]:
     """Split a ``<spec>@<effort>`` member string.
 
-    ``"codex:gpt-5.6-sol@xhigh"`` -> ``("codex:gpt-5.6-sol", "xhigh")``;
+    ``"codex:gpt-6-astra@xhigh"`` -> ``("codex:gpt-6-astra", "xhigh")``;
     specs without a trailing ``@<word>`` pass through with ``None``.
     """
     base, sep, effort = spec.rpartition("@")
@@ -355,7 +355,7 @@ def _run_claude_cli(
     ``None`` (a bare ``claude`` spec) uses the CLI's default model.
     """
     # Local import: researchkit.providers imports council (github_provider).
-    from researchkit.providers.base import cli_harness_timeout
+    from researchkit.providers.base import CLAUDE_HEADLESS_ARGS, cli_harness_timeout
 
     cmd = [
         "claude",
@@ -364,6 +364,7 @@ def _run_claude_cli(
         "--system-prompt",
         system_prompt,
         "--no-session-persistence",
+        *CLAUDE_HEADLESS_ARGS,
         "--strict-mcp-config",  # built-in tools only (review M8)
         "--disallowed-tools",
         "WebSearch,WebFetch,Write,Edit,Bash,Read,Glob,Grep,NotebookEdit,Agent",

@@ -426,7 +426,7 @@ class TestAggregatorIntegration:
             return [_make_result(provider="openai", titles=["A Title"])]
 
         async def fake_run_site_research(topic, keywords, days, progress=None):
-            fake_run_site_research.called_with = list(keywords)  # type: ignore[attr-defined]
+            fake_run_site_research.called_with = list(await keywords)  # type: ignore[attr-defined]
             return None
 
         with (
@@ -468,7 +468,7 @@ class TestAggregatorIntegration:
             return [_make_result(provider="openai", titles=["A Title"])]
 
         async def fake_run_site_research(topic, keywords, days, progress=None):
-            fake_run_site_research.called_with = list(keywords)  # type: ignore[attr-defined]
+            fake_run_site_research.called_with = list(await keywords)  # type: ignore[attr-defined]
             return None
 
         fake_provider_keywords = {

@@ -12,12 +12,18 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from researchkit.safe_io import atomic_write_text, safe_unlink_within
+from researchkit.safe_io import (
+    atomic_write_text,
+    safe_join_within,
+    safe_unlink_within,
+)
 from researchkit.utils import slugify
 
 logger = logging.getLogger(__name__)
@@ -31,7 +37,16 @@ USER_SOURCES_DIRNAME = "user_sources"
 # Boost mode: a parent project nests its sub-projects under this directory and
 # writes the opus-authored cross-cutting synthesis to SUPER_SUMMARY_FILENAME.
 SUBPROJECTS_DIRNAME = "subprojects"
+PARTIAL_DIRNAME = "partial"
 SUPER_SUMMARY_FILENAME = "super_summary.md"
+# Handoff artifacts written next to the report once the research is in:
+# a publication-ready article, a single-file Agent Skill (skillskit layout,
+# folder name == skill folder so `skills add <project>/skill` works), and a
+# per-project brainkit brain built from materials/.
+ARTICLE_FILENAME = "article.md"
+SKILL_DIRNAME = "skill"
+SKILL_FILENAME = "SKILL.md"
+BRAIN_DIRNAME = "brain"
 
 
 @dataclass
@@ -124,6 +139,12 @@ class ProjectConfig:
     # parallel investigation (used to inject sibling-awareness into research prompts).
     parent_topic: str | None = None
     sibling_topics: list[str] = field(default_factory=list)
+    # Provenance, stamped at creation: which surface started this run ("web",
+    # "explore", "run", "mcp", or whatever RESEARCHKIT_ORIGIN says) and which
+    # process did it. The PID is what ties a project back to a `researchkit
+    # runs` entry, a run.log, and an OS process when a run misbehaves.
+    origin: str = ""
+    origin_pid: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -145,6 +166,10 @@ class ProjectConfig:
             result["parent_topic"] = self.parent_topic
         if self.sibling_topics:
             result["sibling_topics"] = self.sibling_topics
+        if self.origin:
+            result["origin"] = self.origin
+        if self.origin_pid:
+            result["origin_pid"] = self.origin_pid
         # Only emit user-source fields when present, so old result.json
         # consumers and old configs are unaffected.
         if self.user_url_sources:
@@ -174,7 +199,37 @@ class ProjectConfig:
             ],
             parent_topic=data.get("parent_topic"),
             sibling_topics=data.get("sibling_topics", []),
+            # Absent on every project created before provenance existed; those
+            # list as "unknown" rather than being hidden by an origin filter.
+            origin=data.get("origin", ""),
+            origin_pid=int(data.get("origin_pid", 0) or 0),
         )
+
+
+_ENV_ORIGIN = "RESEARCHKIT_ORIGIN"
+_UNKNOWN_ORIGIN = "unknown"
+
+
+def current_origin() -> str:
+    """Which surface is starting runs in this process.
+
+    Entrypoints set ``RESEARCHKIT_ORIGIN`` once (the CLI uses the subcommand,
+    so an ``explore`` run is tagged ``explore``); anything else can override it
+    to label a batch — ``RESEARCHKIT_ORIGIN=nightly-cron researchkit ...``.
+    """
+    return (os.environ.get(_ENV_ORIGIN) or _UNKNOWN_ORIGIN).strip()[:40]
+
+
+def stamp_origin(config: ProjectConfig) -> None:
+    """Record who and what created this project, unless already stamped.
+
+    Already-set values win so a sub-project keeps the origin it inherited from
+    its boosted parent instead of being relabelled at creation time.
+    """
+    if not config.origin:
+        config.origin = current_origin()
+    if not config.origin_pid:
+        config.origin_pid = os.getpid()
 
 
 @dataclass
@@ -214,6 +269,62 @@ class Project:
         return self.path / SUPER_SUMMARY_FILENAME
 
     @property
+    def article_path(self) -> Path:
+        return self.path / ARTICLE_FILENAME
+
+    @property
+    def skill_path(self) -> Path:
+        return self.path / SKILL_DIRNAME / SKILL_FILENAME
+
+    @property
+    def brain_dir(self) -> Path:
+        return self.path / BRAIN_DIRNAME
+
+    def save_article(self, markdown: str) -> None:
+        self.article_path.write_text(markdown, encoding="utf-8")
+
+    def save_skill(self, markdown: str) -> None:
+        self.skill_path.parent.mkdir(parents=True, exist_ok=True)
+        self.skill_path.write_text(markdown, encoding="utf-8")
+
+    @property
+    def partial_dir(self) -> Path:
+        """Per-provider results written as they land, before the run finishes."""
+        return self.path / PARTIAL_DIRNAME
+
+    def save_partial(self, provider: str, payload: dict[str, Any]) -> None:
+        """Persist one provider's result the moment it arrives.
+
+        A run that is killed (or crashes) between here and ``save_results`` used
+        to lose every provider answer it had already paid for. Written
+        atomically, so a kill mid-write cannot leave a half-parsed file.
+        """
+        self.partial_dir.mkdir(parents=True, exist_ok=True)
+        target = safe_join_within(self.partial_dir, f"{slugify(provider)}.json")
+        atomic_write_text(target, json.dumps(payload, indent=2))
+
+    def load_partials(self) -> dict[str, dict[str, Any]]:
+        """Return ``{provider: payload}`` for every readable partial result.
+
+        An unreadable or truncated file is skipped, not fatal: the provider it
+        belongs to is simply re-run.
+        """
+        if not self.partial_dir.is_dir():
+            return {}
+        out: dict[str, dict[str, Any]] = {}
+        for path in sorted(self.partial_dir.glob("*.json")):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                out[payload["provider"]] = payload
+            except (OSError, ValueError, KeyError) as e:
+                logger.warning(f"Ignoring unreadable partial {path}: {e}")
+        return out
+
+    def clear_partials(self) -> None:
+        """Drop the partial directory once the finished results supersede it."""
+        shutil.rmtree(self.partial_dir, ignore_errors=True)
+
+    @property
     def is_subproject(self) -> bool:
         """True when this project was spawned as a sub-query of a boosted run."""
         return self.config.parent_topic is not None
@@ -249,6 +360,16 @@ class Project:
             "providers": list(self.config.providers),
             "created_at": self.created_at.isoformat(),
             "has_report": self.report_path.is_file(),
+            # Traceability: where the run came from, which process ran it, the
+            # models it resolved, and whether the pack was actually archived.
+            "origin": self.config.origin or _UNKNOWN_ORIGIN,
+            "origin_pid": self.config.origin_pid,
+            "preset": self.config.preset_name or "",
+            "has_materials": (self.path / "materials").is_dir(),
+            "is_subproject": self.is_subproject,
+            "has_article": self.article_path.is_file(),
+            "has_skill": self.skill_path.is_file(),
+            "has_brain": (self.brain_dir / "index.md").is_file(),
         }
 
     @property
@@ -433,6 +554,7 @@ def create_project(
     Returns:
         The created Project
     """
+    stamp_origin(config)
     ts = timestamp or datetime.now()
     folder_name = generate_project_name(config.topic, ts)
     projects_dir.mkdir(parents=True, exist_ok=True)
@@ -469,6 +591,11 @@ def create_subproject(
         index: 1-based position among the sibling sub-queries.
         timestamp: Optional creation timestamp (defaults to now).
     """
+    # A sub-query belongs to whatever started the parent: an explore run's
+    # sub-projects read "explore", not the surface that happened to create them.
+    if not config.origin:
+        config.origin = parent.config.origin
+    stamp_origin(config)
     ts = timestamp or datetime.now()
     slug = slugify(config.topic, max_length=40).replace("-", "_")
     folder_name = f"sub_{index:02d}_{slug}"

@@ -22,8 +22,8 @@ from researchkit.providers.base import cli_harness_timeout
 
 class TestEffortSpec:
     def test_split(self) -> None:
-        assert split_effort_spec("codex:gpt-5.6-sol@xhigh") == (
-            "codex:gpt-5.6-sol",
+        assert split_effort_spec("codex:gpt-6-astra@xhigh") == (
+            "codex:gpt-6-astra",
             "xhigh",
         )
         assert split_effort_spec("claude-opus-4-8@XHIGH") == (
@@ -38,7 +38,7 @@ class TestEffortSpec:
         for spec in (
             "claude:claude-opus-4-8@xhigh",
             "claude-opus-4-8@xhigh",  # legacy spelling still routes to the CLI
-            "codex:gpt-5.6-sol@xhigh",
+            "codex:gpt-6-astra@xhigh",
             "agy:Gemini 3.5 Flash (High)",
             "grokcli:grok-4.5",
             "kimicli:kimi-code/k3",
@@ -74,7 +74,7 @@ class TestRouterEffort:
 
         monkeypatch.setattr(CodexProvider, "_exec", fake_exec)
         monkeypatch.setattr(GrokCliProvider, "_exec", fake_exec)
-        assert complete_via_spec("codex:gpt-5.6-sol@xhigh", "s", "u", label="t") == "ok"
+        assert complete_via_spec("codex:gpt-6-astra@xhigh", "s", "u", label="t") == "ok"
         assert complete_via_spec("grokcli:grok-build", "s", "u", label="t") == "ok"
         assert seen == [("CodexProvider", "xhigh"), ("GrokCliProvider", None)]
 
@@ -427,7 +427,7 @@ class TestHarnessPreset:
         em = SystemConfigManager().resolve_effective_models("harness")
         assert em.council_members == [
             "claude:claude-opus-5@xhigh",
-            "codex:gpt-5.6-sol@xhigh",
+            "codex:gpt-6-astra@xhigh",
             "agy:gemini-3.7-flash-high",
             "grokcli:grok-4.6",
             "kimicli:kimi-code/k3",
@@ -509,7 +509,7 @@ class TestCliOnlyCouncilFallback:
             classmethod(lambda cls, *a: called.append("api") or None),
         )
         council = LLMCouncil(
-            members=["codex:gpt-5.6-sol@xhigh", "grokcli:grok-build"], boss="codex"
+            members=["codex:gpt-6-astra@xhigh", "grokcli:grok-build"], boss="codex"
         )
         result = council.deliberate("some topic")
         assert result.improved_topic == "some topic"
@@ -532,10 +532,10 @@ class TestSlotCliRouting:
             return "improved topic"
 
         monkeypatch.setattr(council_mod, "complete_via_spec", fake)
-        imp = PromptImprover(model="codex:gpt-5.6-sol")
+        imp = PromptImprover(model="codex:gpt-6-astra")
         assert imp.provider == "cli"  # spec overrides the default provider
         assert imp._call_provider("s", "u") == "improved topic"
-        assert calls == ["codex:gpt-5.6-sol"]
+        assert calls == ["codex:gpt-6-astra"]
 
     def test_improver_from_system_config_cli(self) -> None:
         from researchkit.prompt_improver import PromptImprover
@@ -549,7 +549,7 @@ class TestSlotCliRouting:
 
         imp = PromptImprover.from_system_config(HarnessMgr())  # type: ignore[arg-type]
         assert imp.provider == "cli"
-        assert imp.model == "codex:gpt-5.6-sol"
+        assert imp.model == "codex:gpt-6-astra"
 
     def test_keyword_synthesizer_cli_spec(
         self, monkeypatch: pytest.MonkeyPatch
@@ -573,11 +573,11 @@ class TestSlotCliRouting:
         from researchkit.site_research.types import SiteItem
 
         def fake(spec, system, user, *, label, claude_budget=3.0):
-            assert spec == "codex:gpt-5.6-sol"
+            assert spec == "codex:gpt-6-astra"
             return "## Key Themes\n- summarized on CLI"
 
         monkeypatch.setattr(council_mod, "complete_via_spec", fake)
-        conn = ExaConnector(api_key="x", gemini_model="codex:gpt-5.6-sol")
+        conn = ExaConnector(api_key="x", gemini_model="codex:gpt-6-astra")
         items = [
             SiteItem(url="https://a.test/1", title="A", site="exa", query="q"),
             SiteItem(url="https://a.test/2", title="B", site="exa", query="q"),

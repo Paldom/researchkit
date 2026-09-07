@@ -61,6 +61,10 @@ class InsightBundle:
     user_file_contents: dict[str, str] = field(
         default_factory=dict, repr=False, compare=False
     )
+    # Cited repositories cloned, harvested and deleted during the run. Only the
+    # provenance is serialized here — the harvested text lives in repos/<slug>.md,
+    # and a compact card of it reaches the final analysis.
+    repo_extracts: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -107,6 +111,8 @@ class InsightBundle:
             result["user_url_sources"] = [s.to_dict() for s in self.user_url_sources]
         if self.user_file_sources:
             result["user_file_sources"] = [s.to_dict() for s in self.user_file_sources]
+        if self.repo_extracts:
+            result["repo_extracts"] = self.repo_extracts
         return result
 
 
@@ -134,6 +140,8 @@ class InsightAggregator:
         site_research_enabled: bool = True,
         site_research_sites: list[str] | None = None,
         registry: Registry | None = None,
+        partial_sink: Callable[[ProviderResult], None] | None = None,
+        preloaded_results: dict[str, ProviderResult] | None = None,
     ) -> None:
         """
         Initialize the aggregator.
@@ -144,6 +152,11 @@ class InsightAggregator:
             effective_models: Model configuration from system config
             site_research_enabled: Whether to enable keyword-based site research
             site_research_sites: Sites to search (default: exa)
+            partial_sink: Called with each ProviderResult the moment it lands, so
+                an interrupted run keeps what it already paid for.
+            preloaded_results: ``{provider: result}`` restored from a previous
+                interrupted run. Those providers are NOT queried again; their
+                results join the fresh ones for summarization.
         """
         self.effective_models = effective_models
         self.registry = registry or get_registry()
@@ -159,6 +172,8 @@ class InsightAggregator:
             model=summarizer_model,
         )
         self.sources = sources or {"social", "web"}
+        self.partial_sink = partial_sink
+        self.preloaded_results = dict(preloaded_results or {})
 
     def _builtin_options(self, name: str) -> dict[str, Any]:
         """Synthesize the legacy preset knobs into the builtin's options dict."""
@@ -224,23 +239,27 @@ class InsightAggregator:
     async def _run_site_research(
         self,
         topic: str,
-        keywords: list[str],
+        keywords: asyncio.Future[list[str]],
         days: int,
         progress: ProgressCallback | None = None,
     ) -> SiteResearchBundle | None:
         """
-        Run keyword-based site research (Exa).
+        Run site research across the configured connectors.
+
+        Started at the top of a run: topic-only connectors (deep research
+        through chat web UIs, say) begin at once, keyword connectors wait on
+        ``keywords``, which the caller resolves once synthesis is done.
 
         Args:
             topic: The research topic
-            keywords: Keywords to search for
+            keywords: Future delivering the keywords to search for
             days: Lookback window in days
             progress: Optional progress callback
 
         Returns:
             SiteResearchBundle with results, or None if disabled/failed
         """
-        if not self.site_research_enabled or not keywords:
+        if not self.site_research_enabled:
             return None
 
         from researchkit.site_research import SiteResearchConfig, create_site_researcher
@@ -255,7 +274,7 @@ class InsightAggregator:
             )
 
         logger.info(
-            f"Starting site research: sites={self.site_research_sites}, keywords={len(keywords)}",
+            f"Starting site research: sites={self.site_research_sites}",
             extra={"stage": "site_research_start"},
         )
 
@@ -429,13 +448,38 @@ class InsightAggregator:
         Returns:
             List of ProviderResults from all providers
         """
-        valid_providers = [
-            name for name in providers if name in self.registry.providers
-        ]
+        requested = [name for name in providers if name in self.registry.providers]
+        # A provider restored from an interrupted run is already paid for: skip
+        # the call, keep the answer. (Ordering below is by `requested`, so a
+        # resumed result still lands in its configured position.)
+        valid_providers = [n for n in requested if n not in self.preloaded_results]
+        resumed = {
+            n: self.preloaded_results[n]
+            for n in requested
+            if n in self.preloaded_results
+        }
         total = len(valid_providers)
 
+        if resumed:
+            logger.info(
+                f"Reusing {len(resumed)} provider result(s) from a previous run: "
+                f"{', '.join(sorted(resumed))}",
+                extra={"stage": "providers_resumed"},
+            )
+            if progress:
+                progress(
+                    {
+                        "stage": "providers_resumed",
+                        "message": (
+                            f"Reusing {len(resumed)} already-paid result(s): "
+                            f"{', '.join(sorted(resumed))}"
+                        ),
+                        "providers": sorted(resumed),
+                    }
+                )
+
         if not valid_providers:
-            return []
+            return [resumed[n] for n in requested if n in resumed]
 
         if progress:
             progress(
@@ -511,6 +555,20 @@ class InsightAggregator:
                 )
             results_by_name[provider_name] = result
 
+            # Persist before anything downstream can fail: from here on the run
+            # can be killed and this provider will not be bought again.
+            if self.partial_sink:
+                try:
+                    self.partial_sink(result)
+                except Exception as e:  # never let bookkeeping kill a paid run
+                    logger.warning(
+                        f"Could not persist partial result for {provider_name}: {e}",
+                        extra={
+                            "stage": "partial_save_error",
+                            "provider": provider_name,
+                        },
+                    )
+
             if progress:
                 progress(
                     {
@@ -524,10 +582,10 @@ class InsightAggregator:
                     }
                 )
 
-        # Return results in original provider order
-        return [
-            results_by_name[name] for name in valid_providers if name in results_by_name
-        ]
+        # Return results in the originally requested order, resumed and freshly
+        # fetched alike — downstream can't tell (and shouldn't care) which is which.
+        merged = {**resumed, **results_by_name}
+        return [merged[name] for name in requested if name in merged]
 
     def _load_user_link_contents(
         self,
@@ -686,6 +744,89 @@ class InsightAggregator:
         """
         user_keywords = list(keywords or [])
 
+        # Site research starts NOW, not after keyword synthesis: connectors
+        # that work from the topic alone (deep research through chat web UIs)
+        # take longer than the whole provider phase, so they overlap it. The
+        # keyword connectors block on this future until Phase 3 resolves it.
+        keywords_ready: asyncio.Future[list[str]] = (
+            asyncio.get_running_loop().create_future()
+        )
+        site_task: asyncio.Task[SiteResearchBundle | None] | None = None
+        if self.site_research_enabled:
+            site_task = asyncio.create_task(
+                self._run_site_research(topic, keywords_ready, days, progress),
+                name="site_research",
+            )
+        try:
+            (
+                provider_results,
+                individual_summaries,
+                meta_summary,
+            ) = await self._collect_and_summarize_providers(
+                topic, days, providers, user_keywords, progress
+            )
+            (
+                synthesized_keywords,
+                collected_provider_keywords,
+            ) = await self._synthesize_keywords(
+                topic,
+                days,
+                provider_results,
+                individual_summaries,
+                meta_summary,
+                user_keywords,
+                progress,
+            )
+        except BaseException:
+            # A failed run must not leave a browser or a paid search running
+            # behind it (and the keyword connectors waiting forever).
+            if site_task is not None:
+                site_task.cancel()
+            raise
+        effective_keywords = (
+            user_keywords if user_keywords else (synthesized_keywords or [])
+        )
+        keywords_ready.set_result(effective_keywords)
+
+        # Phase 4: site research finishes with the chosen keywords.
+        site_research_bundle = await site_task if site_task is not None else None
+        if (
+            site_research_bundle is not None
+            and not effective_keywords
+            and not site_research_bundle.items_by_site
+        ):
+            # Nothing could run without keywords — same as not having started.
+            site_research_bundle = None
+
+        return self._build_bundle(
+            topic=topic,
+            days=days,
+            providers=providers,
+            user_keywords=user_keywords,
+            provider_results=provider_results,
+            individual_summaries=individual_summaries,
+            meta_summary=meta_summary,
+            site_research_bundle=site_research_bundle,
+            synthesized_keywords=synthesized_keywords,
+            collected_provider_keywords=collected_provider_keywords,
+            user_url_sources=user_url_sources,
+            user_file_sources=user_file_sources,
+            user_sources_dir=user_sources_dir,
+        )
+
+    async def _collect_and_summarize_providers(
+        self,
+        topic: str,
+        days: int,
+        providers: Sequence[str],
+        user_keywords: list[str],
+        progress: ProgressCallback | None,
+    ) -> tuple[list[ProviderResult], dict[str, str], str]:
+        """Phases 1-2: providers, then per-provider summaries and meta-summary.
+
+        The meta-summary reads the raw provider results, not the per-provider
+        summaries, so the two run side by side.
+        """
         # Phase 1: Run providers (concurrently)
         # User keywords are forwarded to keyword-based providers (e.g. github).
         provider_results = await self.collect_async(
@@ -708,6 +849,29 @@ class InsightAggregator:
         logger.info(
             "Starting individual summarization (provider self-summarization)",
             extra={"stage": "summarizing"},
+        )
+
+        if progress:
+            progress(
+                {
+                    "stage": "meta_summarizing",
+                    "message": "Generating meta-summary",
+                }
+            )
+
+        logger.info(
+            "Starting meta-summarization",
+            extra={"stage": "meta_summarizing"},
+        )
+
+        meta_task = asyncio.create_task(
+            asyncio.to_thread(
+                self.summarizer.create_meta_summary,
+                topic,
+                days,
+                provider_results,
+            ),
+            name="meta_summary",
         )
 
         individual_summaries: dict[str, str] = {}
@@ -741,37 +905,31 @@ class InsightAggregator:
                     )
                     # Fallback: provider self-summarization failed, error is logged
 
-        # Generate meta-summary
-        if progress:
-            progress(
-                {
-                    "stage": "meta_summarizing",
-                    "message": "Generating meta-summary",
-                }
-            )
-
-        logger.info(
-            "Starting meta-summarization",
-            extra={"stage": "meta_summarizing"},
-        )
-
-        meta_summary = await asyncio.to_thread(
-            self.summarizer.create_meta_summary,
-            topic,
-            days,
-            provider_results,
-        )
+        meta_summary = await meta_task
 
         logger.info(
             "Summarization complete",
             extra={"stage": "summarize_done"},
         )
+        return provider_results, individual_summaries, meta_summary
 
-        # Phase 3: Multi-provider keyword generation + synthesis.
-        # User-supplied keywords always override and skip synthesis.
+    async def _synthesize_keywords(
+        self,
+        topic: str,
+        days: int,
+        provider_results: list[ProviderResult],
+        individual_summaries: dict[str, str],
+        meta_summary: str,
+        user_keywords: list[str],
+        progress: ProgressCallback | None,
+    ) -> tuple[list[str] | None, dict[str, list[str]] | None]:
+        """Phase 3: multi-provider keyword generation + synthesis.
+
+        User-supplied keywords always override and skip synthesis. Returns
+        ``(synthesized_keywords, per_provider_keywords)``.
+        """
         synthesized_keywords: list[str] | None = None
         collected_provider_keywords: dict[str, list[str]] | None = None
-        effective_keywords = user_keywords
 
         if (
             not user_keywords
@@ -840,22 +998,35 @@ class InsightAggregator:
                     meta_summary,
                 )
 
-            effective_keywords = synthesized_keywords or []
-
             if progress:
+                count = len(synthesized_keywords or [])
                 progress(
                     {
                         "stage": "keyword_synthesis_done",
-                        "message": (f"Synthesized {len(effective_keywords)} keywords"),
-                        "count": len(effective_keywords),
+                        "message": f"Synthesized {count} keywords",
+                        "count": count,
                     }
                 )
+        return synthesized_keywords, collected_provider_keywords
 
-        # Phase 4: Run site research with the chosen keywords.
-        site_research_bundle = await self._run_site_research(
-            topic, effective_keywords, days, progress
-        )
-
+    def _build_bundle(
+        self,
+        *,
+        topic: str,
+        days: int,
+        providers: Sequence[str],
+        user_keywords: list[str],
+        provider_results: list[ProviderResult],
+        individual_summaries: dict[str, str],
+        meta_summary: str,
+        site_research_bundle: SiteResearchBundle | None,
+        synthesized_keywords: list[str] | None,
+        collected_provider_keywords: dict[str, list[str]] | None,
+        user_url_sources: Sequence[UserUrlSource] | None,
+        user_file_sources: Sequence[UserFileSource] | None,
+        user_sources_dir: Path | None,
+    ) -> InsightBundle:
+        """Assemble the InsightBundle plus its provenance and user sources."""
         # Extract actual models used from provider results
         provider_models = {
             r.provider: r.model for r in provider_results if r.is_success

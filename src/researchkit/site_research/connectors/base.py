@@ -24,11 +24,17 @@ class BaseSiteConnector(ABC):
       on the item so report formatting stays connector-agnostic.
     - ``sequential`` serializes this connector's keyword queries (hard rate
       limits); ``summarize_concurrency`` caps its summarization fan-out.
+    - ``needs_keywords = False`` says the connector works from the topic
+      alone (it gets an empty keyword list). The orchestrator then starts it
+      at the top of the run instead of holding it until keyword synthesis
+      finishes — the difference between a deep-research connector finishing
+      alongside the providers and finishing an hour after them.
     """
 
     site_name: str = "base"
     sequential: bool = False
     summarize_concurrency: int = 3
+    needs_keywords: bool = True
 
     def search_batch(
         self,

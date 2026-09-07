@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from researchkit.council import split_effort_spec
-from researchkit.providers.base import cli_harness_timeout
+from researchkit.providers.base import CLAUDE_HEADLESS_ARGS, cli_harness_timeout
 from researchkit.safe_io import run_subprocess, scrubbed_env
 
 logger = logging.getLogger(__name__)
@@ -156,6 +156,7 @@ def _run_claude(
     if effort:
         cmd += ["--effort", effort]
     cmd += [
+        *CLAUDE_HEADLESS_ARGS,
         "--strict-mcp-config",
         "--disallowed-tools",
         _CLAUDE_DENIED_TOOLS,

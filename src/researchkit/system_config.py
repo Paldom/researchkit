@@ -58,7 +58,7 @@ _EMBEDDED_DEFAULT_CONFIG: dict[str, Any] = {
 # may use CLI-backed model specs ("codex:<m>", "agy:<m>") or plain API model ids.
 DEFAULT_COUNCIL_MEMBERS = [
     "claude:claude-opus-5",
-    "codex:gpt-5.6-sol",
+    "codex:gpt-6-astra",
     # `agy models` lists ids; the thinking level is baked into the id.
     "agy:gemini-3.7-flash-high",
 ]

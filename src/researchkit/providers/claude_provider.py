@@ -19,6 +19,7 @@ from tenacity import (
 )
 
 from researchkit.providers.base import (
+    CLAUDE_HEADLESS_ARGS,
     CLI_QUICK_TIMEOUT,
     SOCIAL_DOMAINS,
     BaseProvider,
@@ -398,6 +399,7 @@ class ClaudeProvider(BaseProvider):
             "--system-prompt",
             system_prompt,
             "--no-session-persistence",
+            *CLAUDE_HEADLESS_ARGS,
             "--max-budget-usd",
             str(self.max_budget),
         ]
@@ -482,6 +484,7 @@ class ClaudeProvider(BaseProvider):
                 "--output-format",
                 "json",
                 "--no-session-persistence",
+                *CLAUDE_HEADLESS_ARGS,
                 "--max-budget-usd",
                 str(self.max_budget),
             ]

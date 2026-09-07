@@ -45,7 +45,7 @@ model's raw answer (that is `/advise`), sourced/cited research (that is
    first valid member's (deterministic fallback) — say so when relaying.
 
 Members/boss default to the `harness` preset in `models.yaml`
-(claude:claude-opus-5@xhigh, codex:gpt-5.6-sol@xhigh,
+(claude:claude-opus-5@xhigh, codex:gpt-6-astra@xhigh,
 agy:gemini-3.7-flash-high, grokcli:grok-4.6, kimicli:kimi-code/k3;
 boss claude:claude-opus-5@xhigh); override with `--harnesses <specs…>`
 and `--boss <spec>` (specs accept `@<effort>`). `uv run researchkit doctor

@@ -185,9 +185,7 @@ class Summarizer:
             )
 
         system_prompt = get_single_summary_system_prompt()
-        user_prompt = get_single_summary_user_prompt(
-            result.provider, result.model, result.raw_text
-        )
+        user_prompt = get_single_summary_user_prompt(result.raw_text)
 
         try:
             prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
@@ -272,13 +270,10 @@ class Summarizer:
         # extractable sources is flagged via the TRUSTED prompt channel
         # (uncited_providers below) — an in-band note inside the untrusted
         # block would be both ignorable and forgeable by injected content.
+        # No model names: the report is about the topic, and a model id in the
+        # context tends to resurface in the prose.
         providers_data = [
-            {
-                "provider": r.provider,
-                "model": r.model,
-                "content": r.raw_text,
-            }
-            for r in successful_results
+            {"provider": r.provider, "content": r.raw_text} for r in successful_results
         ]
         uncited_providers = [r.provider for r in successful_results if not r.sources]
 
@@ -287,10 +282,6 @@ class Summarizer:
             topic=topic,
             days=days,
             providers_data=providers_data,
-            successful_providers=[r.provider for r in successful_results],
-            failed_providers=[r.provider for r in failed_results]
-            if failed_results
-            else None,
             uncited_providers=uncited_providers or None,
         )
 

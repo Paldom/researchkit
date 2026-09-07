@@ -184,7 +184,12 @@ def _make_hackernews(ctx: ProviderContext) -> BaseProvider:
 def _make_skillsh(ctx: ProviderContext) -> BaseProvider:
     from researchkit.providers.skillsh_provider import SkillsShProvider
 
-    return SkillsShProvider(sources=_sources(ctx), model=ctx.model or None)
+    return SkillsShProvider(
+        sources=_sources(ctx),
+        model=ctx.model or None,
+        # Same channel GitHub uses: user-supplied keywords widen the search.
+        keywords=list(ctx.keywords),
+    )
 
 
 def _make_arxiv(ctx: ProviderContext) -> BaseProvider:

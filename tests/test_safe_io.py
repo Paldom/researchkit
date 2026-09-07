@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 import pytest
 
 from researchkit.safe_io import (
+    NESTED_ENV_VAR,
     atomic_write_text,
     extract_urls_balanced,
+    guard_no_nested_run,
     run_subprocess,
     safe_fetch_text,
     safe_join_within,
@@ -149,3 +152,86 @@ class TestRunSubprocess:
         # No surviving process should carry our unique marker.
         out = subprocess.run(["pgrep", "-f", marker], capture_output=True, text=True)
         assert out.stdout.strip() == "", f"orphaned grandchild survived: {out.stdout!r}"
+
+
+class TestGuardNoNestedRun:
+    """The recursion guard: researchkit must refuse to re-enter itself.
+
+    A coding-agent CLI that researchkit spawned once shelled out to
+    `researchkit explore` on its own, and each resulting run spawned more
+    agents that did the same — ~200 runs from one topic in 45 minutes.
+    """
+
+    @staticmethod
+    def _isolated_environ(monkeypatch: pytest.MonkeyPatch) -> None:
+        """Swap in a throwaway environ — the guard writes to the real one."""
+        monkeypatch.setattr(
+            os, "environ", {k: v for k, v in os.environ.items() if k != NESTED_ENV_VAR}
+        )
+
+    def test_allows_a_top_level_run_and_marks_the_environment(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._isolated_environ(monkeypatch)
+        assert guard_no_nested_run() is None
+        # The marker must land in os.environ so EVERY child env built from it
+        # (scrubbed_env or a {**os.environ} copy) carries it down.
+        assert os.environ[NESTED_ENV_VAR] == str(os.getpid())
+        assert scrubbed_env()[NESTED_ENV_VAR] == str(os.getpid())
+
+    def test_same_process_reentry_is_allowed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Calling an entrypoint twice in one process (tests, library use) is not
+        # the recursion we are blocking — only a child crossing a process is.
+        self._isolated_environ(monkeypatch)
+        assert guard_no_nested_run() is None
+        assert guard_no_nested_run() is None
+
+    def test_refuses_when_marker_names_another_process(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(NESTED_ENV_VAR, str(os.getpid() + 1))
+        message = guard_no_nested_run()
+        assert message is not None
+        assert NESTED_ENV_VAR in message
+
+    @pytest.mark.parametrize("explicit_env", [False, True])
+    def test_run_subprocess_stamps_every_child(self, explicit_env: bool) -> None:
+        # The stamp must happen at the spawn site, not at an entrypoint: it has
+        # to hold when researchkit runs under `uvicorn --factory`, MCP stdio, or
+        # as an imported library, where no main() ever claimed the marker.
+        cp = run_subprocess(
+            [sys.executable, "-c", f"import os; print(os.environ['{NESTED_ENV_VAR}'])"],
+            timeout=60,
+            env={"PATH": os.environ["PATH"]} if explicit_env else None,
+        )
+        assert cp.stdout.strip() == str(os.getpid()), cp.stderr
+
+    def test_a_real_child_inheriting_the_marker_refuses(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The mechanism end to end: claim the marker, then hand a spawned agent
+        # CLI exactly the env it would get — that child must refuse to re-enter.
+        self._isolated_environ(monkeypatch)
+        assert guard_no_nested_run() is None
+        cp = run_subprocess(
+            [
+                sys.executable,
+                "-c",
+                "from researchkit.safe_io import guard_no_nested_run;"
+                "print(guard_no_nested_run() is not None)",
+            ],
+            timeout=60,
+            env=scrubbed_env(),
+        )
+        assert cp.stdout.strip() == "True", cp.stderr
+
+    def test_cli_main_exits_nonzero_when_nested(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from researchkit.cli import main
+
+        monkeypatch.setenv(NESTED_ENV_VAR, str(os.getpid() + 1))
+        monkeypatch.setattr("sys.argv", ["researchkit", "explore", "some topic"])
+        assert main() == 2

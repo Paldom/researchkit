@@ -44,7 +44,7 @@ presets:
   default:
     description: Latest models with best quality
     models:
-      openai: gpt-5.4-mini # latest mini tier (5.5/5.6 ship no mini)
+      openai: gpt-5.4-mini # latest mini tier (5.5/5.6/6 ship no mini)
       gemini: gemini-3.7-flash
       grok: grok-4.3
       perplexity: sonar
@@ -65,7 +65,7 @@ presets:
     council:
       members:
         - claude:claude-opus-5
-        - gpt-5.5
+        - gpt-6-astra
         - gemini-3.7-flash
       boss: claude:claude-opus-5
     # Boost fans a topic out into parallel sub-projects topped by a
@@ -138,7 +138,7 @@ presets:
   harness:
     description: Subscription-only — every step runs on logged-in CLI harnesses (Codex, Antigravity, Grok CLI, Kimi Code CLI, Claude Code); no API keys. Used by `advise`/`council`/`explore` and the UI's "harness only" mode.
     models:
-      openai: codex:gpt-5.6-sol # Codex CLI, ChatGPT-subscription billing
+      openai: codex:gpt-6-astra # Codex CLI, ChatGPT-subscription billing
       gemini: agy:gemini-3.7-flash-high # Antigravity CLI, Google account (`agy models` lists ids; effort is baked into the id)
       grok: grokcli:grok-4.6 # Grok CLI, grok.com subscription (`grok models` lists ids)
       perplexity: sonar # unused: not in the harness provider set
@@ -147,9 +147,9 @@ presets:
       github: gpt-5.4-mini # unused
       glm: glm-5.3 # unused
       kimi: kimicli:kimi-code/k3 # Kimi Code CLI, kimi.com subscription
-      summarizer: codex:gpt-5.6-sol # meta-summary via CLI (no API key; codex handles long prompts reliably)
-      site_summarizer: codex:gpt-5.6-sol # CLI too (site research off by default in harness flows; connector SEARCH keys still apply if enabled)
-      improver: codex:gpt-5.6-sol # CLI too (keyword synthesis / improve-topic without OpenAI key)
+      summarizer: codex:gpt-6-astra # meta-summary via CLI (no API key; codex handles long prompts reliably)
+      site_summarizer: codex:gpt-6-astra # CLI too (site research off by default in harness flows; connector SEARCH keys still apply if enabled)
+      improver: codex:gpt-6-astra # CLI too (keyword synthesis / improve-topic without OpenAI key)
     reasoning_effort: xhigh # codex/claude/grokcli honor it; agy has no effort control
     perplexity_search_type: fast
     tavily_search_depth: fast
@@ -158,7 +158,7 @@ presets:
       # <spec>@<effort> sets per-member reasoning effort where supported.
       members:
         - claude:claude-opus-5@xhigh
-        - codex:gpt-5.6-sol@xhigh
+        - codex:gpt-6-astra@xhigh
         - agy:gemini-3.7-flash-high # effort is part of the agy model id
         - grokcli:grok-4.6
         - kimicli:kimi-code/k3 # effort comes from the CLI's config.toml [thinking]
@@ -166,11 +166,55 @@ presets:
     boost:
       enabled: true
       max_subprojects: 3 # harness sub-runs are slow; keep the fan-out tight
+    plugins:
+      # Each web-UI deep research is a browser session that streams for minutes,
+      # so the site list is the cost dial: one site per run unless you mean it.
+      webui:
+        sites: [chatgpt]
+
+  harness-fast:
+    # `harness` minus the time outliers. Providers run concurrently, so a run is
+    # as slow as its slowest member: measured on this machine's harness runs the
+    # Codex research slot takes 30-55 min per call and Opus at max effort 11-17,
+    # while Antigravity, Grok CLI and Kimi finish in 1-4 min. The explore-fast
+    # skill pairs this preset with a provider list that skips the openai and
+    # claude research slots and a RESEARCHKIT_CLI_TIMEOUT cap on stragglers.
+    description: Subscription-only, time-boxed — the harness preset without the slow outliers (no Codex research, Sonnet writes the summaries, council without Codex)
+    models:
+      openai: codex:gpt-6-astra # kept for parity; explore-fast does not run this slot
+      gemini: agy:gemini-3.7-flash-high
+      grok: grokcli:grok-4.6
+      perplexity: sonar # unused
+      tavily: tavily-search # unused
+      claude: claude:claude-sonnet-5 # the four writers (overview, digest, article, skill) run here
+      github: gpt-5.4-mini # unused
+      glm: glm-5.3 # unused
+      kimi: kimicli:kimi-code/k3
+      summarizer: codex:gpt-6-astra # one long-prompt completion, not a research loop: fast enough
+      site_summarizer: codex:gpt-6-astra
+      improver: codex:gpt-6-astra
+    reasoning_effort: high
+    perplexity_search_type: fast
+    tavily_search_depth: fast
+    claude_max_budget: 15.0
+    council:
+      members:
+        - claude:claude-sonnet-5@high
+        - agy:gemini-3.7-flash-high
+        - grokcli:grok-4.6@high
+        - kimicli:kimi-code/k3
+      boss: claude:claude-opus-5@high # one synthesis call; quality matters more than the minutes here
+    boost:
+      enabled: true
+      max_subprojects: 3
+    plugins:
+      webui:
+        sites: [chatgpt]
 
   hybrid:
     description: Harnesses + search APIs + site research combined — CLI subscriptions for reasoning, API endpoints for breadth
     models:
-      openai: codex:gpt-5.6-sol # harness (ChatGPT subscription)
+      openai: codex:gpt-6-astra # harness (ChatGPT subscription)
       gemini: gemini-3.7-flash # API — keeps one fast native search-grounded provider
       grok: grokcli:grok-4.6 # harness (grok.com subscription)
       perplexity: sonar # search API
@@ -179,9 +223,9 @@ presets:
       github: gpt-5.4-mini
       glm: glm-5.3
       kimi: kimicli:kimi-code/kimi-for-coding # harness (kimi.com subscription; K2.7, faster than k3)
-      summarizer: codex:gpt-5.6-sol # meta-summary on the CLI
+      summarizer: codex:gpt-6-astra # meta-summary on the CLI
       site_summarizer: gemini-3.5-flash-lite # API: site research is high-volume, keep it fast/cheap
-      improver: codex:gpt-5.6-sol # keyword synthesis / improve-topic on the CLI
+      improver: codex:gpt-6-astra # keyword synthesis / improve-topic on the CLI
     reasoning_effort: high
     perplexity_search_type: fast
     tavily_search_depth: advanced
@@ -189,7 +233,7 @@ presets:
     council:
       members:
         - claude:claude-fable-5@xhigh
-        - codex:gpt-5.6-sol@xhigh
+        - codex:gpt-6-astra@xhigh
         - gemini-3.7-flash # API member — mixing works here too
         - grokcli:grok-4.6
         - kimicli:kimi-code/kimi-for-coding

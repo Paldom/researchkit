@@ -1,18 +1,21 @@
 import { useEffect, useState } from 'react'
 import {
   ApiError,
+  getArticle,
   getLinks,
   getLog,
   getPrompt,
   getReport,
   getResult,
+  getSkill,
   type LinkStats,
   type LinksMode,
   type LinksResponse,
 } from '../lib/api'
+import BrainView from './BrainView'
 import ReportView, { CopyButton, actionButtonClass, downloadText } from './ReportView'
 
-const TABS = ['Report', 'Prompt', 'Raw JSON', 'Links', 'Log'] as const
+const TABS = ['Report', 'Article', 'Skill', 'Brain', 'Prompt', 'Raw JSON', 'Links', 'Log'] as const
 type Tab = (typeof TABS)[number]
 
 type Loaded =
@@ -20,6 +23,7 @@ type Loaded =
   | { state: 'error'; message: string }
   | { state: 'text'; text: string }
   | { state: 'links'; links: LinksResponse }
+  | { state: 'brain' } // BrainView loads and navigates itself
 
 const preClass =
   'max-h-[36rem] overflow-auto rounded-lg border border-neutral-200 bg-neutral-50 p-3 ' +
@@ -35,6 +39,9 @@ export default function OutputTabs({ name }: { name: string }) {
     setLoaded({ state: 'loading' })
     const fetchers: Record<Tab, () => Promise<Loaded>> = {
       Report: async () => ({ state: 'text', text: await getReport(name) }),
+      Article: async () => ({ state: 'text', text: await getArticle(name) }),
+      Skill: async () => ({ state: 'text', text: await getSkill(name) }),
+      Brain: async () => ({ state: 'brain' }),
       Prompt: async () => ({ state: 'text', text: await getPrompt(name) }),
       'Raw JSON': async () => ({
         state: 'text',
@@ -53,7 +60,9 @@ export default function OutputTabs({ name }: { name: string }) {
           state: 'error',
           message:
             err instanceof ApiError && err.status === 404
-              ? 'Not available yet — run the project first.'
+              ? tab === 'Skill'
+                ? 'No skill file — the research was too thin for one, or this run predates skill generation.'
+                : 'Not available yet — run the project first.'
               : 'Failed to load. Is the backend up?',
         })
       },
@@ -96,6 +105,34 @@ export default function OutputTabs({ name }: { name: string }) {
         {loaded.state === 'text' && tab === 'Report' && (
           <ReportView name={name} markdown={loaded.text} />
         )}
+
+        {loaded.state === 'text' && tab === 'Article' && (
+          <ReportView name={name} markdown={loaded.text} filename="article.md" />
+        )}
+
+        {loaded.state === 'text' && tab === 'Skill' && (
+          <div>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-neutral-500">
+                skill/SKILL.md — install with <code>npx skills add &lt;project&gt;/skill</code>{' '}
+                after review.
+              </p>
+              <div className="flex gap-2">
+                <CopyButton text={loaded.text} label="Copy SKILL.md" />
+                <button
+                  type="button"
+                  onClick={() => downloadText('SKILL.md', loaded.text, 'text/markdown')}
+                  className={actionButtonClass}
+                >
+                  Download SKILL.md
+                </button>
+              </div>
+            </div>
+            <pre className={preClass}>{loaded.text}</pre>
+          </div>
+        )}
+
+        {loaded.state === 'brain' && tab === 'Brain' && <BrainView name={name} />}
 
         {loaded.state === 'text' && tab === 'Prompt' && (
           <div>

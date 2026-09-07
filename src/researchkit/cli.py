@@ -20,8 +20,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from researchkit.materials import DEFAULT_LIMIT
 from researchkit.observability.logging_setup import init_app_logging
 from researchkit.project import PROJECTS_DIR, find_project, list_projects
+from researchkit.safe_io import guard_no_nested_run
 from researchkit.service import SocialResearchService
 
 # The cutting-edge flagship of each harness at its top reasoning tier — the
@@ -31,7 +33,7 @@ from researchkit.service import SocialResearchService
 # Kimi Code takes it from its own config.toml.
 MAX_EFFORT_HARNESSES = [
     "claude:claude-fable-5@max",
-    "codex:gpt-5.6-sol@ultra",
+    "codex:gpt-6-astra@ultra",
     "agy:gemini-3.7-flash-high",
     "grokcli:grok-4.6@xhigh",
     "kimicli:kimi-code/k3",
@@ -137,18 +139,38 @@ Site Research (optional):
         help="Download cited sources into materials/ (default: on)",
     )
     run_parser.add_argument(
+        "--resume",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Reuse provider results left in partial/ by an interrupted run "
+            "instead of paying for them again (default: on)"
+        ),
+    )
+    run_parser.add_argument(
+        "--repos",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Harvest the GitHub repositories the run cites into repos/ and feed "
+            "their summaries to the final analysis (default: on)"
+        ),
+    )
+    run_parser.add_argument(
         "--clone-repos",
+        "--keep-clones",
+        dest="keep_clones",
         action="store_true",
         help=(
-            "Shallow-clone the GitHub/skills.sh repositories the run cited into "
-            "repos/ and write repos/SUMMARY.md"
+            "Keep the cloned source trees on disk; without this the clones are "
+            "deleted once their extracts are written"
         ),
     )
     run_parser.add_argument(
         "--materials-limit",
         type=int,
-        default=25,
-        help="Max sources to fetch with --materials, 0 = all (default: 25)",
+        default=DEFAULT_LIMIT,
+        help="Max sources to fetch with --materials, 0 = all (default: all)",
     )
     run_parser.add_argument(
         "--ingest",
@@ -180,7 +202,7 @@ Site Research (optional):
         nargs="+",
         default=None,
         help=(
-            "Member specs override, e.g. claude:claude-opus-5@xhigh codex:gpt-5.6-sol "
+            "Member specs override, e.g. claude:claude-opus-5@xhigh codex:gpt-6-astra "
             "(default: the harness preset's council members)"
         ),
     )
@@ -318,8 +340,8 @@ Site Research (optional):
     explore_parser.add_argument(
         "--materials-limit",
         type=int,
-        default=25,
-        help="Max sources to fetch with --materials, 0 = all (default: 25)",
+        default=DEFAULT_LIMIT,
+        help="Max sources to fetch with --materials, 0 = all (default: all)",
     )
     explore_parser.add_argument(
         "--ingest",
@@ -328,7 +350,9 @@ Site Research (optional):
         help="Ingest the finished project into a brainkit brain at this path",
     )
     explore_parser.add_argument(
-        "--no-raw", action="store_true", help="Exclude raw provider outputs"
+        "--no-raw",
+        action="store_true",
+        help="Exclude raw provider outputs and per-provider summaries",
     )
     explore_parser.add_argument(
         "--preset",
@@ -365,8 +389,8 @@ Site Research (optional):
     materials_parser.add_argument(
         "--limit",
         type=int,
-        default=25,
-        help="Max sources to fetch, 0 = all (default: 25)",
+        default=DEFAULT_LIMIT,
+        help="Max sources to fetch, 0 = all (default: all)",
     )
     materials_parser.add_argument(
         "--refresh",
@@ -378,6 +402,30 @@ Site Research (optional):
     subparsers.add_parser(
         "list",
         help="List all projects",
+    )
+
+    # --- repos command ---
+    repos_parser = subparsers.add_parser(
+        "repos",
+        help=(
+            "Clone the repositories a completed run cited, extract their docs "
+            "and public surface into repos/, then delete the clones"
+        ),
+    )
+    repos_parser.add_argument("project", help="Project folder name or path")
+    repos_parser.add_argument(
+        "--limit", type=int, default=10, help="Max repositories (default: 10)"
+    )
+    repos_parser.add_argument(
+        "--keep-clones",
+        action="store_true",
+        help="Keep the cloned source trees instead of deleting them after extraction",
+    )
+
+    # --- runs command ---
+    subparsers.add_parser(
+        "runs",
+        help="Show research runs collecting right now, and the concurrency cap",
     )
 
     # --- links command ---
@@ -582,8 +630,8 @@ def _add_research_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--materials-limit",
         type=int,
-        default=25,
-        help="Max sources to fetch with --materials, 0 = all (default: 25)",
+        default=DEFAULT_LIMIT,
+        help="Max sources to fetch with --materials, 0 = all (default: all)",
     )
     parser.add_argument(
         "--ingest",
@@ -615,7 +663,7 @@ def _add_research_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--no-raw",
         action="store_true",
-        help="Exclude raw provider outputs from report",
+        help="Exclude raw provider outputs and per-provider summaries from report",
     )
     parser.add_argument(
         "--no-site-research",
@@ -747,8 +795,12 @@ def cmd_create(args, service: SocialResearchService) -> int:
     return 0
 
 
-def _clone_repos_for(project) -> int:
-    """Clone the repos a finished run cited; returns how many landed."""
+def _clone_repos_for(project, keep_clones: bool = False, limit: int = 10) -> int:
+    """Extract the repos a finished run cited; returns how many were harvested.
+
+    Clones, harvests docs/manifest/public surface into ``repos/<slug>.md``, then
+    deletes the tree unless ``keep_clones``.
+    """
     import json
 
     from researchkit.repos import clone_cited_repos
@@ -772,18 +824,29 @@ def _clone_repos_for(project) -> int:
         result,
         topic=project.config.topic,
         model_spec=summarizer,
+        keep_clones=keep_clones,
+        limit=limit,
     )
     ok = sum(1 for r in repos if r.ok)
     if repos:
+        freed = sum(1 for r in repos if r.deleted)
+        docs = sum(len(r.docs) for r in repos)
+        note = (
+            f"{freed} clone(s) deleted after extraction"
+            if freed
+            else "clones kept on disk"
+        )
         print(
-            f"cloned {ok}/{len(repos)} cited repositories -> "
-            f"{project.path / 'repos' / 'SUMMARY.md'}",
+            f"repos: {ok}/{len(repos)} extracted ({docs} doc file(s) kept), "
+            f"{note} -> {project.path / 'repos' / 'SUMMARY.md'}",
             file=sys.stderr,
         )
     return ok
 
 
-def _download_materials_for(project, limit: int = 25, refresh: bool = False) -> int:
+def _download_materials_for(
+    project, limit: int = DEFAULT_LIMIT, refresh: bool = False
+) -> int:
     """Shared materials-download step for run/instant/boost/materials commands."""
     from researchkit.materials import download_materials
 
@@ -802,6 +865,13 @@ def _download_materials_for(project, limit: int = 25, refresh: bool = False) -> 
         f"archived in {(project.path / 'materials').resolve()} ({summary}){hint}",
         file=sys.stderr,
     )
+    # The pack's own brain is derived from what was just archived, so it is
+    # (re)built right here rather than at every call site.
+    from researchkit.brain import build_brain
+
+    brain = build_brain(project)
+    if brain:
+        print(f"Brain: {brain.resolve()}", file=sys.stderr)
     return 0
 
 
@@ -950,6 +1020,16 @@ def cmd_run(args, service: SocialResearchService) -> int:
     print(f"Running project: {project.path}", file=sys.stderr)
     print(f"Topic: {project.config.topic}", file=sys.stderr)
 
+    resume = getattr(args, "resume", True)
+    partials = project.load_partials() if resume else {}
+    if partials:
+        print(
+            f"Resuming: reusing {len(partials)} provider result(s) from "
+            f"partial/ ({', '.join(sorted(partials))}) — pass --no-resume to "
+            f"re-query them",
+            file=sys.stderr,
+        )
+
     progress = make_progress_callback(args.verbose)
 
     try:
@@ -957,6 +1037,9 @@ def cmd_run(args, service: SocialResearchService) -> int:
             project,
             progress=progress,
             log_level=args.log_level,
+            resume=resume,
+            repos_enabled=getattr(args, "repos", True),
+            repo_keep_clones=getattr(args, "keep_clones", False),
         )
     except KeyboardInterrupt:
         print("\nInterrupted by user", file=sys.stderr)
@@ -975,9 +1058,11 @@ def cmd_run(args, service: SocialResearchService) -> int:
     handoff_rc = 0
     if not all_failed:
         if getattr(args, "materials", True):
-            _download_materials_for(project, limit=getattr(args, "materials_limit", 25))
-        if getattr(args, "clone_repos", False):
-            _clone_repos_for(project)
+            _download_materials_for(
+                project, limit=getattr(args, "materials_limit", DEFAULT_LIMIT)
+            )
+        # Repos were harvested inside the run (and fed to the analysis); a
+        # second pass here would re-clone what was already extracted.
         if getattr(args, "ingest", None):
             handoff_rc = _ingest_into_brain(project, args.ingest)
 
@@ -1024,6 +1109,55 @@ def cmd_list(args, service: SocialResearchService) -> int:
         print(f"             Created: {created}")
         print()
 
+    return 0
+
+
+def cmd_repos(args) -> int:
+    """Handle the 'repos' command on an already-completed project."""
+    project = find_project(args.project, args.projects_dir)
+    if not project:
+        print(f"Error: Project not found: {args.project}", file=sys.stderr)
+        return 1
+    if not project.has_results:
+        print(
+            f"Error: {project.name} has no result.json — run it first.",
+            file=sys.stderr,
+        )
+        return 1
+    extracted = _clone_repos_for(
+        project, keep_clones=args.keep_clones, limit=args.limit
+    )
+    if not extracted:
+        print("No cited GitHub repositories found in this run.", file=sys.stderr)
+    return 0
+
+
+def cmd_runs(args) -> int:
+    """Handle the 'runs' command: what is collecting right now, and the cap."""
+    from researchkit.run_limit import active_runs, max_concurrent_runs, runs_dir
+
+    limit = max_concurrent_runs()
+    active = active_runs()  # also reaps slots left by dead processes
+
+    if limit <= 0:
+        print("Concurrency cap: DISABLED (RESEARCHKIT_MAX_CONCURRENT_RUNS=0)")
+    else:
+        print(f"Concurrent runs: {len(active)}/{limit}")
+    print(f"Slots: {runs_dir()}\n")
+
+    if not active:
+        print("  no runs are collecting from providers right now")
+        return 0
+
+    for entry in active:
+        print(f"  pid {entry.get('pid'):<8} started {entry.get('started_at', '?')}")
+        print(f"           topic: {entry.get('topic', '')}")
+    if limit > 0 and len(active) >= limit:
+        print(
+            "\nThe cap is reached: new runs will wait for a slot, then fail.\n"
+            "Stop a runaway with: kill <pid>",
+            file=sys.stderr,
+        )
     return 0
 
 
@@ -1619,7 +1753,8 @@ def _cmd_instant_boosted(args, service: SocialResearchService, topic: str) -> in
         if artifacts:
             if getattr(args, "materials", True):
                 _download_materials_for(
-                    result.project, limit=getattr(args, "materials_limit", 25)
+                    result.project,
+                    limit=getattr(args, "materials_limit", DEFAULT_LIMIT),
                 )
             if getattr(args, "ingest", None):
                 handoff_rc = _ingest_into_brain(result.project, args.ingest)
@@ -1646,7 +1781,15 @@ def _cmd_instant_boosted(args, service: SocialResearchService, topic: str) -> in
     if getattr(args, "materials", True):
         for sp in result.sub_projects:
             if sp.has_results:
-                _download_materials_for(sp, limit=getattr(args, "materials_limit", 25))
+                _download_materials_for(
+                    sp, limit=getattr(args, "materials_limit", DEFAULT_LIMIT)
+                )
+        # The parent's brain spans the whole study (brainkit recurses into
+        # subprojects/), so it is built once the sub-packs are archived.
+        from researchkit.brain import build_brain
+
+        if build_brain(result.project):
+            print(f"Brain: {result.project.brain_dir.resolve()}", file=sys.stderr)
     if getattr(args, "ingest", None):
         handoff_rc = _ingest_into_brain(result.project, args.ingest)
 
@@ -1707,9 +1850,11 @@ def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
     handoff_rc = 0
     if not all_failed:
         if getattr(args, "materials", True):
-            _download_materials_for(project, limit=getattr(args, "materials_limit", 25))
-        if getattr(args, "clone_repos", False):
-            _clone_repos_for(project)
+            _download_materials_for(
+                project, limit=getattr(args, "materials_limit", DEFAULT_LIMIT)
+            )
+        # Repos were harvested inside the run (and fed to the analysis); a
+        # second pass here would re-clone what was already extracted.
         if getattr(args, "ingest", None):
             handoff_rc = _ingest_into_brain(project, args.ingest)
 
@@ -1749,6 +1894,8 @@ SUBCOMMANDS = frozenset(
         "create",
         "run",
         "list",
+        "runs",
+        "repos",
         "materials",
         "plugins",
         "advise",
@@ -1769,6 +1916,10 @@ SUBCOMMANDS = frozenset(
 
 def main() -> int:
     """Main entry point for the CLI."""
+    nested = guard_no_nested_run()
+    if nested is not None:
+        print(nested, file=sys.stderr)
+        return 2
     load_dotenv()
 
     # Parse known args first to handle the case where there's no subcommand
@@ -1797,6 +1948,14 @@ def main() -> int:
     tokens = sys.argv[1:]
     wants_help = "-h" in tokens or "--help" in tokens
     first = _first_positional(tokens)
+
+    # Provenance for every project this process creates. The subcommand is the
+    # useful label — an `explore` run tags its projects (and their sub-queries)
+    # "explore". setdefault, so a caller that already labelled its batch
+    # (RESEARCHKIT_ORIGIN=nightly-cron) keeps that label.
+    os.environ.setdefault(
+        "RESEARCHKIT_ORIGIN", first if first in subcommands else "instant"
+    )
 
     if not wants_help and first is not None and first not in subcommands:
         # Typo guard: instant mode is a PAID run, so a single bare token
@@ -1913,6 +2072,10 @@ def main() -> int:
         return cmd_run(args, service)
     elif args.command == "list":
         return cmd_list(args, service)
+    elif args.command == "runs":
+        return cmd_runs(args)
+    elif args.command == "repos":
+        return cmd_repos(args)
     elif args.command == "materials":
         return cmd_materials(args, service)
     elif args.command == "plugins":

@@ -25,7 +25,7 @@ presets:
     tavily_search_depth: fast # basic | advanced | fast | ultra-fast
     claude_max_budget: 5.0 # USD cap per Claude CLI call
     council: # boost/advise/council members
-      members: [claude:claude-opus-5@xhigh, codex:gpt-5.6-sol]
+      members: [claude:claude-opus-5@xhigh, codex:gpt-6-astra]
       boss: claude:claude-opus-5
     boost:
       enabled: false # `--boost`/`explore` force it per run
@@ -41,7 +41,7 @@ spec** that routes the step through a logged-in coding-agent CLI
 | Spec                | Backend                      | Auth                | Example                                                     |
 | ------------------- | ---------------------------- | ------------------- | ----------------------------------------------------------- |
 | plain id            | provider API                 | API key from `.env` | `gpt-5.4-mini`, `grok-4.6`                                  |
-| `codex[:<model>]`   | Codex CLI (`codex exec`)     | ChatGPT login       | `codex:gpt-5.6-sol`                                         |
+| `codex[:<model>]`   | Codex CLI (`codex exec`)     | ChatGPT login       | `codex:gpt-6-astra`                                         |
 | `agy[:<model>]`     | Antigravity CLI              | Google account      | `agy:gemini-3.7-flash-high` (`agy models` lists ids)        |
 | `grokcli[:<model>]` | Grok CLI (`grok -p`)         | `grok login`        | `grokcli:grok-4.6` (`grok models` lists ids)                |
 | `kimicli[:<alias>]` | Kimi Code CLI (`kimi -p`)    | `kimi login`        | `kimicli:kimi-code/k3`, `kimicli:kimi-code/kimi-for-coding` |
@@ -55,7 +55,7 @@ Rules:
   (`codex`, `claude`) uses that CLI's default model. Bare `claude-*` ids
   remain accepted as the legacy spelling of `claude:<id>`.
 - **`@<effort>` suffix** (council members and the boss): per-member
-  reasoning effort where the CLI supports it — `codex:gpt-5.6-sol@xhigh`,
+  reasoning effort where the CLI supports it — `codex:gpt-6-astra@xhigh`,
   `claude:claude-opus-5@xhigh`, `grokcli:grok-4.6@xhigh`. Antigravity bakes
   effort into the model id (`-high`/`-medium`/`-low`); Kimi Code takes it
   from its own config.toml `[thinking]`.
@@ -88,6 +88,15 @@ Rules:
   tradeoffs (API keys).
 - `harness` — subscription-only: every step on logged-in CLIs, no API keys.
   Used by `advise`, `council`, `explore`, and the UI's "Harness only" mode.
+- `harness-fast` — `harness` minus the time outliers, for the `explore-fast`
+  skill. Providers run concurrently, so a run is as slow as its slowest
+  member: measured here, the Codex research slot takes 30–55 min per call and
+  Opus at max effort 11–17, while `agy` / `grokcli` / `kimicli` finish in 1–4.
+  The preset keeps the same CLIs but writes the summaries on
+  `claude-sonnet-5`, seats a council without Codex, and runs at effort `high`;
+  the skill adds `--providers gemini grok kimi <keyless…>` (no `openai` /
+  `claude` research slots) and `RESEARCHKIT_CLI_TIMEOUT=900` so a straggler
+  is dropped instead of waited for.
 - `hybrid` — CLI subscriptions for reasoning (codex/grokcli/claude slots,
   summarizer, improver) + API endpoints for breadth (gemini, perplexity,
   tavily, exa, site research). Select per run: `--preset hybrid` (works on

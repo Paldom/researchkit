@@ -124,3 +124,63 @@ def test_create_provider_unknown_raises() -> None:
     agg = InsightAggregator()
     with pytest.raises(ValueError):
         agg._create_provider("nope")
+
+
+class TestPartialResultsAndResume:
+    """A killed run must keep what it paid for, and never buy it twice."""
+
+    def test_sink_receives_each_result_as_it_lands(self) -> None:
+        agg = InsightAggregator()
+        stubs = {
+            "openai": _StubProvider("openai", "ok"),
+            "gemini": _StubProvider("gemini", "error"),
+        }
+        agg._create_provider = lambda name, keywords=None: stubs[name]  # type: ignore[assignment]
+        saved: list[ProviderResult] = []
+        agg.partial_sink = saved.append
+
+        agg.collect_sync("t", 7, ["openai", "gemini"])
+
+        # Failures are persisted too: resuming must not silently re-buy them
+        # under the illusion they were never attempted.
+        assert sorted(r.provider for r in saved) == ["gemini", "openai"]
+
+    def test_a_failing_sink_never_loses_the_run(self) -> None:
+        agg = InsightAggregator()
+        agg._create_provider = lambda name, keywords=None: _StubProvider(name, "ok")  # type: ignore[assignment]
+
+        def explode(result: ProviderResult) -> None:
+            raise OSError("disk full")
+
+        agg.partial_sink = explode
+        results = agg.collect_sync("t", 7, ["openai"])
+        assert results[0].is_success  # bookkeeping failure ≠ lost paid answer
+
+    def test_preloaded_providers_are_not_queried_again(self) -> None:
+        called: list[str] = []
+
+        def _create(name: str, keywords: object = None) -> _StubProvider:
+            called.append(name)
+            return _StubProvider(name, "ok")
+
+        restored = ProviderResult(
+            provider="openai", model="stub", raw_text="already paid for"
+        )
+        agg = InsightAggregator(preloaded_results={"openai": restored})
+        agg._create_provider = _create  # type: ignore[assignment]
+
+        results = agg.collect_sync("t", 7, ["openai", "gemini"])
+
+        assert called == ["gemini"], "a restored provider must not be re-queried"
+        # Requested order is preserved across the resumed/fresh mix.
+        assert [r.provider for r in results] == ["openai", "gemini"]
+        assert results[0].raw_text == "already paid for"
+
+    def test_all_providers_preloaded_skips_the_fan_out_entirely(self) -> None:
+        restored = ProviderResult(provider="openai", model="stub", raw_text="cached")
+        agg = InsightAggregator(preloaded_results={"openai": restored})
+        agg._create_provider = lambda name, keywords=None: pytest.fail(  # type: ignore[assignment]
+            "no provider should be constructed"
+        )
+        results = agg.collect_sync("t", 7, ["openai"])
+        assert [r.raw_text for r in results] == ["cached"]
