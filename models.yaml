@@ -45,7 +45,7 @@ presets:
     description: Latest models with best quality
     models:
       openai: gpt-5.4-mini # latest mini tier (5.5/5.6/6 ship no mini)
-      gemini: gemini-3.7-flash
+      gemini: gemini-3.8-flash
       grok: grok-4.3
       perplexity: sonar
       tavily: tavily-search # display name only (search API)
@@ -53,7 +53,7 @@ presets:
       github: gpt-5.4-mini
       glm: glm-5.3
       kimi: kimi-k3 # Moonshot API (opt-in via --providers kimi)
-      summarizer: gemini-3.7-flash # cross-provider meta-summary
+      summarizer: gemini-3.8-flash # cross-provider meta-summary
       site_summarizer: gemini-3.5-flash-lite # site-research summarization (high volume — keep it cheap)
       improver: gpt-5.4-mini # topic improvement + keyword generation
     reasoning_effort: medium
@@ -66,7 +66,7 @@ presets:
       members:
         - claude:claude-opus-5
         - gpt-6-astra
-        - gemini-3.7-flash
+        - gemini-3.8-flash
       boss: claude:claude-opus-5
     # Boost fans a topic out into parallel sub-projects topped by a
     # super-summary. Off by default: a boosted run multiplies cost by the
@@ -99,7 +99,7 @@ presets:
     description: Quality cushion — sweet-spot models, more sources, robust on harder topics (bench 0.74; pins tracked forward to current models)
     models:
       openai: gpt-5.4-mini
-      gemini: gemini-3.7-flash
+      gemini: gemini-3.8-flash
       grok: grok-4.6
       perplexity: sonar-pro
       tavily: tavily-search
@@ -107,7 +107,7 @@ presets:
       github: gpt-5.4-mini
       glm: glm-5.3
       kimi: kimi-k3
-      summarizer: gemini-3.7-flash
+      summarizer: gemini-3.8-flash
       site_summarizer: gemini-3.5-flash-lite
       improver: gpt-5.4-mini
     reasoning_effort: low
@@ -127,7 +127,7 @@ presets:
       github: gpt-5.4-mini
       glm: glm-5.3
       kimi: kimi-k3
-      summarizer: gemini-3.7-flash
+      summarizer: gemini-3.8-flash
       site_summarizer: gemini-3.5-flash-lite
       improver: gpt-5.4-mini
     reasoning_effort: medium
@@ -139,7 +139,7 @@ presets:
     description: Subscription-only — every step runs on logged-in CLI harnesses (Codex, Antigravity, Grok CLI, Kimi Code CLI, Claude Code); no API keys. Used by `advise`/`council`/`explore` and the UI's "harness only" mode.
     models:
       openai: codex:gpt-6-astra # Codex CLI, ChatGPT-subscription billing
-      gemini: agy:gemini-3.7-flash-high # Antigravity CLI, Google account (`agy models` lists ids; effort is baked into the id)
+      gemini: agy:gemini-3.8-flash-high # Antigravity CLI, Google account (`agy models` lists ids; effort is baked into the id)
       grok: grokcli:grok-4.6 # Grok CLI, grok.com subscription (`grok models` lists ids)
       perplexity: sonar # unused: not in the harness provider set
       tavily: tavily-search # unused
@@ -159,7 +159,7 @@ presets:
       members:
         - claude:claude-opus-5@xhigh
         - codex:gpt-6-astra@xhigh
-        - agy:gemini-3.7-flash-high # effort is part of the agy model id
+        - agy:gemini-3.8-flash-high # effort is part of the agy model id
         - grokcli:grok-4.6
         - kimicli:kimi-code/k3 # effort comes from the CLI's config.toml [thinking]
       boss: claude:claude-opus-5@xhigh
@@ -182,7 +182,7 @@ presets:
     description: Subscription-only, time-boxed — the harness preset without the slow outliers (no Codex research, Sonnet writes the summaries, council without Codex)
     models:
       openai: codex:gpt-6-astra # kept for parity; explore-fast does not run this slot
-      gemini: agy:gemini-3.7-flash-high
+      gemini: agy:gemini-3.8-flash-high
       grok: grokcli:grok-4.6
       perplexity: sonar # unused
       tavily: tavily-search # unused
@@ -200,7 +200,7 @@ presets:
     council:
       members:
         - claude:claude-sonnet-5@high
-        - agy:gemini-3.7-flash-high
+        - agy:gemini-3.8-flash-high
         - grokcli:grok-4.6@high
         - kimicli:kimi-code/k3
       boss: claude:claude-opus-5@high # one synthesis call; quality matters more than the minutes here
@@ -215,7 +215,7 @@ presets:
     description: Harnesses + search APIs + site research combined — CLI subscriptions for reasoning, API endpoints for breadth
     models:
       openai: codex:gpt-6-astra # harness (ChatGPT subscription)
-      gemini: gemini-3.7-flash # API — keeps one fast native search-grounded provider
+      gemini: gemini-3.8-flash # API — keeps one fast native search-grounded provider
       grok: grokcli:grok-4.6 # harness (grok.com subscription)
       perplexity: sonar # search API
       tavily: tavily-search # search API
@@ -234,7 +234,7 @@ presets:
       members:
         - claude:claude-fable-5@xhigh
         - codex:gpt-6-astra@xhigh
-        - gemini-3.7-flash # API member — mixing works here too
+        - gemini-3.8-flash # API member — mixing works here too
         - grokcli:grok-4.6
         - kimicli:kimi-code/kimi-for-coding
       boss: claude:claude-opus-5@xhigh

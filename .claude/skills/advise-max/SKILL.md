@@ -1,6 +1,6 @@
 ---
 name: advise-max
-description: Asks the cutting-edge flagship of every logged-in coding-agent CLI at maximum reasoning effort (Claude Fable 5 @max, Codex GPT-6 Astra @ultra, Gemini 3.7 Flash High, Grok 4.6 @xhigh, Kimi K3) the same question, side by side — subscription auth, zero API keys. Use when the user wants the strongest possible second opinions, "ask the best models", "max-effort advice", "advise-max", or a hard question worth top-tier reasoning. Not for quick/cheap opinions (use advise), a synthesized answer (use council), or web research (use explore).
+description: Asks the cutting-edge flagship of every logged-in coding-agent CLI at maximum reasoning effort (Claude Fable 5 @max, Codex GPT-6 Astra @ultra, Gemini 3.8 Flash High, Grok 4.6 @xhigh, Kimi K3) the same question, side by side — subscription auth, zero API keys. Use when the user wants the strongest possible second opinions, "ask the best models", "max-effort advice", "advise-max", or a hard question worth top-tier reasoning. Not for quick/cheap opinions (use advise), a synthesized answer (use council), or web research (use explore).
 argument-hint: "<question>"
 ---
 
@@ -21,7 +21,7 @@ deserve it.
    uv run researchkit advise "QUESTION" --harnesses \
      claude:claude-fable-5@max \
      codex:gpt-6-astra@ultra \
-     agy:gemini-3.7-flash-high \
+     agy:gemini-3.8-flash-high \
      grokcli:grok-4.6@xhigh \
      kimicli:kimi-code/k3
    ```
@@ -39,7 +39,7 @@ pass `-m gpt-6-astra` with `model_reasoning_effort`, since an id like
 (both answered a probe cleanly); `ultra` is what this skill uses and
 `xhigh` is what `codex`'s own config defaults to. Antigravity now lists real ids (`agy models` prints
 `<id>\t<display name>`) and bakes the thinking level into the id, so pass
-`agy:gemini-3.7-flash-high` — no quoting, and a `@high` suffix does
+`agy:gemini-3.8-flash-high` — no quoting, and a `@high` suffix does
 nothing. The Grok CLI's effort ceiling rose to `xhigh` (`max` is still
 rejected: "use one of: xhigh, high, medium, low"); `grok models` offers
 `grok-4.6` (default) and `grok-4.5`. Kimi Code has no effort flag —

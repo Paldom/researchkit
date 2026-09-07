@@ -33,7 +33,7 @@ _EMBEDDED_DEFAULT_CONFIG: dict[str, Any] = {
             "description": "Built-in fallback (models.yaml not found)",
             "models": {
                 "openai": "gpt-5.4-mini",
-                "gemini": "gemini-3.7-flash",
+                "gemini": "gemini-3.8-flash",
                 "grok": "grok-4.6",
                 "perplexity": "sonar",
                 "tavily": "tavily-search",
@@ -41,7 +41,7 @@ _EMBEDDED_DEFAULT_CONFIG: dict[str, Any] = {
                 "github": "gpt-5.4-mini",
                 "glm": "glm-5.3",
                 "kimi": "kimi-k3",
-                "summarizer": "gemini-3.7-flash",
+                "summarizer": "gemini-3.8-flash",
                 "site_summarizer": "gemini-3.5-flash-lite",
                 "improver": "gpt-5.4-mini",
             },
@@ -60,7 +60,7 @@ DEFAULT_COUNCIL_MEMBERS = [
     "claude:claude-opus-5",
     "codex:gpt-6-astra",
     # `agy models` lists ids; the thinking level is baked into the id.
-    "agy:gemini-3.7-flash-high",
+    "agy:gemini-3.8-flash-high",
 ]
 DEFAULT_COUNCIL_BOSS = "claude:claude-opus-5"
 DEFAULT_BOOST_MAX_SUBPROJECTS = 5

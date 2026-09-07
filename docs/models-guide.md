@@ -13,11 +13,11 @@ presets:
     description: One line shown in the CLI/UI
     models:
       openai: gpt-5.4-mini # provider slots — one per provider
-      gemini: agy:gemini-3.7-flash-high
+      gemini: agy:gemini-3.8-flash-high
       grok: grokcli:grok-4.6
       claude: claude:claude-sonnet-5
       kimi: kimicli:kimi-code/k3
-      summarizer: gemini-3.7-flash # cross-provider meta-summary
+      summarizer: gemini-3.8-flash # cross-provider meta-summary
       site_summarizer: gemini-3.5-flash-lite
       improver: gpt-5.4-mini # topic improvement + keyword generation
     reasoning_effort: medium # providers that support it
@@ -42,7 +42,7 @@ spec** that routes the step through a logged-in coding-agent CLI
 | ------------------- | ---------------------------- | ------------------- | ----------------------------------------------------------- |
 | plain id            | provider API                 | API key from `.env` | `gpt-5.4-mini`, `grok-4.6`                                  |
 | `codex[:<model>]`   | Codex CLI (`codex exec`)     | ChatGPT login       | `codex:gpt-6-astra`                                         |
-| `agy[:<model>]`     | Antigravity CLI              | Google account      | `agy:gemini-3.7-flash-high` (`agy models` lists ids)        |
+| `agy[:<model>]`     | Antigravity CLI              | Google account      | `agy:gemini-3.8-flash-high` (`agy models` lists ids)        |
 | `grokcli[:<model>]` | Grok CLI (`grok -p`)         | `grok login`        | `grokcli:grok-4.6` (`grok models` lists ids)                |
 | `kimicli[:<alias>]` | Kimi Code CLI (`kimi -p`)    | `kimi login`        | `kimicli:kimi-code/k3`, `kimicli:kimi-code/kimi-for-coding` |
 | `claude[:<model>]`  | Claude Code CLI              | Claude subscription | `claude:opus`, `claude:claude-sonnet-5`                     |
@@ -67,7 +67,7 @@ Rules:
   connector only summarizes fetched transcripts (native video understanding
   needs the Gemini API).
 - Keys `models:` doesn't recognize as built-in slots become **plugin model
-  slots** (e.g. `youtube: gemini-3.7-flash`); a sibling `plugins:` block
+  slots** (e.g. `youtube: gemini-3.8-flash`); a sibling `plugins:` block
   passes per-plugin option dicts.
 - **Model ids drift.** `researchkit doctor [--preset <name>]` checks every
   pin in a preset against the live CLI model lists and your `.env` keys

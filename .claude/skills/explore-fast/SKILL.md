@@ -20,7 +20,7 @@ on this machine's harness runs (about 120 samples per slot):
 | openai (codex research)            | 30 min  | 40 min  | no — the outlier                      |
 | claude (opus-5 at max effort)      | 11 min  | 33 min  | not as a researcher; Sonnet writes    |
 | kimi (kimicli:kimi-code/k3)        | 4 min   | 10 min  | yes                                   |
-| gemini (agy:gemini-3.7-flash-high) | 1 min   | 18 min  | yes                                   |
+| gemini (agy:gemini-3.8-flash-high) | 1 min   | 18 min  | yes                                   |
 | grok (grokcli:grok-4.6)            | 1 min   | 32 min  | yes — the tail is what the cap is for |
 | keyless (hackernews, skillsh, …)   | seconds | seconds | yes                                   |
 

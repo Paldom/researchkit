@@ -34,7 +34,7 @@ from researchkit.service import SocialResearchService
 MAX_EFFORT_HARNESSES = [
     "claude:claude-fable-5@max",
     "codex:gpt-6-astra@ultra",
-    "agy:gemini-3.7-flash-high",
+    "agy:gemini-3.8-flash-high",
     "grokcli:grok-4.6@xhigh",
     "kimicli:kimi-code/k3",
 ]

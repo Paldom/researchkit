@@ -198,12 +198,12 @@ class TestCliHarnessTimeout:
 
         monkeypatch.setenv("RESEARCHKIT_CLI_TIMEOUT", "1800")
         monkeypatch.delenv("PROVIDER_HTTP_TIMEOUT", raising=False)
-        cmd = AntigravityProvider(model="gemini-3.7-flash-high")._build_cmd(
+        cmd = AntigravityProvider(model="gemini-3.8-flash-high")._build_cmd(
             "hi", timeout=cli_harness_timeout()
         )
         # agy's own clock stops short of ours, so it reports its own timeout.
         assert cmd[cmd.index("--print-timeout") + 1] == "1740s"
-        assert cmd[cmd.index("--model") + 1] == "gemini-3.7-flash-high"
+        assert cmd[cmd.index("--model") + 1] == "gemini-3.8-flash-high"
 
     @pytest.mark.parametrize("budget", [5.0, 60.0, 90.0, 300.0, 1800.0])
     def test_agy_print_timeout_never_exceeds_the_budget(self, budget: float) -> None:
@@ -428,7 +428,7 @@ class TestHarnessPreset:
         assert em.council_members == [
             "claude:claude-opus-5@xhigh",
             "codex:gpt-6-astra@xhigh",
-            "agy:gemini-3.7-flash-high",
+            "agy:gemini-3.8-flash-high",
             "grokcli:grok-4.6",
             "kimicli:kimi-code/k3",
         ]

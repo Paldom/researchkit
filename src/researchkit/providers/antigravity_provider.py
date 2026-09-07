@@ -9,7 +9,7 @@ session rather than a ``GEMINI_API_KEY``.
 Selecting it: set the ``gemini`` model in ``models.yaml`` to ``agy`` /
 ``antigravity`` (agy default model) or ``agy:<model>``. ``agy models`` lists
 ids alongside their display names (``<id>\t<display name>``) — pass the ID,
-e.g. ``agy:gemini-3.7-flash-high``; the thinking level is baked into it, so a
+e.g. ``agy:gemini-3.8-flash-high``; the thinking level is baked into it, so a
 researchkit ``@<effort>`` suffix does nothing here. (Older agy builds listed
 only display names; those pins no longer resolve and ``researchkit doctor``
 fails them.) The aggregator routes the Gemini step to this provider
@@ -91,7 +91,7 @@ def is_antigravity_model(model: str | None) -> bool:
 def antigravity_underlying_model(model: str | None) -> str | None:
     """Extract the underlying model from an ``agy`` spec.
 
-    ``"agy:gemini-3.7-flash-high"`` -> ``"gemini-3.7-flash-high"``;
+    ``"agy:gemini-3.8-flash-high"`` -> ``"gemini-3.8-flash-high"``;
     ``"agy"`` -> ``None`` (agy default model).
     """
     if not model:

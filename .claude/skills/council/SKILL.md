@@ -46,7 +46,7 @@ model's raw answer (that is `/advise`), sourced/cited research (that is
 
 Members/boss default to the `harness` preset in `models.yaml`
 (claude:claude-opus-5@xhigh, codex:gpt-6-astra@xhigh,
-agy:gemini-3.7-flash-high, grokcli:grok-4.6, kimicli:kimi-code/k3;
+agy:gemini-3.8-flash-high, grokcli:grok-4.6, kimicli:kimi-code/k3;
 boss claude:claude-opus-5@xhigh); override with `--harnesses <specs…>`
 and `--boss <spec>` (specs accept `@<effort>`). `uv run researchkit doctor
 --preset harness` verifies every pin before spending anything.

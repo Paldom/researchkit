@@ -36,7 +36,7 @@ class PromptImprover:
     # load; kept roughly in sync with models.yaml so a fallback isn't a dead id.
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {
         "openai": "gpt-5.4-mini",
-        "gemini": "gemini-3.7-flash",
+        "gemini": "gemini-3.8-flash",
         "grok": "grok-4.6",
         "perplexity": "sonar",
         "glm": "glm-5.3",

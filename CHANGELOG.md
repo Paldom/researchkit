@@ -60,6 +60,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Gemini Flash pins moved from 3.7 to 3.8 everywhere: `gemini-3.8-flash` on the
+  API slots (provider, meta-summarizer, council member) and
+  `agy:gemini-3.8-flash-high` on the Antigravity harness. Both ids verified
+  against the live API model list and `agy models` on 2026-09-07. The
+  high-volume `gemini-3.5-flash-lite` slots stay: no 3.8 Flash-Lite exists.
 - **Materials are archived by default** (`--no-materials` opts out). The
   research pack is what brainkit ingests and skillskit skillifies, and the
   archive is the part that survives link rot; making the artifact the

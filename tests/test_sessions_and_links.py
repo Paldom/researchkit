@@ -24,10 +24,10 @@ class TestSessionRouting:
             "codex:gpt-5.6-sol",
             "grokcli:grok-4.6",
             "kimicli:kimi-code/k3",
-            "agy:gemini-3.7-flash-high",
+            "agy:gemini-3.8-flash-high",
         ):
             assert hs.supports_sessions(spec), spec
-        for spec in ("gpt-5.5", "gemini-3.7-flash", "sonar", ""):
+        for spec in ("gpt-5.5", "gemini-3.8-flash", "sonar", ""):
             assert not hs.supports_sessions(spec), spec
 
     def test_non_harness_member_fails_without_running_anything(

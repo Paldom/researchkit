@@ -113,13 +113,13 @@ class TestSpecRouting:
             doctor_mod,
             "run_subprocess",
             lambda cmd, **k: _proc(
-                0, stdout="grok-4.6\ngemini-3.7-flash-high\tGemini 3.7 Flash (High)\n"
+                0, stdout="grok-4.6\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
             ),
         )
         probe = _CliProbe()
         assert _check_spec("grok", "grokcli:grok-4.6@high", probe).status == "ok"
         # `agy models` prints `<id>\t<display name>`; the id is what --model takes.
-        assert _check_spec("gemini", "agy:gemini-3.7-flash-high", probe).status == "ok"
+        assert _check_spec("gemini", "agy:gemini-3.8-flash-high", probe).status == "ok"
         assert _check_spec("openai", "codex:gpt-5.6-sol@xhigh", probe).status == "ok"
         assert _check_spec("kimi", "kimicli:kimi-code/k3", probe).status == "ok"
         assert _check_spec("claude", "claude:claude-opus-5", probe).status == "ok"
@@ -143,7 +143,7 @@ class TestRunDoctorAndReport:
             doctor_mod,
             "run_subprocess",
             lambda cmd, **k: _proc(
-                0, stdout="grok-4.6\ngemini-3.7-flash-high\tGemini 3.7 Flash (High)\n"
+                0, stdout="grok-4.6\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
             ),
         )
         results = run_doctor("harness")
@@ -177,7 +177,7 @@ class TestRunDoctorAndReport:
             doctor_mod,
             "run_subprocess",
             lambda cmd, **k: _proc(
-                0, stdout="grok-4.6\ngemini-3.7-flash-high\tGemini 3.7 Flash (High)\n"
+                0, stdout="grok-4.6\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
             ),
         )
         results = run_doctor("harness")
