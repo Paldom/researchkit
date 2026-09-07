@@ -75,6 +75,13 @@ dev = [
 # silently stops all dependency updates.
 exclude-newer = "2026-07-04T00:00:00Z"
 
+# Security fixes that postdate the cutoff above (Dependabot, 2026-09-07). Each
+# entry lifts the cutoff for ONE package; the rest of the tree stays pinned.
+[tool.uv.exclude-newer-package]
+aiohttp = "2026-08-01T00:00:00Z"
+cryptography = "2026-08-01T00:00:00Z"
+pyasn1 = "2026-08-01T00:00:00Z"
+
 [tool.pytest.ini_options]
 minversion = "9.0"
 testpaths = ["tests"]
