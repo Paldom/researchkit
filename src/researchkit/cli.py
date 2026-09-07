@@ -28,11 +28,13 @@ from researchkit.service import SocialResearchService
 
 # The cutting-edge flagship of each harness at its top reasoning tier — the
 # `advise-max` set. Kept here so `advise --max`, `advise-session --max` and the
-# advise-max skill cannot drift apart. Effort tiers verified live 2026-08-21:
-# grok's ceiling is xhigh (it rejects max); agy bakes effort into the model id;
-# Kimi Code takes it from its own config.toml.
+# advise-max skill cannot drift apart: the skill runs `advise --max`, so this
+# list is the only place to change a flagship. Effort tiers verified live
+# 2026-08-21: grok's ceiling is xhigh (it rejects max); agy bakes effort into
+# the model id; Kimi Code takes it from its own config.toml. Fable 5.1's id
+# verified live 2026-09-08 (`claude -p --model claude-fable-5-1`).
 MAX_EFFORT_HARNESSES = [
-    "claude:claude-fable-5@max",
+    "claude:claude-fable-5-1@max",
     "codex:gpt-6-astra@ultra",
     "agy:gemini-3.8-flash-high",
     "grokcli:grok-4.6@xhigh",

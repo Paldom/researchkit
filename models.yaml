@@ -232,7 +232,7 @@ presets:
     claude_max_budget: 10.0
     council:
       members:
-        - claude:claude-fable-5@xhigh
+        - claude:claude-fable-5-1@xhigh
         - codex:gpt-6-astra@xhigh
         - gemini-3.8-flash # API member — mixing works here too
         - grokcli:grok-4.6

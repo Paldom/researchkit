@@ -1,6 +1,6 @@
 ---
 name: advise-max
-description: Asks the cutting-edge flagship of every logged-in coding-agent CLI at maximum reasoning effort (Claude Fable 5 @max, Codex GPT-6 Astra @ultra, Gemini 3.8 Flash High, Grok 4.6 @xhigh, Kimi K3) the same question, side by side — subscription auth, zero API keys. Use when the user wants the strongest possible second opinions, "ask the best models", "max-effort advice", "advise-max", or a hard question worth top-tier reasoning. Not for quick/cheap opinions (use advise), a synthesized answer (use council), or web research (use explore).
+description: Asks the cutting-edge flagship of every logged-in coding-agent CLI at maximum reasoning effort (Claude Fable 5.1 @max, Codex GPT-6 Astra @ultra, Gemini 3.8 Flash High, Grok 4.6 @xhigh, Kimi K3) the same question, side by side — subscription auth, zero API keys. Use when the user wants the strongest possible second opinions, "ask the best models", "max-effort advice", "advise-max", or a hard question worth top-tier reasoning. Not for quick/cheap opinions (use advise), a synthesized answer (use council), or web research (use explore).
 argument-hint: "<question>"
 ---
 
@@ -18,21 +18,24 @@ deserve it.
 1. Run from the researchkit repo root (or `--directory` a checkout):
 
    ```bash
-   uv run researchkit advise "QUESTION" --harnesses \
-     claude:claude-fable-5@max \
-     codex:gpt-6-astra@ultra \
-     agy:gemini-3.8-flash-high \
-     grokcli:grok-4.6@xhigh \
-     kimicli:kimi-code/k3
+   uv run researchkit advise "QUESTION" --max
    ```
 
+   `--max` is the flagship set — today `claude:claude-fable-5-1@max`,
+   `codex:gpt-6-astra@ultra`, `agy:gemini-3.8-flash-high`,
+   `grokcli:grok-4.6@xhigh`, `kimicli:kimi-code/k3` — defined once as
+   `MAX_EFFORT_HARNESSES` in `src/researchkit/cli.py`. Change a flagship there
+   and this skill, `advise --max` and `advise-session --max` all follow; pass
+   `--harnesses <spec…>` instead of `--max` to override for one run.
    `--context-file notes.md` appends context, same as `/advise`.
 
 2. Relay each `## <harness-spec>` answer side by side, attributed — no
    merging (run `/council` with these same `--harnesses` for synthesis).
 
-Model notes (Codex re-verified live 2026-09-07; the rest 2026-08-21):
-`gpt-6-astra` is the current Codex flagship, and it supersedes
+Model notes (Claude verified live 2026-09-08, Codex 2026-09-07, the rest
+2026-08-21): Claude Code's flagship is `claude-fable-5-1` (Fable 5.1; the
+`claude-fable-5` id still answers but is the older model). `gpt-6-astra` is
+the current Codex flagship, and it supersedes
 `gpt-5.6-sol`. Effort is a REASONING TIER, never part of the model id —
 pass `-m gpt-6-astra` with `model_reasoning_effort`, since an id like
 `gpt-6-astra-ultra` does not exist. Astra accepts both `ultra` and `xhigh`
