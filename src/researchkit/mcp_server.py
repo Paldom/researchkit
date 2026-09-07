@@ -300,6 +300,42 @@ def get_research_report(project_name: str) -> str:
     return report.read_text(encoding="utf-8")
 
 
+@mcp.tool()
+def get_research_artifact(project_name: str, artifact: str, note: str = "") -> str:
+    """Return one of a project's handoff artifacts as text.
+
+    Args:
+        project_name: Exact project folder name from list_research_projects.
+        artifact: "article" (article.md), "skill" (skill/SKILL.md) or "brain".
+        note: For "brain" only — a brain-relative markdown path such as
+            "notes/topics/<slug>.md" (the index is returned when empty; every
+            note's path is listed there and in the index of each level).
+
+    Returns:
+        The artifact's markdown. list_research_projects reports has_article,
+        has_skill and has_brain per project.
+    """
+    from researchkit.brain import read_brain_file
+
+    project = _find_project(project_name)
+    if artifact == "brain":
+        text = read_brain_file(project.brain_dir, note or "index.md")
+        if text is None:
+            raise ValueError(
+                f"Project {project_name!r} has no brain note {note or 'index.md'!r}"
+            )
+        return text
+    paths = {"article": project.article_path, "skill": project.skill_path}
+    if artifact not in paths:
+        raise ValueError("artifact must be one of: article, skill, brain")
+    if not paths[artifact].is_file():
+        raise ValueError(
+            f"Project {project_name!r} has no {artifact} — the writer skipped it "
+            "or the run predates handoff artifacts."
+        )
+    return paths[artifact].read_text(encoding="utf-8")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="researchkit-mcp",

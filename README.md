@@ -180,6 +180,7 @@ curl -s -X POST http://<host>:8765/mcp \
 | `explore_report(run_id)`                                 | the super-summary once it's done                                       |
 | `research(topic, days, providers, preset)`               | One plain run, blocking (1–5 min)                                      |
 | `list_research_projects()` / `get_research_report(name)` | Read the archive on that machine                                       |
+| `get_research_artifact(name, artifact, note)`            | `article`, `skill`, or `brain` (the index, or one note by path)        |
 
 Explore is start/poll/read rather than one call because a run takes 15–40
 minutes — far longer than any MCP client holds a tool call open. Run ids live

@@ -34,10 +34,40 @@ def test_tools_are_registered() -> None:
         "research",
         "list_research_projects",
         "get_research_report",
+        "get_research_artifact",
         "explore_start",
         "explore_status",
         "explore_report",
     }
+
+
+def test_get_research_artifact_serves_article_skill_and_brain(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    project = _make_project(tmp_path, "20260705_stored")
+    monkeypatch.setattr(mcp_module, "list_projects", lambda _dir: [project])
+    with pytest.raises(ValueError, match="no article"):
+        mcp_module.get_research_artifact("20260705_stored", "article")
+    with pytest.raises(ValueError, match="one of"):
+        mcp_module.get_research_artifact("20260705_stored", "log")
+
+    project.save_article("# Headline")
+    project.save_skill("---\nname: x\n---\n")
+    notes = project.brain_dir / "notes" / "topics"
+    notes.mkdir(parents=True)
+    (project.brain_dir / "index.md").write_text("# Brain index", encoding="utf-8")
+    (notes / "t.md").write_text("topic note", encoding="utf-8")
+    (tmp_path / "secret.md").write_text("nope", encoding="utf-8")
+
+    get = mcp_module.get_research_artifact
+    assert get("20260705_stored", "article") == "# Headline"
+    assert get("20260705_stored", "skill").startswith("---\nname: x")
+    assert get("20260705_stored", "brain") == "# Brain index"
+    assert get("20260705_stored", "brain", "notes/topics/t.md") == "topic note"
+    with pytest.raises(
+        ValueError, match="no brain note"
+    ):  # the brain dir is the boundary
+        get("20260705_stored", "brain", "../../secret.md")
 
 
 def test_research_tool_runs_service(monkeypatch: Any, tmp_path: Path) -> None:
