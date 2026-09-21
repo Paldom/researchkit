@@ -32,12 +32,13 @@ from researchkit.service import SocialResearchService
 # list is the only place to change a flagship. Effort tiers verified live
 # 2026-08-21: grok's ceiling is xhigh (it rejects max); agy bakes effort into
 # the model id; Kimi Code takes it from its own config.toml. Fable 5.1's id
-# verified live 2026-09-08 (`claude -p --model claude-fable-5-1`).
+# verified live 2026-09-08 (`claude -p --model claude-fable-5-1`); grok-4.7
+# listed by `grok models` 2026-09-21.
 MAX_EFFORT_HARNESSES = [
     "claude:claude-fable-5-1@max",
     "codex:gpt-6-astra@ultra",
     "agy:gemini-3.8-flash-high",
-    "grokcli:grok-4.6@xhigh",
+    "grokcli:grok-4.7@xhigh",
     "kimicli:kimi-code/k3",
 ]
 
