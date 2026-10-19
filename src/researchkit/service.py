@@ -130,6 +130,52 @@ def _build_sibling_note(
     return "\n".join(lines)
 
 
+def _super_summary_unavailable_report(reason: str | None) -> str:
+    """Report body for a boosted run whose super-summary never came back."""
+    return (
+        "# Super-summary unavailable\n\n"
+        f"The super-summary writer (Claude Code CLI) failed: {reason or 'unknown'}\n\n"
+        "The sub-project reports under `subprojects/` are complete; "
+        "fix the cause above and re-run to get the integrated article.\n"
+    )
+
+
+_CLAUDE_AUTH_TTL_S = 600.0
+_claude_auth_cache: tuple[float, bool | None, str] | None = None
+
+
+def claude_cli_login_problem() -> str | None:
+    """Why the Claude Code CLI cannot write for us right now, or None.
+
+    Every run ends in Claude Code writers, so a logged-out CLI turns a whole
+    run into raw provider dumps. `claude auth status` is local and free.
+    """
+    # ponytail: 10-min cache; a server process lives for days and auth
+    # changes under it, while a test or CLI run must not probe per call.
+    global _claude_auth_cache
+    import time
+
+    now = time.monotonic()
+    if _claude_auth_cache and now - _claude_auth_cache[0] < _CLAUDE_AUTH_TTL_S:
+        _, logged_in, detail = _claude_auth_cache
+    else:
+        if shutil.which("claude") is None:
+            # Doctor reports a missing binary; here it would only make the
+            # run-start events differ between machines (CI has no claude).
+            logged_in, detail = None, "`claude` not found on PATH"
+        else:
+            from researchkit.doctor import claude_auth_status
+
+            logged_in, detail = claude_auth_status()
+        _claude_auth_cache = (now, logged_in, detail)
+    if logged_in is False:
+        return (
+            f"Claude Code CLI: {detail}. The overview/digest/article/skill "
+            "writers, the council boss and the super-summary will all fail."
+        )
+    return None
+
+
 class SocialResearchService:
     """
     Application/use-case layer for social research.
@@ -343,6 +389,12 @@ class SocialResearchService:
                     "preset": effective_models.preset_name,
                 }
             )
+            if auth_problem := claude_cli_login_problem():
+                logger.error(auth_problem, extra={"stage": "claude_cli_auth_error"})
+                if progress:
+                    progress(
+                        {"stage": "claude_cli_auth_error", "message": auth_problem}
+                    )
 
             aggregator = InsightAggregator(
                 sources=set(req.sources),
@@ -792,6 +844,8 @@ class SocialResearchService:
         from researchkit.council import LLMCouncil
 
         effective_models = self.get_effective_models(preset_name)
+        if auth_problem := claude_cli_login_problem():
+            logger.error(auth_problem, extra={"stage": "claude_cli_auth_error"})
 
         def emit(evt: ProgressEvent) -> None:
             logger.info(
@@ -936,10 +990,13 @@ class SocialResearchService:
             payloads.append(self._subreport_payload(subtopic, art))
 
         super_md: str | None = None
+        reason: str | None = None
         try:
             generator = SuperSummaryGenerator.from_effective_models(effective_models)
             super_md = generator.generate_super_summary(improved_topic, days, payloads)
+            reason = generator.last_error
         except Exception as e:
+            reason = str(e)
             logger.warning(
                 f"Super-summary generation failed: {e}",
                 extra={"stage": "super_summary_error"},
@@ -954,8 +1011,9 @@ class SocialResearchService:
                 "council": council_result.to_dict(),
                 "subprojects": [s.name for s in sub_projects],
                 "super_summary": super_md,
+                "super_summary_error": None if super_md else (reason or "unknown"),
             },
-            super_md or "# Super-summary unavailable\n",
+            super_md or _super_summary_unavailable_report(reason),
         )
         emit(
             {

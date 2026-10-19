@@ -12,6 +12,7 @@ no tokens are spent.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -105,6 +106,45 @@ class _CliProbe:
             return "fail", f"`{binary}` not found on PATH"
         return "ok", note
 
+    def check_claude_auth(self) -> tuple[str, str]:
+        """Status for the Claude Code CLI: binary present AND logged in.
+
+        `claude auth status` is local and free, and a logged-out CLI fails
+        every writer, the council boss and the super-summary of every run.
+        """
+        if self.binary_missing("claude"):
+            return "fail", "`claude` not found on PATH"
+        logged_in, detail = claude_auth_status()
+        if logged_in is False:
+            return "fail", detail
+        return "ok", detail
+
+
+def claude_auth_status(binary: str = "claude") -> tuple[bool | None, str]:
+    """(logged_in, detail) from `claude auth status`; None when unverifiable."""
+    try:
+        proc = run_subprocess([binary, "auth", "status"], timeout=_CLI_TIMEOUT)
+    except Exception as e:  # timeout, spawn failure
+        return None, f"installed (auth not verifiable: {str(e)[:120]})"
+    try:
+        info = json.loads(proc.stdout or "")
+    except ValueError:
+        return (
+            None,
+            "installed (auth not verifiable: `claude auth status` gave no JSON)",
+        )
+    if not isinstance(info, dict):
+        return None, "installed (auth not verifiable: unexpected `claude auth status`)"
+    if not info.get("loggedIn"):
+        return (
+            False,
+            "not logged in — run `claude auth login` (or /login in Claude Code)",
+        )
+    via = ", ".join(
+        str(info[k]) for k in ("authMethod", "subscriptionType") if info.get(k)
+    )
+    return True, "logged in" + (f" ({via})" if via else "")
+
 
 def _model_listed(model: str, output: str) -> bool:
     """True when ``model`` appears as a whole token/name in the CLI output.
@@ -183,9 +223,7 @@ def _check_spec(slot: str, spec: str, probe: _CliProbe) -> CheckResult:
         )
         return CheckResult(slot, spec, status, detail)
     if base.lower().startswith(("claude", "deep")):
-        status, detail = probe.check_binary_only(
-            "claude", "installed (auth/model not verifiable pre-spend)"
-        )
+        status, detail = probe.check_claude_auth()
         return CheckResult(slot, spec, status, detail)
     return _check_api_key(slot, spec, _model_env_vars(base), skippable=False)
 
@@ -220,6 +258,9 @@ def run_doctor(preset_name: str | None = None) -> list[CheckResult]:
     # `deep:` doesn't match is_cli_backed_spec, so route it directly.
     results.append(_check_spec("claude", em.claude, probe))
     results.append(_provider_slot("kimi", em.kimi))
+    # The overview/digest/article/skill writers run on the Claude Code CLI in
+    # EVERY preset, so its login matters even when the claude slot is an API id.
+    results.append(CheckResult("writers", "claude-code", *probe.check_claude_auth()))
 
     # Pipeline model slots: these aren't skipped gracefully — a broken
     # summarizer/improver degrades every run.

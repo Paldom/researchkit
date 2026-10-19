@@ -187,6 +187,51 @@ class TestRunDoctorAndReport:
         assert kimi_member.status == "fail"
 
 
+class TestClaudeAuth:
+    def _with_auth_json(self, monkeypatch: pytest.MonkeyPatch, payload: str) -> None:
+        monkeypatch.setattr(doctor_mod.shutil, "which", lambda b: f"/bin/{b}")
+        monkeypatch.setattr(
+            doctor_mod,
+            "run_subprocess",
+            lambda cmd, **k: (
+                _proc(0, stdout=payload)
+                if cmd[1:] == ["auth", "status"]
+                else _proc(0, stdout="grok-4.6\ngemini-3.8-flash-high\tG\n")
+            ),
+        )
+
+    def test_logged_in(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._with_auth_json(
+            monkeypatch,
+            '{"loggedIn": true, "authMethod": "claude.ai", "subscriptionType": "max"}',
+        )
+        status, detail = _CliProbe().check_claude_auth()
+        assert status == "ok" and detail == "logged in (claude.ai, max)"
+
+    def test_logged_out_fails_the_claude_slot_and_writers(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The Oct 2026 outage: `claude auth status` said loggedIn=false for
+        # nine days while doctor kept printing 18/18 ok.
+        self._with_auth_json(monkeypatch, '{"loggedIn": false}')
+        probe = _CliProbe()
+        assert _check_spec("claude", "claude:claude-opus-5", probe).status == "fail"
+        assert _check_spec("boss", "claude:claude-opus-5@xhigh", probe).status == "fail"
+        writers = next(r for r in run_doctor("harness") if r.slot == "writers")
+        assert writers.status == "fail" and "claude auth login" in writers.detail
+
+    def test_non_json_output_is_unverifiable_not_a_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._with_auth_json(monkeypatch, "unknown command: auth")
+        status, detail = _CliProbe().check_claude_auth()
+        assert status == "ok" and "not verifiable" in detail
+
+    def test_missing_binary_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(doctor_mod.shutil, "which", lambda b: None)
+        assert _CliProbe().check_claude_auth()[0] == "fail"
+
+
 class TestCliRouting:
     def test_every_subparser_is_in_the_instant_mode_guard(self) -> None:
         # A subcommand missing from SUBCOMMANDS silently becomes a PAID

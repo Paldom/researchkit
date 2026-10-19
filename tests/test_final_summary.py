@@ -189,6 +189,39 @@ class TestClaudeFinalSummaryGenerator:
         )
 
         assert result is None
+        assert generator.last_error is not None
+        assert generator.last_error.startswith("timed out after")
+
+    def test_nonzero_exit_records_the_cli_message_not_the_json_blob(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # What a logged-out Claude Code CLI really prints: exit 1 plus the
+        # JSON result envelope; the reason lives in its `result` field.
+        generator = DigestGenerator(model="claude-test", max_budget=0.1)
+        envelope = {
+            "type": "result",
+            "is_error": True,
+            "duration_api_ms": 0,
+            "result": "Failed to authenticate: OAuth session expired",
+        }
+
+        def fake_run(*args, **kwargs) -> SimpleNamespace:
+            return SimpleNamespace(returncode=1, stdout=json.dumps(envelope), stderr="")
+
+        monkeypatch.setattr("researchkit.final_summary.run_subprocess", fake_run)
+        assert generator._run_claude("prompt") is None
+        assert generator.last_error == (
+            "Claude CLI exited with code 1: Failed to authenticate: OAuth session expired"
+        )
+        # A later success clears it.
+        monkeypatch.setattr(
+            "researchkit.final_summary.run_subprocess",
+            lambda *a, **k: SimpleNamespace(
+                returncode=0, stdout=json.dumps({"result": "# ok"}), stderr=""
+            ),
+        )
+        assert generator._run_claude("prompt") == "# ok"
+        assert generator.last_error is None
 
     def test_generate_returns_none_on_cli_error_payload(
         self,
@@ -213,6 +246,7 @@ class TestClaudeFinalSummaryGenerator:
         )
 
         assert result is None
+        assert generator.last_error == "CLI error: failure"
 
     def test_generate_returns_none_on_empty_response(
         self,

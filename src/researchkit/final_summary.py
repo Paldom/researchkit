@@ -106,6 +106,21 @@ def _retry_log(state: Any) -> None:
     )
 
 
+def _cli_error_text(detail: str) -> str:
+    """The human-readable reason inside a failed `claude -p` run.
+
+    A non-zero exit still prints the JSON result envelope; its ``result`` is
+    the message that matters ("Failed to authenticate: OAuth session
+    expired…", "You've hit your weekly limit…"). Fall back to the raw text.
+    """
+    try:
+        payload = json.loads(detail)
+    except ValueError:
+        return detail[:300]
+    result = payload.get("result") if isinstance(payload, dict) else None
+    return (result if isinstance(result, str) else detail)[:300]
+
+
 class ClaudeFinalSummaryGenerator:
     """Shared Claude Code runner for final report summaries."""
 
@@ -119,6 +134,8 @@ class ClaudeFinalSummaryGenerator:
     ) -> None:
         self.model = model
         self.max_budget = max_budget
+        # Why the last run returned None, for callers that write a report.
+        self.last_error: str | None = None
 
     @classmethod
     def from_effective_models(
@@ -354,8 +371,17 @@ class ClaudeFinalSummaryGenerator:
         user_prompt += f"---\n\n{self.get_user_prompt_footer()}"
         return user_prompt
 
+    def _fail(self, message: str) -> None:
+        """Record why this run produced nothing and log it."""
+        self.last_error = message
+        logger.warning(
+            f"{self.__class__.__name__}: {message}",
+            extra={"stage": f"{self.stage_name}_error"},
+        )
+
     def _run_claude(self, user_prompt: str) -> str | None:
         """Run Claude Code CLI and return the summary markdown."""
+        self.last_error = None
         cmd = [
             "claude",
             "-p",
@@ -402,34 +428,23 @@ class ClaudeFinalSummaryGenerator:
                     if result.returncode != 0:
                         detail = (result.stderr or result.stdout or "").strip()
                         raise RuntimeError(
-                            f"Claude CLI exited with code {result.returncode}: {detail}"
+                            f"Claude CLI exited with code {result.returncode}: "
+                            f"{_cli_error_text(detail)}"
                         )
         except FileNotFoundError:
-            logger.warning(
-                f"{self.__class__.__name__}: Claude Code CLI not found",
-                extra={"stage": f"{self.stage_name}_error"},
-            )
+            self._fail("Claude Code CLI not found")
             return None
         except subprocess.TimeoutExpired:
-            logger.warning(
-                f"{self.__class__.__name__}: timed out after {timeout:.0f}s",
-                extra={"stage": f"{self.stage_name}_error"},
-            )
+            self._fail(f"timed out after {timeout:.0f}s")
             return None
         except RuntimeError as e:
-            logger.warning(
-                f"{self.__class__.__name__}: {e}",
-                extra={"stage": f"{self.stage_name}_error"},
-            )
+            self._fail(str(e))
             return None
 
         try:
             output: dict[str, Any] = json.loads(result.stdout)
             if output.get("is_error"):
-                logger.warning(
-                    f"{self.__class__.__name__}: CLI error: {output.get('result', 'unknown')}",
-                    extra={"stage": f"{self.stage_name}_error"},
-                )
+                self._fail(f"CLI error: {output.get('result', 'unknown')}")
                 return None
             result_text = output.get("result", result.stdout.strip())
             text = result_text if isinstance(result_text, str) else str(result_text)
@@ -437,10 +452,7 @@ class ClaudeFinalSummaryGenerator:
             text = result.stdout.strip()
 
         if not text:
-            logger.warning(
-                f"{self.__class__.__name__}: empty response",
-                extra={"stage": f"{self.stage_name}_error"},
-            )
+            self._fail("empty response")
             return None
 
         logger.info(
