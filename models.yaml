@@ -186,7 +186,7 @@ presets:
       grok: grokcli:grok-4.7
       perplexity: sonar # unused
       tavily: tavily-search # unused
-      claude: claude:claude-sonnet-5 # the four writers (overview, digest, article, skill) run here
+      claude: claude:claude-sonnet-5-5 # the four writers (overview, digest, article, skill) run here
       github: gpt-5.4-mini # unused
       glm: glm-5.3 # unused
       kimi: kimicli:kimi-code/k3
