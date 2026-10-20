@@ -181,18 +181,18 @@ presets:
     # claude research slots and a RESEARCHKIT_CLI_TIMEOUT cap on stragglers.
     description: Subscription-only, time-boxed — the harness preset without the slow outliers (no Codex research, Sonnet writes the summaries, council without Codex)
     models:
-      openai: codex:gpt-6-astra # kept for parity; explore-fast does not run this slot
+      openai: codex:gpt-6.1-sol # kept for parity; explore-fast does not run this slot
       gemini: agy:gemini-3.8-flash-high
-      grok: grokcli:grok-4.6
+      grok: grokcli:grok-4.7
       perplexity: sonar # unused
       tavily: tavily-search # unused
       claude: claude:claude-sonnet-5 # the four writers (overview, digest, article, skill) run here
       github: gpt-5.4-mini # unused
       glm: glm-5.3 # unused
       kimi: kimicli:kimi-code/k3
-      summarizer: codex:gpt-6-astra # one long-prompt completion, not a research loop: fast enough
-      site_summarizer: codex:gpt-6-astra
-      improver: codex:gpt-6-astra
+      summarizer: codex:gpt-6.1-sol # one long-prompt completion, not a research loop: fast enough
+      site_summarizer: codex:gpt-6.1-sol
+      improver: codex:gpt-6.1-sol
     reasoning_effort: high
     perplexity_search_type: fast
     tavily_search_depth: fast
@@ -201,9 +201,9 @@ presets:
       members:
         - claude:claude-sonnet-5@high
         - agy:gemini-3.8-flash-high
-        - grokcli:grok-4.6@high
+        - grokcli:grok-4.7@high
         - kimicli:kimi-code/k3
-      boss: claude:claude-opus-5@high # one synthesis call; quality matters more than the minutes here
+      boss: claude:claude-opus-5-5@high # one synthesis call; quality matters more than the minutes here
     boost:
       enabled: true
       max_subprojects: 3
@@ -214,18 +214,18 @@ presets:
   hybrid:
     description: Harnesses + search APIs + site research combined — CLI subscriptions for reasoning, API endpoints for breadth
     models:
-      openai: codex:gpt-6-astra # harness (ChatGPT subscription)
+      openai: codex:gpt-6.1-sol # harness (ChatGPT subscription)
       gemini: gemini-3.8-flash # API — keeps one fast native search-grounded provider
-      grok: grokcli:grok-4.6 # harness (grok.com subscription)
+      grok: grokcli:grok-4.7 # harness (grok.com subscription)
       perplexity: sonar # search API
       tavily: tavily-search # search API
-      claude: claude:claude-opus-5 # harness (Claude subscription)
+      claude: claude:claude-opus-5-5 # harness (Claude subscription)
       github: gpt-5.4-mini
       glm: glm-5.3
       kimi: kimicli:kimi-code/kimi-for-coding # harness (kimi.com subscription; K2.7, faster than k3)
-      summarizer: codex:gpt-6-astra # meta-summary on the CLI
+      summarizer: codex:gpt-6.1-sol # meta-summary on the CLI
       site_summarizer: gemini-3.5-flash-lite # API: site research is high-volume, keep it fast/cheap
-      improver: codex:gpt-6-astra # keyword synthesis / improve-topic on the CLI
+      improver: codex:gpt-6.1-sol # keyword synthesis / improve-topic on the CLI
     reasoning_effort: high
     perplexity_search_type: fast
     tavily_search_depth: advanced
@@ -233,11 +233,11 @@ presets:
     council:
       members:
         - claude:claude-fable-5-1@xhigh
-        - codex:gpt-6-astra@xhigh
+        - codex:gpt-6.1-sol@xhigh
         - gemini-3.8-flash # API member — mixing works here too
-        - grokcli:grok-4.6
+        - grokcli:grok-4.7
         - kimicli:kimi-code/kimi-for-coding
-      boss: claude:claude-opus-5@xhigh
+      boss: claude:claude-opus-5-5@xhigh
     boost:
       enabled: false
       max_subprojects: 4
