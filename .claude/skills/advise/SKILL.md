@@ -38,9 +38,9 @@ requiring repo file access — members answer from model knowledge only.
    answer — if the user wants synthesis, run `/council` instead.
 
 Default members come from the `harness` preset in `models.yaml`
-(claude:claude-opus-5@xhigh, codex:gpt-6-astra@xhigh,
-agy:gemini-3.8-flash-high, grokcli:grok-4.6, kimicli:kimi-code/k3).
-Override per run: `--harnesses codex:gpt-6-astra grokcli:grok-4.6` (a
+(claude:claude-opus-5-5@xhigh, codex:gpt-6.1-sol@xhigh,
+agy:gemini-3.8-flash-high, grokcli:grok-4.7, kimicli:kimi-code/k3).
+Override per run: `--harnesses codex:gpt-6.1-sol grokcli:grok-4.7` (a
 `@<effort>` suffix sets reasoning effort where the CLI supports it).
 `uv run researchkit doctor --preset harness` verifies every pin before
 spending anything.

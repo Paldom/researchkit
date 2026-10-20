@@ -33,7 +33,7 @@ from researchkit.service import SocialResearchService
 # 2026-08-21: grok's ceiling is xhigh (it rejects max); agy bakes effort into
 # the model id; Kimi Code takes it from its own config.toml. Fable 5.1's id
 # verified live 2026-09-08 (`claude -p --model claude-fable-5-1`); grok-4.7
-# listed by `grok models` 2026-09-21.
+# listed by `grok models` 2026-09-21. Updating pins: see AGENTS.md.
 MAX_EFFORT_HARNESSES = [
     "claude:claude-fable-5-1@max",
     "codex:gpt-6-astra@ultra",

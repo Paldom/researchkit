@@ -143,7 +143,7 @@ class TestRunDoctorAndReport:
             doctor_mod,
             "run_subprocess",
             lambda cmd, **k: _proc(
-                0, stdout="grok-4.6\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+                0, stdout="grok-4.7\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
             ),
         )
         results = run_doctor("harness")
@@ -177,7 +177,7 @@ class TestRunDoctorAndReport:
             doctor_mod,
             "run_subprocess",
             lambda cmd, **k: _proc(
-                0, stdout="grok-4.6\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+                0, stdout="grok-4.7\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
             ),
         )
         results = run_doctor("harness")

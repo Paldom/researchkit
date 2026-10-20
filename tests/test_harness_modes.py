@@ -426,10 +426,10 @@ class TestHarnessPreset:
 
         em = SystemConfigManager().resolve_effective_models("harness")
         assert em.council_members == [
-            "claude:claude-opus-5@xhigh",
-            "codex:gpt-6-astra@xhigh",
+            "claude:claude-opus-5-5@xhigh",
+            "codex:gpt-6.1-sol@xhigh",
             "agy:gemini-3.8-flash-high",
-            "grokcli:grok-4.6",
+            "grokcli:grok-4.7",
             "kimicli:kimi-code/k3",
         ]
 
@@ -474,7 +474,7 @@ class TestClaudeSpecHelpers:
 
         em = SystemConfigManager().resolve_effective_models("harness")
         gen = ClaudeFinalSummaryGenerator.from_effective_models(em)
-        assert gen.model == "claude-opus-5"
+        assert gen.model == "claude-opus-5-5"
 
 
 class TestSuperSummaryEffortStripping:
@@ -486,7 +486,7 @@ class TestSuperSummaryEffortStripping:
 
         em = SystemConfigManager().resolve_effective_models("harness")
         gen = SuperSummaryGenerator.from_effective_models(em)
-        assert gen.model == "claude-opus-5"
+        assert gen.model == "claude-opus-5-5"
 
 
 class TestCliOnlyCouncilFallback:
@@ -549,7 +549,7 @@ class TestSlotCliRouting:
 
         imp = PromptImprover.from_system_config(HarnessMgr())  # type: ignore[arg-type]
         assert imp.provider == "cli"
-        assert imp.model == "codex:gpt-6-astra"
+        assert imp.model == "codex:gpt-6.1-sol"
 
     def test_keyword_synthesizer_cli_spec(
         self, monkeypatch: pytest.MonkeyPatch

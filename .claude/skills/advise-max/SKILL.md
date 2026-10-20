@@ -35,8 +35,8 @@ deserve it.
 Model notes (Claude verified live 2026-09-08, Codex 2026-09-07, the rest
 2026-08-21): Claude Code's flagship is `claude-fable-5-1` (Fable 5.1; the
 `claude-fable-5` id still answers but is the older model). `gpt-6-astra` is
-the current Codex flagship, and it supersedes
-`gpt-5.6-sol`. Effort is a REASONING TIER, never part of the model id —
+the advise-max Codex pick (it supersedes `gpt-5.6-sol`; the `harness`
+preset runs the newer `gpt-6.1-sol` for research). Effort is a REASONING TIER, never part of the model id —
 pass `-m gpt-6-astra` with `model_reasoning_effort`, since an id like
 `gpt-6-astra-ultra` does not exist. Astra accepts both `ultra` and `xhigh`
 (both answered a probe cleanly); `ultra` is what this skill uses and
@@ -45,8 +45,8 @@ pass `-m gpt-6-astra` with `model_reasoning_effort`, since an id like
 `agy:gemini-3.8-flash-high` — no quoting, and a `@high` suffix does
 nothing. The Grok CLI's effort ceiling rose to `xhigh` (`max` is still
 rejected: "use one of: xhigh, high, medium, low"); `grok models` offers
-`grok-4.7`, `grok-4.7-build-fast`, `grok-4.6` (its default) and `grok-4.5`
-(listed 2026-09-21). Kimi Code has no effort flag —
+`grok-4.7` (default since 2026-10-20), `grok-4.7-build-fast`, `grok-4.6` and
+`grok-4.5`. Kimi Code has no effort flag —
 `kimicli:kimi-code/k3` runs at the CLI config's `[thinking]` effort. Effort
 tiers and model ids drift — `uv run researchkit doctor --preset harness`
 catches dead pins in seconds, and when a member fails with an "unknown

@@ -138,18 +138,18 @@ presets:
   harness:
     description: Subscription-only — every step runs on logged-in CLI harnesses (Codex, Antigravity, Grok CLI, Kimi Code CLI, Claude Code); no API keys. Used by `advise`/`council`/`explore` and the UI's "harness only" mode.
     models:
-      openai: codex:gpt-6-astra # Codex CLI, ChatGPT-subscription billing
+      openai: codex:gpt-6.1-sol # Codex CLI, ChatGPT-subscription billing
       gemini: agy:gemini-3.8-flash-high # Antigravity CLI, Google account (`agy models` lists ids; effort is baked into the id)
-      grok: grokcli:grok-4.6 # Grok CLI, grok.com subscription (`grok models` lists ids)
+      grok: grokcli:grok-4.7 # Grok CLI, grok.com subscription (`grok models` lists ids)
       perplexity: sonar # unused: not in the harness provider set
       tavily: tavily-search # unused
-      claude: claude:claude-opus-5 # Claude Code CLI, Claude subscription
+      claude: claude:claude-opus-5-5 # Claude Code CLI, Claude subscription
       github: gpt-5.4-mini # unused
       glm: glm-5.3 # unused
       kimi: kimicli:kimi-code/k3 # Kimi Code CLI, kimi.com subscription
-      summarizer: codex:gpt-6-astra # meta-summary via CLI (no API key; codex handles long prompts reliably)
-      site_summarizer: codex:gpt-6-astra # CLI too (site research off by default in harness flows; connector SEARCH keys still apply if enabled)
-      improver: codex:gpt-6-astra # CLI too (keyword synthesis / improve-topic without OpenAI key)
+      summarizer: codex:gpt-6.1-sol # meta-summary via CLI (no API key; codex handles long prompts reliably)
+      site_summarizer: codex:gpt-6.1-sol # CLI too (site research off by default in harness flows; connector SEARCH keys still apply if enabled)
+      improver: codex:gpt-6.1-sol # CLI too (keyword synthesis / improve-topic without OpenAI key)
     reasoning_effort: xhigh # codex/claude/grokcli honor it; agy has no effort control
     perplexity_search_type: fast
     tavily_search_depth: fast
@@ -157,12 +157,12 @@ presets:
     council:
       # <spec>@<effort> sets per-member reasoning effort where supported.
       members:
-        - claude:claude-opus-5@xhigh
-        - codex:gpt-6-astra@xhigh
+        - claude:claude-opus-5-5@xhigh
+        - codex:gpt-6.1-sol@xhigh
         - agy:gemini-3.8-flash-high # effort is part of the agy model id
-        - grokcli:grok-4.6
+        - grokcli:grok-4.7
         - kimicli:kimi-code/k3 # effort comes from the CLI's config.toml [thinking]
-      boss: claude:claude-opus-5@xhigh
+      boss: claude:claude-opus-5-5@xhigh
     boost:
       enabled: true
       max_subprojects: 3 # harness sub-runs are slow; keep the fan-out tight

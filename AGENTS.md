@@ -58,6 +58,32 @@ Every live run spends. Test with the smallest thing that proves the change:
   fan out into many sub-runs. Cost scales with the fan-out, not with how
   long you waited.
 
+## Updating model pins
+
+Model ids drift; two places own them:
+
+- **Harness preset** (`advise`/`council`/`explore`, UI "harness only"): the
+  `harness:` block in `models.yaml` — research slots, summarizer/improver,
+  council members and boss.
+- **Flagship set** (`advise --max`, `advise-session --max`, the advise-max
+  skill): `MAX_EFFORT_HARNESSES` in `src/researchkit/cli.py`.
+
+Steps:
+
+1. List what each CLI offers today (no model calls, free): `grok models`,
+   `agy models`, codex reads `~/.codex/models_cache.json` (slug +
+   `supported_reasoning_levels`), kimi aliases live in its `config.toml`.
+   Claude Code has no list — ids come from Anthropic's model docs.
+2. Edit the pins above. Effort is `@<tier>`, never part of the id (except
+   agy, which bakes it into the id).
+3. Sync the prose that names them: `README.md` (harness defaults line) and
+   `.claude/skills/{advise,advise-max,council,explore}/SKILL.md`; grep the old
+   id to catch the rest.
+4. `uv run researchkit doctor --preset harness` flags dead pins in seconds.
+5. Re-copy the changed skills to the global install (real folders, not
+   symlinks): `cp .claude/skills/<name>/SKILL.md ~/.agents/skills/<name>/`.
+6. Run the full gate.
+
 ## Strictness policy — exemptions only shrink
 
 This repo is strict from day one. Never loosen a gate to get green:
