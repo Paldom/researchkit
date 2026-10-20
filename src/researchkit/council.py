@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -36,7 +35,7 @@ from researchkit.prompts import (
     get_council_member_system_prompt,
     get_council_member_user_prompt,
 )
-from researchkit.safe_io import run_subprocess
+from researchkit.safe_io import claude_subscription_env, run_subprocess
 from researchkit.utils import extract_json_object
 
 if TYPE_CHECKING:
@@ -377,9 +376,7 @@ def _run_claude_cli(
     ]
     if effort:
         cmd += ["--effort", effort]
-    env = {**os.environ}
-    env.pop("ANTHROPIC_API_KEY", None)
-    env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+    env = claude_subscription_env()
     # Own process group + kill-on-timeout (C2), UTF-8 decode (L26).
     proc = run_subprocess(
         cmd,

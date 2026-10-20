@@ -72,7 +72,8 @@ Environment variables required:
   PERPLEXITY_API_KEY  - For Perplexity Sonar Pro
   ZAI_API_KEY         - For z.ai GLM (search provider + generic model)
   TAVILY_API_KEY      - For Tavily search (optional)
-  ANTHROPIC_API_KEY   - For Claude Code with web search (optional)
+  (Claude)            - none: Claude Code runs on your claude.ai login;
+                        ANTHROPIC_API_KEY is never used
   GITHUB_TOKEN        - For GitHub search (optional, higher rate limits)
 
 Site Research (optional):
@@ -205,7 +206,7 @@ Site Research (optional):
         nargs="+",
         default=None,
         help=(
-            "Member specs override, e.g. claude:claude-opus-5@xhigh codex:gpt-6-astra "
+            "Member specs override, e.g. claude:claude-opus-5-5@xhigh codex:gpt-6-astra "
             "(default: the harness preset's council members)"
         ),
     )

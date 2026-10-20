@@ -75,9 +75,10 @@ keeps Codex and Opus and takes 30-90 minutes), quick opinions (`/advise`,
 - Codex's research report — the deepest single read, and the slowest.
 - Opus as a researcher and as the writer of the summaries (the boss that
   writes the super-summary stays on `claude-opus-5-5@high`).
-- Nothing else: site research is off in both skills (its connectors are
-  API-key paths, and a web UI connector was the 86-minute outlier in the
-  last full explore).
+- Nothing else: site research is off in both skills (Exa is a search API
+  that keeps runs from being zero-key, and a web UI connector was the
+  86-minute outlier in the last full explore). `harness-fast` is
+  `harness_only`, so no LLM step can fall back to an API.
 
 ## Failure modes
 

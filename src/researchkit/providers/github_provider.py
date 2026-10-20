@@ -58,7 +58,10 @@ class GitHubProvider(BaseProvider):
             api_key: GitHub personal access token (defaults to GITHUB_TOKEN env var).
                      Optional — unauthenticated API allows 10 req/min.
             sources: Set of sources to query (unused, kept for interface compat).
-            model: OpenAI model for site-restricted web search.
+            model: OpenAI model for site-restricted web search. A CLI harness
+                   spec (``codex:<m>``, ``claude:<m>``, ...) instead runs the
+                   provider subscription-only: GitHub REST search plus analysis
+                   on that harness; the API-only github.com web search is skipped.
             improver_model: Model for relevance analysis and summary.
             keywords: User-supplied keywords from the central keyword pipeline.
                       If empty, the topic is used as the search query.
@@ -67,6 +70,11 @@ class GitHubProvider(BaseProvider):
         self.sources = sources or {"social", "web"}
         self.search_model = model or "gpt-5.5"
         self.improver_model = improver_model or model or "gpt-5.5"
+        # ponytail: harness mode drops the github.com web-search phase (OpenAI
+        # Responses API only); add a CLI web-search route if REST recall is short.
+        self.harness = is_cli_backed_spec(self.search_model)
+        if self.harness:
+            self.improver_model = self.search_model
         self.model_name = f"github-search + {self.improver_model}"
         self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
         self.keywords = keywords or []
@@ -256,7 +264,7 @@ class GitHubProvider(BaseProvider):
         Returns:
             Tuple of (Source list, raw response text).
         """
-        if not self.openai_api_key:
+        if self.harness or not self.openai_api_key:
             return [], ""
 
         try:
@@ -509,7 +517,7 @@ class GitHubProvider(BaseProvider):
         """Fetch insights from GitHub API + OpenAI site search."""
         self._log_start()
 
-        if not self.openai_api_key:
+        if not self.openai_api_key and not self.harness:
             return self._create_error_result(
                 "OPENAI_API_KEY not set (required for GitHub provider)"
             )
@@ -527,7 +535,8 @@ class GitHubProvider(BaseProvider):
             api_sources, api_context = self._search_github_api(keywords, days)
 
             # Phase 3: OpenAI site-restricted search (topic-based)
-            self._log_query("OpenAI github.com")
+            if not self.harness:
+                self._log_query("OpenAI github.com")
             openai_sources, openai_text = self._search_openai_github(topic, days)
 
             # Phase 4: Merge, analyze, summarize

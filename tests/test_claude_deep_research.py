@@ -6,6 +6,8 @@ import json
 import subprocess
 from unittest.mock import patch
 
+import pytest
+
 from researchkit.providers.base import SourceType
 from researchkit.providers.claude_provider import (
     ClaudeProvider,
@@ -213,7 +215,7 @@ class TestFinalSummaryUnwrapsDeepSpec:
 
         em = SimpleNamespace(claude="deep", claude_max_budget=5.0)
         gen = DigestGenerator.from_effective_models(em)  # type: ignore[arg-type]
-        assert gen.model == "claude-sonnet-5"
+        assert gen.model == "claude-sonnet-5-5"
 
     def test_plain_model_passes_through(self) -> None:
         from types import SimpleNamespace
@@ -224,3 +226,31 @@ class TestFinalSummaryUnwrapsDeepSpec:
         gen = DigestGenerator.from_effective_models(em)  # type: ignore[arg-type]
         assert gen.model == "claude-opus-4-8"
         assert gen.max_budget == 7.0
+
+
+class TestPlainCliRun:
+    def test_labels_the_harness_and_strips_api_routes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # provider_models must read `claude:<model>`: a plain id means API
+        # billing, and this slot only ever runs on the Claude Code CLI.
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+        monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+        p = ClaudeProvider(model="claude-opus-5-5", sources={"web"})
+        done = subprocess.CompletedProcess(
+            args=["claude"],
+            returncode=0,
+            stdout=json.dumps({"result": "See https://example.com/a"}),
+            stderr="",
+        )
+        with patch(
+            "researchkit.providers.claude_provider._run_claude_cli_with_retry",
+            return_value=done,
+        ) as run:
+            result = p.fetch_insights("ai agents", 7)
+
+        assert result.error is None
+        assert result.model == "claude:claude-opus-5-5"
+        env = run.call_args.kwargs["env"]
+        assert "ANTHROPIC_API_KEY" not in env
+        assert "CLAUDE_CODE_USE_BEDROCK" not in env

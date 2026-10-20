@@ -58,8 +58,10 @@ harness path trades breadth for depth (agents that actually read pages).
 
 Defaults come from the `harness` preset in `models.yaml` (providers
 codex:gpt-6.1-sol / agy:gemini-3.8-flash-high / grokcli:grok-4.7 /
-kimicli:kimi-code/k3 / claude:claude-opus-5-5; site research off — its
-connectors are API-key paths). `--preset <name>` swaps the whole model set.
+kimicli:kimi-code/k3 / claude:claude-opus-5-5; site research off to keep
+the run zero-key). The preset is `harness_only`: a run whose LLM steps would
+bill an API is refused before it spends, and Claude only ever runs on the
+Claude Code login. `--preset <name>` swaps the whole model set.
 `uv run researchkit doctor --preset harness` verifies every pin first — a
 20-minute run is a bad place to discover a dead model id.
 

@@ -231,6 +231,63 @@ class TestClaudeAuth:
         monkeypatch.setattr(doctor_mod.shutil, "which", lambda b: None)
         assert _CliProbe().check_claude_auth()[0] == "fail"
 
+    def test_api_billed_login_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # apiKeyHelper lives in Claude Code settings, out of the env scrub's reach.
+        self._with_auth_json(
+            monkeypatch,
+            '{"loggedIn": true, "authMethod": "api_key", "apiKeySource": "apiKeyHelper"}',
+        )
+        status, detail = _CliProbe().check_claude_auth()
+        assert status == "fail" and "apiKeyHelper" in detail
+
+    def test_cloud_provider_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._with_auth_json(
+            monkeypatch,
+            '{"loggedIn": true, "authMethod": "claude.ai", "apiProvider": "bedrock"}',
+        )
+        status, detail = _CliProbe().check_claude_auth()
+        assert status == "fail" and "bedrock" in detail
+
+    def test_status_runs_with_the_subscription_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+        seen: dict[str, Any] = {}
+
+        def run(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess:
+            seen.update(kw)
+            return _proc(0, stdout='{"loggedIn": true, "authMethod": "claude.ai"}')
+
+        monkeypatch.setattr(doctor_mod, "run_subprocess", run)
+        assert doctor_mod.claude_auth_status()[0] is True
+        assert "ANTHROPIC_API_KEY" not in seen["env"]
+
+
+class TestHarnessOnly:
+    def test_pipeline_api_step_fails_and_api_only_provider_warns(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from dataclasses import replace
+
+        from researchkit.system_config import SystemConfigManager
+
+        em = replace(
+            SystemConfigManager().resolve_effective_models("harness"),
+            summarizer="gemini-3.8-flash",
+        )
+        results = [CheckResult("glm", "glm-5.3", "ok", "ZAI_API_KEY set")]
+        out = {r.slot: r for r in doctor_mod._apply_harness_only(em, results)}
+        assert out["glm"].status == "warn" and "refuses" in out["glm"].detail
+        assert out["summarizer"].status == "fail"
+        assert len(out) == 2  # glm replaced in place, summarizer appended
+
+    def test_non_harness_preset_is_untouched(self) -> None:
+        from researchkit.system_config import SystemConfigManager
+
+        em = SystemConfigManager().resolve_effective_models("default")
+        results = [CheckResult("glm", "glm-5.3", "ok")]
+        assert doctor_mod._apply_harness_only(em, results) == results
+
 
 class TestCliRouting:
     def test_every_subparser_is_in_the_instant_mode_guard(self) -> None:

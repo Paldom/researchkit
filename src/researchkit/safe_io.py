@@ -136,6 +136,7 @@ _SECRET_ENV_KEYS = frozenset(
         "MOONSHOT_API_KEY",
         "KIMI_API_KEY",
         "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
         "TAVILY_API_KEY",
         "EXA_API_KEY",
         "BRAVE_API_KEY",
@@ -203,6 +204,36 @@ def scrubbed_env(*, keep: frozenset[str] = frozenset()) -> dict[str, str]:
     """
     remove = _SECRET_ENV_KEYS - keep
     return {k: v for k, v in os.environ.items() if k not in remove}
+
+
+# Env vars that move Claude Code off the logged-in claude.ai subscription onto
+# API-key, gateway or cloud billing. researchkit runs Claude only as a harness,
+# so every `claude` subprocess drops them; CLAUDE_CODE_OAUTH_TOKEN (a
+# subscription token from `claude setup-token`) is deliberately kept.
+CLAUDE_API_ROUTE_ENV_KEYS = frozenset(
+    {
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_BASE_URL",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+        "CLAUDE_CODE_USE_MANTLE",
+    }
+)
+
+
+def claude_subscription_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    """Env for a `claude` subprocess that can only bill the subscription.
+
+    Copies ``base`` (default ``os.environ``) without
+    :data:`CLAUDE_API_ROUTE_ENV_KEYS` and turns off Claude Code's
+    non-essential traffic.
+    """
+    source = os.environ if base is None else base
+    env = {k: v for k, v in source.items() if k not in CLAUDE_API_ROUTE_ENV_KEYS}
+    env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+    return env
 
 
 # ---------------------------------------------------------------------------

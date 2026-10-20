@@ -9,54 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `advise-session` — `advise` with a memory. Each harness answers inside a
-  persistent conversation pinned to a working directory, with read-only
-  access to it, and the command returns one researchkit session id the
-  caller holds instead of five per-vendor ids. Follow up with
-  `--session <id>`; `--list` shows what is open. Every CLI's resume path was
-  verified live (`claude -r`, `codex exec resume`, `grok -r`, `kimi -r`,
-  `agy --conversation`). Ships as an Agent Skill alongside the others.
-- Two more keyless providers: **arXiv** (`--providers arxiv`) for preprints,
-  which land months before peer review indexes them, and **Stack Exchange**
-  (`--providers stackexchange`) for vote-scored practitioner Q&A. Reddit and
-  Polymarket were evaluated and deliberately left out: Reddit's JSON API now
-  returns 403 without OAuth (it belongs in the browser-session plugin, not a
-  keyless provider), and Polymarket was unreachable from here, so shipping it
-  would have meant shipping something unverified.
-- Engagement-ranked providers now say so in their own output: points and
-  install counts measure attention and adoption, never correctness. Taken
-  from an `explore` run's own finding that link validity (>94%) and relevance
-  (>80%) diverge sharply from claim-level factual support (39–77%).
-- Two keyless providers, both scored by engagement rather than relevance —
-  the idea worth taking from `mvanhorn/last30days-skill`. **Hacker News**
-  (`--providers hackernews`) ranks windowed stories by points, citing the
-  thread and the submitted article separately. **skills.sh**
-  (`--providers skillsh`) ranks the Agent Skills directory by real install
-  counts, self-gating to "not relevant" the way OpenAlex does.
-- `run --since-last`: an update run that narrows the window to the time
-  elapsed since the previous run and archives the old report and result
-  under `history/`, so successive runs are diffable. The narrowed window is
-  in-memory only — a project's declared window is not a property of one
-  update.
-- `--clone-repos`: shallow-clones the GitHub/skills.sh repositories a run
-  cited into `repos/` and writes `repos/SUMMARY.md`. A cited repo archived
-  as an HTML page loses the one thing worth having; deep links collapse to
-  their repo, non-repo namespaces are rejected, and a repo that will not
-  clone is recorded with its reason.
-- `explore` now runs every keyless provider (Hacker News, skills.sh, arXiv,
-  Stack Exchange, OpenAlex) alongside the five CLI harnesses — they need no
-  API key, so the zero-key guarantee holds — and accepts `--providers` /
-  `--clone-repos`. The web UI's "Harness only" toggle was widened to the
-  same set, so the toggle and the CLI now produce the same research.
-- `advise --max` / `advise-session --max` select each harness's flagship at
-  its top reasoning tier (the `advise-max` set), defined once in
-  `MAX_EFFORT_HARNESSES` so the two commands and the skill cannot drift.
-  Not the default for sessions: at `@max`/`@ultra` one turn can run past ten
-  minutes, and a session exists to be asked several questions.
-- `repos/SUMMARY.md` now opens with a model-written section on what the
-  cloned repositories contribute _to this topic_; the structural facts say
-  what a repo is, not why it mattered. Falls back to the structural summary
-  alone when the model is unavailable.
+- `harness_only: true` preset flag (set on `harness` and `harness-fast`):
+  every LLM step a run uses — the research slots it selects, summarizers,
+  improver, council and boss — must be a CLI harness spec. A run that would
+  bill an LLM API is refused before it spends, naming each `slot=spec`;
+  `researchkit doctor` reports the same up front. Search APIs (Perplexity,
+  Tavily, Brave, Exa) stay allowed. `glm` has no harness route and is
+  refused when selected on these presets.
+- The GitHub provider runs subscription-only when its slot holds a CLI spec:
+  GitHub REST search plus analysis on that harness, without the OpenAI-API
+  github.com web search. `harness`/`harness-fast` now set
+  `github: codex:gpt-6.1-sol`.
 
 ### Changed
 
@@ -109,6 +72,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the documented default rather than a stale surprise.
 
 ### Fixed
+
+- Claude runs only as a harness, never on an API: every `claude` subprocess
+  (research slot, writers, council, boss, `advise-session`, the doctor and
+  run-start auth checks) now strips `ANTHROPIC_API_KEY`,
+  `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` and the Bedrock / Vertex /
+  Foundry / Mantle switches through one shared env builder. Before, only
+  `ANTHROPIC_API_KEY` was removed, and doctor checked auth with the
+  unscrubbed env. `doctor` now fails the Claude checks when Claude Code would
+  still bill an API (an `apiKeyHelper` in its settings, a cloud provider).
+- `provider_models` in `result.json` records the Claude slot as
+  `claude:<model>`, not a plain id that read as API billing.
+- Stale Claude ids: `claude-sonnet-5` / `claude-opus-5` fallbacks and pins
+  (including the `harness-fast` council member) move to `claude-sonnet-5-5`
+  / `claude-opus-5-5`.
+
+- `advise-session` — `advise` with a memory. Each harness answers inside a
+  persistent conversation pinned to a working directory, with read-only
+  access to it, and the command returns one researchkit session id the
+  caller holds instead of five per-vendor ids. Follow up with
+  `--session <id>`; `--list` shows what is open. Every CLI's resume path was
+  verified live (`claude -r`, `codex exec resume`, `grok -r`, `kimi -r`,
+  `agy --conversation`). Ships as an Agent Skill alongside the others.
+- Two more keyless providers: **arXiv** (`--providers arxiv`) for preprints,
+  which land months before peer review indexes them, and **Stack Exchange**
+  (`--providers stackexchange`) for vote-scored practitioner Q&A. Reddit and
+  Polymarket were evaluated and deliberately left out: Reddit's JSON API now
+  returns 403 without OAuth (it belongs in the browser-session plugin, not a
+  keyless provider), and Polymarket was unreachable from here, so shipping it
+  would have meant shipping something unverified.
+- Engagement-ranked providers now say so in their own output: points and
+  install counts measure attention and adoption, never correctness. Taken
+  from an `explore` run's own finding that link validity (>94%) and relevance
+  (>80%) diverge sharply from claim-level factual support (39–77%).
+- Two keyless providers, both scored by engagement rather than relevance —
+  the idea worth taking from `mvanhorn/last30days-skill`. **Hacker News**
+  (`--providers hackernews`) ranks windowed stories by points, citing the
+  thread and the submitted article separately. **skills.sh**
+  (`--providers skillsh`) ranks the Agent Skills directory by real install
+  counts, self-gating to "not relevant" the way OpenAlex does.
+- `run --since-last`: an update run that narrows the window to the time
+  elapsed since the previous run and archives the old report and result
+  under `history/`, so successive runs are diffable. The narrowed window is
+  in-memory only — a project's declared window is not a property of one
+  update.
+- `--clone-repos`: shallow-clones the GitHub/skills.sh repositories a run
+  cited into `repos/` and writes `repos/SUMMARY.md`. A cited repo archived
+  as an HTML page loses the one thing worth having; deep links collapse to
+  their repo, non-repo namespaces are rejected, and a repo that will not
+  clone is recorded with its reason.
+- `explore` now runs every keyless provider (Hacker News, skills.sh, arXiv,
+  Stack Exchange, OpenAlex) alongside the five CLI harnesses — they need no
+  API key, so the zero-key guarantee holds — and accepts `--providers` /
+  `--clone-repos`. The web UI's "Harness only" toggle was widened to the
+  same set, so the toggle and the CLI now produce the same research.
+- `advise --max` / `advise-session --max` select each harness's flagship at
+  its top reasoning tier (the `advise-max` set), defined once in
+  `MAX_EFFORT_HARNESSES` so the two commands and the skill cannot drift.
+  Not the default for sessions: at `@max`/`@ultra` one turn can run past ten
+  minutes, and a session exists to be asked several questions.
+- `repos/SUMMARY.md` now opens with a model-written section on what the
+  cloned repositories contribute _to this topic_; the structural facts say
+  what a repo is, not why it mattered. Falls back to the structural summary
+  alone when the model is unavailable.
 
 - Harness CLI calls no longer die to the stopwatch mid-answer. Every
   coding-agent CLI carried its own floor (codex 300s, grokcli/kimicli 300s,

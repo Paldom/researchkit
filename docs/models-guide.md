@@ -11,11 +11,12 @@ preset picker and "Harness only" toggle set the same thing).
 presets:
   my-preset:
     description: One line shown in the CLI/UI
+    harness_only: false # true = every LLM step must run on a CLI harness
     models:
       openai: gpt-5.4-mini # provider slots — one per provider
       gemini: agy:gemini-3.8-flash-high
-      grok: grokcli:grok-4.6
-      claude: claude:claude-sonnet-5
+      grok: grokcli:grok-4.7
+      claude: claude:claude-sonnet-5-5
       kimi: kimicli:kimi-code/k3
       summarizer: gemini-3.8-flash # cross-provider meta-summary
       site_summarizer: gemini-3.5-flash-lite
@@ -25,8 +26,8 @@ presets:
     tavily_search_depth: fast # basic | advanced | fast | ultra-fast
     claude_max_budget: 5.0 # USD cap per Claude CLI call
     council: # boost/advise/council members
-      members: [claude:claude-opus-5@xhigh, codex:gpt-6-astra]
-      boss: claude:claude-opus-5
+      members: [claude:claude-opus-5-5@xhigh, codex:gpt-6.1-sol]
+      boss: claude:claude-opus-5-5
     boost:
       enabled: false # `--boost`/`explore` force it per run
       max_subprojects: 5
@@ -41,12 +42,12 @@ spec** that routes the step through a logged-in coding-agent CLI
 | Spec                | Backend                      | Auth                | Example                                                     |
 | ------------------- | ---------------------------- | ------------------- | ----------------------------------------------------------- |
 | plain id            | provider API                 | API key from `.env` | `gpt-5.4-mini`, `grok-4.6`                                  |
-| `codex[:<model>]`   | Codex CLI (`codex exec`)     | ChatGPT login       | `codex:gpt-6-astra`                                         |
+| `codex[:<model>]`   | Codex CLI (`codex exec`)     | ChatGPT login       | `codex:gpt-6.1-sol`                                         |
 | `agy[:<model>]`     | Antigravity CLI              | Google account      | `agy:gemini-3.8-flash-high` (`agy models` lists ids)        |
-| `grokcli[:<model>]` | Grok CLI (`grok -p`)         | `grok login`        | `grokcli:grok-4.6` (`grok models` lists ids)                |
+| `grokcli[:<model>]` | Grok CLI (`grok -p`)         | `grok login`        | `grokcli:grok-4.7` (`grok models` lists ids)                |
 | `kimicli[:<alias>]` | Kimi Code CLI (`kimi -p`)    | `kimi login`        | `kimicli:kimi-code/k3`, `kimicli:kimi-code/kimi-for-coding` |
-| `claude[:<model>]`  | Claude Code CLI              | Claude subscription | `claude:opus`, `claude:claude-sonnet-5`                     |
-| `deep[:<model>]`    | Claude Code `/deep-research` | Claude subscription | `deep:claude-sonnet-5` (opt-in only — slow, expensive)      |
+| `claude[:<model>]`  | Claude Code CLI              | Claude subscription | `claude:opus`, `claude:claude-sonnet-5-5`                   |
+| `deep[:<model>]`    | Claude Code `/deep-research` | Claude subscription | `deep:claude-sonnet-5-5` (opt-in only — slow, expensive)    |
 
 Rules:
 
@@ -54,9 +55,18 @@ Rules:
   verbatim (`claude:opus` uses the CLI's alias resolution); a bare prefix
   (`codex`, `claude`) uses that CLI's default model. Bare `claude-*` ids
   remain accepted as the legacy spelling of `claude:<id>`.
+- **Claude has no API route.** Every Claude step (the `claude` research
+  slot, the four writers, council members, the boss, the super-summary,
+  `advise-session`) runs on the Claude Code CLI against your claude.ai
+  login. researchkit strips `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
+  `ANTHROPIC_BASE_URL` and `CLAUDE_CODE_USE_BEDROCK` / `_VERTEX` /
+  `_FOUNDRY` / `_MANTLE` from its env (`CLAUDE_CODE_OAUTH_TOKEN`, a
+  subscription token, is kept). `doctor` fails the Claude checks when
+  Claude Code would still bill an API, e.g. through an `apiKeyHelper` in
+  its settings. `result.json` records the slot as `claude:<model>`.
 - **`@<effort>` suffix** (council members and the boss): per-member
-  reasoning effort where the CLI supports it — `codex:gpt-6-astra@xhigh`,
-  `claude:claude-opus-5@xhigh`, `grokcli:grok-4.6@xhigh`. Antigravity bakes
+  reasoning effort where the CLI supports it — `codex:gpt-6.1-sol@xhigh`,
+  `claude:claude-opus-5-5@xhigh`, `grokcli:grok-4.7@xhigh`. Antigravity bakes
   effort into the model id (`-high`/`-medium`/`-low`); Kimi Code takes it
   from its own config.toml `[thinking]`.
 - CLI-backed specs work in **every slot**: provider slots, council
@@ -66,6 +76,10 @@ Rules:
   slower than the Gemini API — and a CLI `site_summarizer` for the youtube
   connector only summarizes fetched transcripts (native video understanding
   needs the Gemini API).
+- The **`github`** slot names the model behind its github.com-restricted
+  web search (OpenAI Responses API). A CLI spec there (`codex:gpt-6.1-sol`)
+  runs the provider subscription-only instead: GitHub REST search plus
+  analysis on that harness, with the API-only web-search phase skipped.
 - Keys `models:` doesn't recognize as built-in slots become **plugin model
   slots** (e.g. `youtube: gemini-3.8-flash`); a sibling `plugins:` block
   passes per-plugin option dicts.
@@ -81,19 +95,34 @@ Rules:
   wall-clock timeout is never retried — at these budgets it means the
   workload is too big, not that the network hiccuped.
 
+## `harness_only` presets
+
+`harness_only: true` makes a preset subscription-only for **LLM work**: the
+research slots a run selects (`openai`, `gemini`, `grok`, `claude`, `kimi`,
+`github`, LLM plugins), `summarizer`, `site_summarizer`, `improver`, every
+council member and the boss must be CLI specs (or `deep:`). Search APIs —
+`perplexity`, `tavily`, `brave`, `exa` site research, the keyless providers —
+stay allowed. A run that would bill an LLM API is refused before anything
+spends, naming each offending `slot=spec`; `researchkit doctor` reports the
+same thing up front (pipeline steps fail, an API-only research slot such as
+`glm` warns, since only selecting it is refused).
+
 ## The presets that ship
 
 - `default` — latest models, best quality (API keys).
 - `optimal` / `optimal_quality` / `budget_friendly` — benchmarked cheap/fast
   tradeoffs (API keys).
-- `harness` — subscription-only: every step on logged-in CLIs, no API keys.
-  Used by `advise`, `council`, `explore`, and the UI's "Harness only" mode.
+- `harness` — `harness_only`: every LLM step on logged-in CLIs (Perplexity,
+  Tavily and Exa search may still use their keys; `glm` has no harness route
+  and is refused). Used by `advise`, `council`, `explore`, and the UI's
+  "Harness only" mode.
 - `harness-fast` — `harness` minus the time outliers, for the `explore-fast`
   skill. Providers run concurrently, so a run is as slow as its slowest
-  member: measured here, the Codex research slot takes 30–55 min per call and
-  Opus at max effort 11–17, while `agy` / `grokcli` / `kimicli` finish in 1–4.
-  The preset keeps the same CLIs but writes the summaries on
-  `claude-sonnet-5`, seats a council without Codex, and runs at effort `high`;
+  member: measured here, the Codex research slot takes 16–55 min per run and
+  Opus 11–42 (two sequential queries), while `agy` / `grokcli` / `kimicli`
+  finish in 1–6. Also `harness_only`. The preset keeps the same CLIs but
+  writes the summaries on `claude-sonnet-5-5`, seats a council without
+  Codex, and runs at effort `high`;
   the skill adds `--providers gemini grok kimi <keyless…>` (no `openai` /
   `claude` research slots) and `RESEARCHKIT_CLI_TIMEOUT=900` so a straggler
   is dropped instead of waited for.

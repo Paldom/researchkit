@@ -10,7 +10,7 @@ from __future__ import annotations
 import contextvars
 import logging
 import shutil
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -44,6 +44,9 @@ from researchkit.utils import slugify
 
 logger = logging.getLogger(__name__)
 
+# Providers a run queries when the caller names none.
+DEFAULT_PROVIDERS = ("openai", "gemini", "grok", "perplexity")
+
 ProgressEvent = dict[str, Any]
 ProgressCallback = Callable[[ProgressEvent], None]
 
@@ -59,9 +62,7 @@ class ResearchRequest:
     # Non-empty user keywords always override and skip synthesis.
     keywords: tuple[str, ...] = ()
     days: int = 7
-    providers: list[str] = field(
-        default_factory=lambda: ["openai", "gemini", "grok", "perplexity"]
-    )
+    providers: list[str] = field(default_factory=lambda: list(DEFAULT_PROVIDERS))
     sources: set[str] = field(default_factory=lambda: {"social", "web"})
     include_raw: bool = True
     preset_name: str | None = None  # Model preset to use (None = active preset)
@@ -171,9 +172,21 @@ def claude_cli_login_problem() -> str | None:
     if logged_in is False:
         return (
             f"Claude Code CLI: {detail}. The overview/digest/article/skill "
-            "writers, the council boss and the super-summary will all fail."
+            "writers, the council boss and the super-summary will all fail "
+            "(or, on an API route, bill the API instead of the subscription)."
         )
     return None
+
+
+def refuse_api_billed_llm(em: EffectiveModels, providers: Iterable[str]) -> None:
+    """Raise before any spend if a harness_only preset would bill an LLM API."""
+    if bad := em.api_billed_llm_slots(providers):
+        raise ValueError(
+            f"Preset {em.preset_name!r} is harness_only, but these LLM steps "
+            f"would bill an API: {', '.join(bad)}. Give them a CLI spec "
+            "(codex:, agy:, grokcli:, kimicli:, claude:) or drop the provider; "
+            "search APIs (perplexity, tavily, brave, exa) are fine."
+        )
 
 
 class SocialResearchService:
@@ -378,6 +391,7 @@ class SocialResearchService:
 
             # Resolve effective model configuration
             effective_models = self.get_effective_models(req.preset_name)
+            refuse_api_billed_llm(effective_models, req.providers)
 
             emit(
                 {
@@ -619,7 +633,7 @@ class SocialResearchService:
             topic=topic,
             keywords=keywords or [],
             days=days,
-            providers=providers or ["openai", "gemini", "grok", "perplexity"],
+            providers=providers or list(DEFAULT_PROVIDERS),
             sources=sources or ["social", "web"],
             include_raw=include_raw,
             preset_name=preset_name,
@@ -844,6 +858,8 @@ class SocialResearchService:
         from researchkit.council import LLMCouncil
 
         effective_models = self.get_effective_models(preset_name)
+        # Before the council spends: sub-runs repeat this check per project.
+        refuse_api_billed_llm(effective_models, providers or list(DEFAULT_PROVIDERS))
         if auth_problem := claude_cli_login_problem():
             logger.error(auth_problem, extra={"stage": "claude_cli_auth_error"})
 
@@ -928,7 +944,7 @@ class SocialResearchService:
                 topic=sub_topic,
                 keywords=[],  # each sub-run synthesizes keywords grounded in its findings
                 days=days,
-                providers=providers or ["openai", "gemini", "grok", "perplexity"],
+                providers=providers or list(DEFAULT_PROVIDERS),
                 sources=sources or ["social", "web"],
                 include_raw=include_raw,
                 preset_name=preset_name,

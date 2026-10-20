@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import subprocess
 from typing import TYPE_CHECKING, Any
 
@@ -38,7 +37,7 @@ from researchkit.providers.claude_provider import (
     deep_research_underlying_model,
     is_deep_research_spec,
 )
-from researchkit.safe_io import run_subprocess
+from researchkit.safe_io import claude_subscription_env, run_subprocess
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -129,7 +128,7 @@ class ClaudeFinalSummaryGenerator:
 
     def __init__(
         self,
-        model: str = "claude-sonnet-5",
+        model: str = "claude-sonnet-5-5",
         max_budget: float = FINAL_SUMMARY_MAX_BUDGET,
     ) -> None:
         self.model = model
@@ -177,10 +176,7 @@ class ClaudeFinalSummaryGenerator:
 
     def _build_env(self) -> dict[str, str]:
         """Build environment for subprocess with privacy settings."""
-        env = {**os.environ}
-        env.pop("ANTHROPIC_API_KEY", None)
-        env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
-        return env
+        return claude_subscription_env()
 
     def _build_sources_section(self, provider_results: list[ProviderResult]) -> str:
         """Build a markdown section listing all referenced sources/links."""
@@ -604,11 +600,11 @@ class SuperSummaryGenerator(ClaudeFinalSummaryGenerator):
     ) -> SuperSummaryGenerator:
         """Create the generator pinned to the council boss model."""
         if effective_models is None:
-            return cls(model="claude-opus-5", max_budget=SUPER_SUMMARY_MAX_BUDGET)
+            return cls(model="claude-opus-5-5", max_budget=SUPER_SUMMARY_MAX_BUDGET)
         # The super-summary runs via the Claude Code CLI, so it needs a Claude
         # boss; fall back to Opus if the configured boss is a non-Claude model.
         # Council member specs may carry a researchkit-only `@<effort>` suffix
-        # ("claude-opus-5@xhigh") — strip it, or `claude --model` gets an
+        # ("claude-opus-5-5@xhigh") — strip it, or `claude --model` gets an
         # invalid id and the boosted run's flagship output silently dies.
         from researchkit.council import split_effort_spec
         from researchkit.providers.claude_provider import (
@@ -618,16 +614,16 @@ class SuperSummaryGenerator(ClaudeFinalSummaryGenerator):
 
         boss, _ = split_effort_spec(effective_models.council_boss)
         if is_claude_cli_spec(boss):
-            model = claude_cli_underlying_model(boss) or "claude-opus-5"
+            model = claude_cli_underlying_model(boss) or "claude-opus-5-5"
         elif boss.lower().startswith("claude"):
             model = boss
         else:
             logger.warning(
                 "Super-summary runs via the Claude CLI but council boss is %r; "
-                "falling back to claude-opus-5 for the super-summary.",
+                "falling back to claude-opus-5-5 for the super-summary.",
                 boss,
             )
-            model = "claude-opus-5"
+            model = "claude-opus-5-5"
         return cls(
             model=model,
             max_budget=max(

@@ -11,8 +11,10 @@ from pathlib import Path
 import pytest
 
 from researchkit.safe_io import (
+    CLAUDE_API_ROUTE_ENV_KEYS,
     NESTED_ENV_VAR,
     atomic_write_text,
+    claude_subscription_env,
     extract_urls_balanced,
     guard_no_nested_run,
     run_subprocess,
@@ -88,6 +90,23 @@ class TestScrubbedEnv:
         assert "XAI_API_KEY" not in env
         assert env.get("OPENAI_API_KEY") == "sk-1"
         assert env.get("PATH") == "/usr/bin"
+
+
+class TestClaudeSubscriptionEnv:
+    def test_strips_every_api_route_keeps_oauth(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for key in CLAUDE_API_ROUTE_ENV_KEYS:
+            monkeypatch.setenv(key, "1")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sub-token")
+        env = claude_subscription_env()
+        assert not CLAUDE_API_ROUTE_ENV_KEYS & env.keys()
+        assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "sub-token"
+        assert env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] == "1"
+
+    def test_filters_a_given_base(self) -> None:
+        env = claude_subscription_env({"ANTHROPIC_AUTH_TOKEN": "t", "PATH": "/b"})
+        assert env == {"PATH": "/b", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
 
 
 class TestSafeFetchTextSSRF:

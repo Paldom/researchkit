@@ -18,7 +18,7 @@ import re
 import shutil
 from dataclasses import dataclass
 
-from researchkit.safe_io import run_subprocess
+from researchkit.safe_io import claude_subscription_env, run_subprocess
 from researchkit.system_config import EffectiveModels, SystemConfigManager
 
 _CLI_TIMEOUT = 20.0
@@ -123,7 +123,12 @@ class _CliProbe:
 def claude_auth_status(binary: str = "claude") -> tuple[bool | None, str]:
     """(logged_in, detail) from `claude auth status`; None when unverifiable."""
     try:
-        proc = run_subprocess([binary, "auth", "status"], timeout=_CLI_TIMEOUT)
+        # Same env the real calls get, so this reports the auth they will use.
+        proc = run_subprocess(
+            [binary, "auth", "status"],
+            timeout=_CLI_TIMEOUT,
+            env=claude_subscription_env(),
+        )
     except Exception as e:  # timeout, spawn failure
         return None, f"installed (auth not verifiable: {str(e)[:120]})"
     try:
@@ -139,6 +144,16 @@ def claude_auth_status(binary: str = "claude") -> tuple[bool | None, str]:
         return (
             False,
             "not logged in — run `claude auth login` (or /login in Claude Code)",
+        )
+    # The env scrub can't reach settings-level routes (apiKeyHelper, a cloud
+    # provider): those still report api_key / a non-firstParty provider here.
+    provider = info.get("apiProvider", "firstParty")
+    if info.get("authMethod") == "api_key" or provider != "firstParty":
+        source = info.get("apiKeySource") or provider
+        return (
+            False,
+            f"Claude Code would bill an API ({source}), not the subscription — "
+            "remove it from Claude Code settings and run `claude auth login`",
         )
     via = ", ".join(
         str(info[k]) for k in ("authMethod", "subscriptionType") if info.get(k)
@@ -271,7 +286,33 @@ def run_doctor(preset_name: str | None = None) -> list[CheckResult]:
     for i, member in enumerate(em.council_members, 1):
         results.append(_check_spec(f"council[{i}]", member, probe))
     results.append(_check_spec("boss", em.council_boss, probe))
-    return results
+    return _apply_harness_only(em, results)
+
+
+def _apply_harness_only(
+    em: EffectiveModels, results: list[CheckResult]
+) -> list[CheckResult]:
+    """On a harness_only preset, flag every LLM step that would bill an API.
+
+    Pipeline steps (summarizers, improver, council) run on every run: fail.
+    A research slot only runs when selected, and the run refuses it: warn.
+    """
+    if not em.harness_only:
+        return results
+    from researchkit.plugins import get_registry
+
+    pipeline = set(em.api_billed_llm_slots(()))
+    research = get_registry().llm_provider_names() | {"github"}
+    flagged: dict[str, CheckResult] = {}
+    for entry in em.api_billed_llm_slots(sorted(research)):
+        slot, _, spec = entry.partition("=")
+        if entry in pipeline:
+            detail = "harness_only preset: this LLM step would bill an API"
+            flagged[slot] = CheckResult(slot, spec, "fail", detail)
+        else:
+            detail = "no harness route — a harness_only run refuses it if selected"
+            flagged[slot] = CheckResult(slot, spec, "warn", detail)
+    return [flagged.pop(r.slot, r) for r in results] + list(flagged.values())
 
 
 def format_report(results: list[CheckResult], preset_name: str) -> str:

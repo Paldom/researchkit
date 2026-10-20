@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -37,7 +38,7 @@ _EMBEDDED_DEFAULT_CONFIG: dict[str, Any] = {
                 "grok": "grok-4.6",
                 "perplexity": "sonar",
                 "tavily": "tavily-search",
-                "claude": "claude:claude-sonnet-5",
+                "claude": "claude:claude-sonnet-5-5",
                 "github": "gpt-5.4-mini",
                 "glm": "glm-5.3",
                 "kimi": "kimi-k3",
@@ -57,12 +58,12 @@ _EMBEDDED_DEFAULT_CONFIG: dict[str, Any] = {
 # with the boss (a strong reasoning model) synthesizing the final result. Members
 # may use CLI-backed model specs ("codex:<m>", "agy:<m>") or plain API model ids.
 DEFAULT_COUNCIL_MEMBERS = [
-    "claude:claude-opus-5",
+    "claude:claude-opus-5-5",
     "codex:gpt-6-astra",
     # `agy models` lists ids; the thinking level is baked into the id.
     "agy:gemini-3.8-flash-high",
 ]
-DEFAULT_COUNCIL_BOSS = "claude:claude-opus-5"
+DEFAULT_COUNCIL_BOSS = "claude:claude-opus-5-5"
 DEFAULT_BOOST_MAX_SUBPROJECTS = 5
 
 
@@ -127,6 +128,41 @@ class EffectiveModels:
     # preset's plugins: block provides per-extension option dicts.
     plugin_models: dict[str, str] = field(default_factory=dict)
     plugin_options: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Subscription-only preset: every LLM step must run on a logged-in CLI
+    # harness. Search APIs (perplexity, tavily, brave, exa, ...) stay allowed.
+    harness_only: bool = False
+
+    def api_billed_llm_slots(self, providers: Iterable[str]) -> list[str]:
+        """``slot=spec`` for each LLM step that would bill an API.
+
+        Empty unless the preset is ``harness_only``. Checks the research slots
+        the run selects that drive an LLM (plus github's web-search model),
+        the summarizers, the improver and the council.
+        """
+        if not self.harness_only:
+            return []
+        from researchkit.council import is_cli_backed_spec
+        from researchkit.plugins import get_registry
+
+        llm_providers = get_registry().llm_provider_names() | {"github"}
+        slots = [
+            (name, getattr(self, name, None) or self.plugin_models.get(name, ""))
+            for name in providers
+            if name in llm_providers
+        ]
+        slots += [
+            ("summarizer", self.summarizer),
+            ("site_summarizer", self.site_summarizer),
+            ("improver", self.improver),
+            *((f"council[{i}]", m) for i, m in enumerate(self.council_members, 1)),
+            ("boss", self.council_boss),
+        ]
+        return [
+            f"{slot}={spec}"
+            for slot, spec in slots
+            # `deep:` is Claude Code's /deep-research: a harness, not an API.
+            if not (is_cli_backed_spec(spec) or str(spec).lower().startswith("deep"))
+        ]
 
     def fingerprint(self) -> str:
         """Generate a short hash of the model configuration."""
@@ -191,6 +227,7 @@ class EffectiveModels:
             "boost_max_subprojects": self.boost_max_subprojects,
             **({"plugin_models": self.plugin_models} if self.plugin_models else {}),
             **({"plugin_options": self.plugin_options} if self.plugin_options else {}),
+            **({"harness_only": True} if self.harness_only else {}),
             "preset_name": self.preset_name,
             "preset_description": self.preset_description,
             "fingerprint": self.fingerprint(),
@@ -355,7 +392,7 @@ class SystemConfigManager:
             grok=models["grok"],
             perplexity=models["perplexity"],
             tavily=models.get("tavily", "tavily-search"),
-            claude=models.get("claude", "claude:claude-sonnet-5"),
+            claude=models.get("claude", "claude:claude-sonnet-5-5"),
             github=models.get("github", "gpt-5.5"),
             glm=models.get("glm", "glm-5.3"),
             kimi=models.get("kimi", "kimi-k3"),
@@ -374,4 +411,5 @@ class SystemConfigManager:
             boost_max_subprojects=boost_max_subprojects,
             plugin_models=plugin_models,
             plugin_options=plugin_options,
+            harness_only=bool(preset.get("harness_only", False)),
         )

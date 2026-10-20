@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import subprocess
 from typing import Any
@@ -32,7 +31,7 @@ from researchkit.providers.base import (
     get_web_system_prompt,
     get_web_user_prompt,
 )
-from researchkit.safe_io import run_subprocess
+from researchkit.safe_io import claude_subscription_env, run_subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +62,7 @@ def is_claude_cli_spec(model: str | None) -> bool:
 def claude_cli_underlying_model(model: str | None) -> str | None:
     """Extract the underlying model from a ``claude`` spec.
 
-    ``"claude:claude-opus-5"`` -> ``"claude-opus-5"``; ``"claude:opus"``
+    ``"claude:claude-opus-5-5"`` -> ``"claude-opus-5-5"``; ``"claude:opus"``
     -> ``"opus"`` (the CLI resolves aliases); ``"claude"`` -> ``None``
     (Claude CLI default model).
     """
@@ -78,7 +77,7 @@ def claude_cli_underlying_model(model: str | None) -> str | None:
 def deep_research_underlying_model(model: str | None) -> str | None:
     """Extract the underlying model from a ``deep`` spec.
 
-    ``"deep:claude-opus-5"`` -> ``"claude-opus-5"``;
+    ``"deep:claude-opus-5-5"`` -> ``"claude-opus-5-5"``;
     ``"deep"`` -> ``None`` (Claude Code CLI default model).
     """
     if not model:
@@ -226,7 +225,7 @@ class ClaudeProvider(BaseProvider):
     Claude Code provider using non-interactive CLI subprocess.
 
     Two modes, selected by the model spec:
-    - Plain model id (e.g. ``claude-opus-5``): spawns `claude -p "..."` with
+    - Plain model id (e.g. ``claude-opus-5-5``): spawns `claude -p "..."` with
       WebSearch + WebFetch tools for two agentic queries (social + web).
     - ``deep`` / ``deep:<model>``: runs one combined query through Claude
       Code's built-in /deep-research skill — a dynamic workflow that fans out
@@ -239,7 +238,7 @@ class ClaudeProvider(BaseProvider):
     """
 
     provider_name = "claude"
-    model_name = "claude-sonnet-5"
+    model_name = "claude-sonnet-5-5"
 
     def __init__(
         self,
@@ -276,11 +275,7 @@ class ClaudeProvider(BaseProvider):
 
     def _build_env(self) -> dict[str, str]:
         """Build environment for subprocess with privacy settings."""
-        env = {**os.environ}
-        # Remove ANTHROPIC_API_KEY so the CLI uses subscription auth
-        env.pop("ANTHROPIC_API_KEY", None)
-        env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
-        return env
+        return claude_subscription_env()
 
     def _extract_urls(self, text: str) -> list[str]:
         """Extract URLs from text, deduplicated and order-preserved.
@@ -572,7 +567,9 @@ class ClaudeProvider(BaseProvider):
 
             return ProviderResult(
                 provider=self.provider_name,
-                model=self.model_name,
+                # Canonical harness label: a plain id in provider_models means
+                # API billing, and this slot only ever runs on the CLI.
+                model=f"claude:{self.model_name}",
                 raw_text=combined,
                 sources=sources,
                 meta=meta,

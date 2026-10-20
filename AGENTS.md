@@ -53,7 +53,10 @@ Every live run spends. Test with the smallest thing that proves the change:
 - **Verify what actually ran, not what you typed.** `provider_models` in
   `result.json` names the resolved model per slot. A plain id (`grok-4.6`)
   means the API billed you; `grokcli:grok-4.6` means the subscription did.
-  Check it before claiming a run was free.
+  Check it before claiming a run was free. Claude is always a harness
+  (`claude:<model>`): researchkit has no Anthropic API route, and the
+  `harness_only` presets (`harness`, `harness-fast`) refuse any LLM step that
+  would bill an API — search APIs like Perplexity and Exa are still allowed.
 - Some providers bill **per source**, not per token, and a boosted run can
   fan out into many sub-runs. Cost scales with the fan-out, not with how
   long you waited.

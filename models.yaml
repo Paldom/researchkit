@@ -27,8 +27,11 @@
 # - `claude: claude:<model>` is the canonical Claude spec (Claude Code CLI,
 #   Claude-subscription billing). The part after `claude:` goes to
 #   `claude --model` verbatim — an alias (`claude:opus`) or full id
-#   (`claude:claude-sonnet-5`). Bare ids (`claude-sonnet-5`) are the
-#   legacy spelling of the same route.
+#   (`claude:claude-sonnet-5-5`). Bare ids (`claude-sonnet-5-5`) are the
+#   legacy spelling of the same route. There is no Anthropic API route:
+#   every Claude step (research slot, writers, council, boss) runs on Claude
+#   Code with ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL and
+#   the Bedrock/Vertex/Foundry/Mantle switches stripped from its env.
 # - `claude: deep` or `deep:<model>` routes the Claude step through Claude
 #   Code's /deep-research workflow (fan-out searches, verified claims, cited
 #   report). Powerful but slow (10-40 min) and expensive: every workflow
@@ -49,7 +52,7 @@ presets:
       grok: grok-4.3
       perplexity: sonar
       tavily: tavily-search # display name only (search API)
-      claude: claude:claude-sonnet-5 # plain two-query mode; `deep:<model>` opt-in (see header)
+      claude: claude:claude-sonnet-5-5 # plain two-query mode; `deep:<model>` opt-in (see header)
       github: gpt-5.4-mini
       glm: glm-5.3
       kimi: kimi-k3 # Moonshot API (opt-in via --providers kimi)
@@ -64,10 +67,10 @@ presets:
     # Members accept CLI specs (codex:<m>, agy:<m>) or plain model ids.
     council:
       members:
-        - claude:claude-opus-5
+        - claude:claude-opus-5-5
         - gpt-6-astra
         - gemini-3.8-flash
-      boss: claude:claude-opus-5
+      boss: claude:claude-opus-5-5
     # Boost fans a topic out into parallel sub-projects topped by a
     # super-summary. Off by default: a boosted run multiplies cost by the
     # number of sub-projects. Enable deliberately (or per-run via --boost).
@@ -103,7 +106,7 @@ presets:
       grok: grok-4.6
       perplexity: sonar-pro
       tavily: tavily-search
-      claude: claude:claude-sonnet-5
+      claude: claude:claude-sonnet-5-5
       github: gpt-5.4-mini
       glm: glm-5.3
       kimi: kimi-k3
@@ -123,7 +126,7 @@ presets:
       grok: grok-4.6
       perplexity: sonar
       tavily: tavily-search
-      claude: claude:claude-sonnet-5
+      claude: claude:claude-sonnet-5-5
       github: gpt-5.4-mini
       glm: glm-5.3
       kimi: kimi-k3
@@ -136,7 +139,10 @@ presets:
     claude_max_budget: 5.0
 
   harness:
-    description: Subscription-only — every step runs on logged-in CLI harnesses (Codex, Antigravity, Grok CLI, Kimi Code CLI, Claude Code); no API keys. Used by `advise`/`council`/`explore` and the UI's "harness only" mode.
+    description: Subscription-only — every LLM step runs on logged-in CLI harnesses (Codex, Antigravity, Grok CLI, Kimi Code CLI, Claude Code); search APIs (Perplexity, Tavily, Exa) stay allowed. Used by `advise`/`council`/`explore` and the UI's "harness only" mode.
+    # Refuse, before any spend, a run whose LLM steps would bill an API (see
+    # `harness_only` in docs/models-guide.md); `researchkit doctor` reports it.
+    harness_only: true
     models:
       openai: codex:gpt-6.1-sol # Codex CLI, ChatGPT-subscription billing
       gemini: agy:gemini-3.8-flash-high # Antigravity CLI, Google account (`agy models` lists ids; effort is baked into the id)
@@ -144,8 +150,8 @@ presets:
       perplexity: sonar # unused: not in the harness provider set
       tavily: tavily-search # unused
       claude: claude:claude-opus-5-5 # Claude Code CLI, Claude subscription
-      github: gpt-5.4-mini # unused
-      glm: glm-5.3 # unused
+      github: codex:gpt-6.1-sol # GitHub REST search + analysis on Codex; the API-only github.com web search is skipped
+      glm: glm-5.3 # API only, no harness route: a harness_only run refuses it
       kimi: kimicli:kimi-code/k3 # Kimi Code CLI, kimi.com subscription
       summarizer: codex:gpt-6.1-sol # meta-summary via CLI (no API key; codex handles long prompts reliably)
       site_summarizer: codex:gpt-6.1-sol # CLI too (site research off by default in harness flows; connector SEARCH keys still apply if enabled)
@@ -180,6 +186,7 @@ presets:
     # skill pairs this preset with a provider list that skips the openai and
     # claude research slots and a RESEARCHKIT_CLI_TIMEOUT cap on stragglers.
     description: Subscription-only, time-boxed — the harness preset without the slow outliers (no Codex research, Sonnet writes the summaries, council without Codex)
+    harness_only: true
     models:
       openai: codex:gpt-6.1-sol # kept for parity; explore-fast does not run this slot
       gemini: agy:gemini-3.8-flash-high
@@ -187,8 +194,8 @@ presets:
       perplexity: sonar # unused
       tavily: tavily-search # unused
       claude: claude:claude-sonnet-5-5 # the four writers (overview, digest, article, skill) run here
-      github: gpt-5.4-mini # unused
-      glm: glm-5.3 # unused
+      github: codex:gpt-6.1-sol # GitHub REST search + analysis on Codex
+      glm: glm-5.3 # API only: a harness_only run refuses it
       kimi: kimicli:kimi-code/k3
       summarizer: codex:gpt-6.1-sol # one long-prompt completion, not a research loop: fast enough
       site_summarizer: codex:gpt-6.1-sol
@@ -199,7 +206,7 @@ presets:
     claude_max_budget: 15.0
     council:
       members:
-        - claude:claude-sonnet-5@high
+        - claude:claude-sonnet-5-5@high
         - agy:gemini-3.8-flash-high
         - grokcli:grok-4.7@high
         - kimicli:kimi-code/k3

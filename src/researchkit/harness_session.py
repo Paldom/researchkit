@@ -42,7 +42,7 @@ from typing import Any
 
 from researchkit.council import split_effort_spec
 from researchkit.providers.base import CLAUDE_HEADLESS_ARGS, cli_harness_timeout
-from researchkit.safe_io import run_subprocess, scrubbed_env
+from researchkit.safe_io import claude_subscription_env, run_subprocess, scrubbed_env
 
 logger = logging.getLogger(__name__)
 
@@ -331,11 +331,14 @@ def _spawn(
     cmd: list[str], *, cwd: str, input_text: str | None, keep: frozenset[str]
 ) -> subprocess.CompletedProcess[str]:
     """Run a harness CLI in the project directory on the shared budget."""
+    env = scrubbed_env(keep=keep)
+    if cmd[0] == "claude":
+        env = claude_subscription_env(env)
     proc = run_subprocess(
         cmd,
         input=input_text,
         timeout=cli_harness_timeout(),
-        env=scrubbed_env(keep=keep),
+        env=env,
         cwd=cwd,
     )
     if proc.returncode != 0:

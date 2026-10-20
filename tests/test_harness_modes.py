@@ -421,6 +421,37 @@ class TestHarnessPreset:
             assert is_cli_backed_spec(member), member
         assert is_cli_backed_spec(em.council_boss)
 
+    @pytest.mark.parametrize("preset", ["harness", "harness-fast"])
+    def test_harness_only_every_llm_step_is_a_harness(self, preset: str) -> None:
+        from researchkit.system_config import SystemConfigManager
+
+        em = SystemConfigManager().resolve_effective_models(preset)
+        assert em.harness_only and em.to_dict()["harness_only"] is True
+        research = ["openai", "gemini", "grok", "claude", "kimi", "github"]
+        # search APIs (perplexity/tavily) are allowed; glm has no harness route
+        assert em.api_billed_llm_slots([*research, "perplexity", "tavily"]) == []
+        assert em.api_billed_llm_slots(["glm"]) == ["glm=glm-5.3"]
+
+    def test_api_billed_steps_are_refused_before_spend(self) -> None:
+        from dataclasses import replace
+
+        from researchkit.service import refuse_api_billed_llm
+        from researchkit.system_config import SystemConfigManager
+
+        mgr = SystemConfigManager()
+        em = replace(
+            mgr.resolve_effective_models("harness"),
+            improver="gpt-5.4-mini",
+            claude="deep:claude-opus-5-5",  # /deep-research is still a harness
+        )
+        assert em.api_billed_llm_slots(["claude"]) == ["improver=gpt-5.4-mini"]
+        with pytest.raises(ValueError, match=r"glm=glm-5\.3, improver=gpt-5\.4-mini"):
+            refuse_api_billed_llm(em, ["claude", "glm"])
+        # non-harness presets keep their API routes
+        default = mgr.resolve_effective_models("default")
+        assert not default.harness_only
+        refuse_api_billed_llm(default, ["glm"])
+
     def test_default_members_match_goal_spec(self) -> None:
         from researchkit.system_config import SystemConfigManager
 
@@ -595,6 +626,22 @@ class TestSlotCliRouting:
         monkeypatch.setattr(council_mod, "complete_via_spec", fake)
         gh = GitHubProvider(improver_model="claude:claude-opus-4-8")
         assert gh.summarize_result("raw text", "topic") == "- **summary bullet**"
+
+    def test_github_harness_slot_needs_no_openai_key(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from researchkit.providers.github_provider import GitHubProvider
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        gh = GitHubProvider(model="codex:gpt-6.1-sol", improver_model="gpt-5.4-mini")
+        assert gh.harness and gh.improver_model == "codex:gpt-6.1-sol"
+        assert gh._search_openai_github("topic", 7) == ([], "")  # API phase skipped
+        monkeypatch.setattr(gh, "_search_github_api", lambda kw, days: ([], []))
+        monkeypatch.setattr(
+            council_mod, "complete_via_spec", lambda spec, s, u, **k: f"via {spec}"
+        )
+        result = gh.fetch_insights("topic", 7)
+        assert result.error is None and result.raw_text == "via codex:gpt-6.1-sol"
 
     def test_hybrid_preset_resolves_mixed(self) -> None:
         from researchkit.system_config import SystemConfigManager
