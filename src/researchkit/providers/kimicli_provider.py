@@ -44,6 +44,7 @@ import tempfile
 from researchkit.network_retry import with_network_retry
 from researchkit.providers.base import (
     CLI_QUICK_TIMEOUT,
+    CliText,
     cli_harness_timeout,
     salvage_timeout,
 )
@@ -154,6 +155,7 @@ class KimiCliProvider(CodexProvider):
         transient messages reach the retry policy's phrase matching.
         """
         text = ""
+        searches = pages = 0
         for line in stdout.splitlines():
             line = line.strip()
             if not line:
@@ -172,7 +174,14 @@ class KimiCliProvider(CodexProvider):
                 content = evt.get("content")
                 if isinstance(content, str) and content.strip():
                     text = content
-        return text, []
+                for call in evt.get("tool_calls") or []:
+                    fn = call.get("function") if isinstance(call, dict) else None
+                    name = str((fn or {}).get("name") or "").lower()
+                    searches += "search" in name
+                    pages += "fetch" in name
+        return CliText.make(
+            text, searches=searches, pages_read=pages, stop_reason="complete"
+        ), []
 
     def _exec(
         self, prompt: str, *, web_search: bool, label: str, quick: bool = False

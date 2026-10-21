@@ -100,19 +100,35 @@ class Source:
         )
 
 
-class PartialText(str):
-    """Answer text salvaged from a CLI killed at its deadline (PLAN 3.1).
+class CliText(str):
+    """A CLI's answer text plus what the run did to get it.
 
-    A ``str`` so every caller keeps working; the provider checks
-    ``isinstance(text, PartialText)`` to record ``meta.partial`` and the slot
-    reports ``partial`` instead of losing the half-hour it already paid for.
+    A ``str`` so every caller keeps working. ``partial``: salvaged from a CLI
+    killed at its deadline (PLAN 3.1). ``depth``: research-depth telemetry
+    the CLI's output exposes (searches, pages read, stop reason; PLAN 3.7).
     """
+
+    partial: bool = False
+    depth: dict[str, Any]
+
+    @classmethod
+    def make(cls, text: str, *, partial: bool = False, **depth: Any) -> CliText:
+        out = cls(text)
+        out.partial = partial
+        out.depth = depth
+        return out
+
+
+def depth_of(text: str) -> dict[str, Any]:
+    """The depth facts a CLI reported for ``text``; ``unknown`` when none."""
+    depth = dict(getattr(text, "depth", None) or {})
+    return depth or {"stop_reason": "unknown"}
 
 
 def salvage_timeout(
     exc: subprocess.TimeoutExpired,
     parse: Callable[[str], tuple[str, list[str]]],
-) -> tuple[PartialText, list[str]] | None:
+) -> tuple[CliText, list[str]] | None:
     """(partial text, opened urls) from a timed-out streaming CLI, or None.
 
     With no answer yet but pages already opened, the pages are the result:
@@ -128,7 +144,10 @@ def salvage_timeout(
         text = "The research hit its deadline before answering. Pages it read:\n" + (
             "\n".join(f"- {url}" for url in opened)
         )
-    return (PartialText(text), opened) if text.strip() else None
+    if not text.strip():
+        return None
+    depth = {**getattr(text, "depth", {}), "stop_reason": "deadline"}
+    return CliText.make(text, partial=True, **depth), opened
 
 
 @dataclass

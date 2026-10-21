@@ -33,11 +33,12 @@ from researchkit.network_retry import with_network_retry
 from researchkit.providers.base import (
     CLI_QUICK_TIMEOUT,
     BaseProvider,
-    PartialText,
+    CliText,
     ProviderResult,
     Source,
     SourceType,
     cli_harness_timeout,
+    depth_of,
     get_base_system_prompt,
     get_user_prompt,
     get_web_system_prompt,
@@ -172,6 +173,8 @@ class CodexProvider(BaseProvider):
         """
         text = ""
         opened: list[str] = []
+        searches = 0
+        messages = 0
         for line in stdout.splitlines():
             line = line.strip()
             if not line:
@@ -186,13 +189,22 @@ class CodexProvider(BaseProvider):
             itype = item.get("item_type") or item.get("type")
             if itype == "agent_message":
                 text = item.get("text") or text
+                messages += 1
             elif itype == "web_search":
                 action = item.get("action") or {}
-                if action.get("type") == "other":
+                if action.get("type") != "other":
+                    searches += 1
+                else:
                     q = item.get("query") or ""
                     if q.startswith("http"):
                         opened.append(_clean_url(q))
-        return text, opened
+        depth = {
+            "searches": searches,
+            "pages_read": len(set(opened)),
+            "messages": messages,
+            "stop_reason": "complete",
+        }
+        return CliText.make(text, **depth), opened
 
     @staticmethod
     def _error_detail(proc: subprocess.CompletedProcess[str]) -> str:
@@ -328,10 +340,21 @@ class CodexProvider(BaseProvider):
                 if out is None or isinstance(out, BaseException):
                     continue
                 text, opened = out
-                if isinstance(text, PartialText):
+                if getattr(text, "partial", False):
                     meta["partial"] = True
                     meta.setdefault("partial_branches", []).append(name)
-                sources.extend(self._extract_sources(text, opened, kind))
+                branch_sources = self._extract_sources(text, opened, kind)
+                read = set(opened)
+                meta.setdefault("depth", {})[name] = {
+                    **depth_of(text),
+                    # Cited but never opened: provenance is the model's word.
+                    "cited_not_read": sum(
+                        1 for src in branch_sources if src.url not in read
+                    )
+                    if read
+                    else "unknown",
+                }
+                sources.extend(branch_sources)
                 meta[f"{name}_opened_urls"] = opened
                 sections.append(f"# {heading}\n\n{text}")
             if errors:

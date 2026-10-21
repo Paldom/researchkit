@@ -33,7 +33,11 @@ import subprocess
 import tempfile
 
 from researchkit.network_retry import with_network_retry
-from researchkit.providers.base import CLI_QUICK_TIMEOUT, cli_harness_timeout
+from researchkit.providers.base import (
+    CLI_QUICK_TIMEOUT,
+    CliText,
+    cli_harness_timeout,
+)
 from researchkit.providers.codex_provider import CodexProvider
 from researchkit.safe_io import run_subprocess, scrubbed_env
 
@@ -203,7 +207,8 @@ class GrokCliProvider(CodexProvider):
         if isinstance(data, dict):
             if data.get("type") == "error":
                 raise RuntimeError(f"grok CLI error: {data.get('message', 'unknown')}")
-            return str(data.get("text") or ""), []
+            stop = str(data.get("stopReason") or "unknown")
+            return CliText.make(str(data.get("text") or ""), stop_reason=stop), []
         return stdout.strip(), []
 
     def _run(

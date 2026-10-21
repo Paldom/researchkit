@@ -346,6 +346,13 @@ class ClaudeProvider(BaseProvider):
         ):
             if key in output:
                 meta[key] = output[key]
+        # Depth telemetry (PLAN 3.7): turns, server-side searches, stop reason.
+        tool_use = (output.get("usage") or {}).get("server_tool_use") or {}
+        meta["depth"] = {
+            "turns": output.get("num_turns", "unknown"),
+            "searches": tool_use.get("web_search_requests", "unknown"),
+            "stop_reason": output.get("subtype") or "unknown",
+        }
 
         return text, meta
 
@@ -520,7 +527,11 @@ class ClaudeProvider(BaseProvider):
                 model=self.model_name,
                 raw_text=text,
                 sources=sources,
-                meta={"mode": "deep-research", **cli_meta},
+                meta={
+                    "mode": "deep-research",
+                    **cli_meta,
+                    "depth": {"deep": cli_meta.get("depth")},
+                },
             )
 
         except FileNotFoundError:
@@ -584,6 +595,9 @@ class ClaudeProvider(BaseProvider):
                     continue
                 text, branch_sources, branch_meta = out
                 sources.extend(branch_sources)
+                meta.setdefault("depth", {})[name] = branch_meta.pop(
+                    "depth", {"stop_reason": "unknown"}
+                )
                 meta[name] = branch_meta
                 sections.append(f"# {heading}\n\n{text}")
             if errors:

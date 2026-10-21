@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from researchkit.providers.base import PartialText, ProviderResult, salvage_timeout
+from researchkit.providers.base import CliText, ProviderResult, salvage_timeout
 from researchkit.safe_io import run_subprocess
 
 
@@ -42,7 +42,7 @@ def test_salvage_prefers_text_then_opened_pages_then_nothing() -> None:
     msg = {"type": "agent_message", "text": "draft findings"}
 
     got = salvage_timeout(_codex_timeout([_codex_line(page), _codex_line(msg)]), parse)
-    assert got is not None and isinstance(got[0], PartialText)
+    assert got is not None and isinstance(got[0], CliText) and got[0].partial
     assert got[0] == "draft findings" and got[1] == ["https://a.io/x"]
 
     got = salvage_timeout(_codex_timeout([_codex_line(page)]), parse)
@@ -84,3 +84,55 @@ def test_partial_slot_counts_as_cited_but_degrades_the_run() -> None:
     status = run_status([partial], "article", None)
     assert status["status"] == "degraded" and status["with_sources"] == 1
     assert status["reasons"] == ["cut off at the deadline: codex"]
+
+
+def test_depth_telemetry_from_the_codex_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PLAN 3.7: searches, pages read, cited-not-read, stop reason per branch."""
+    import researchkit.providers.codex_provider as mod
+
+    monkeypatch.setattr(mod.shutil, "which", lambda b: f"/bin/{b}")
+    p = mod.CodexProvider(model="gpt-6.1-sol", sources=["web"])
+    stream = "\n".join(
+        [
+            _codex_line({"type": "web_search", "action": {"type": "search"}}),
+            _codex_line(
+                {
+                    "type": "web_search",
+                    "action": {"type": "other"},
+                    "query": "https://a.io/x",
+                }
+            ),
+            _codex_line(
+                {
+                    "type": "agent_message",
+                    "text": "see https://a.io/x and https://b.io/y",
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        mod,
+        "run_subprocess",
+        lambda *a, **k: subprocess.CompletedProcess("codex", 0, stream, ""),
+    )
+    depth = p.fetch_insights("topic", 7).meta["depth"]["web"]
+    assert depth == {
+        "searches": 1,
+        "pages_read": 1,
+        "messages": 1,
+        "stop_reason": "complete",
+        "cited_not_read": 1,
+    }
+
+
+def test_claude_depth_from_the_json_envelope() -> None:
+    from researchkit.providers.claude_provider import ClaudeProvider
+
+    envelope = {
+        "result": "text",
+        "num_turns": 7,
+        "subtype": "success",
+        "usage": {"server_tool_use": {"web_search_requests": 4}},
+    }
+    _, meta = ClaudeProvider()._parse_cli_json(json.dumps(envelope))
+    assert meta["depth"] == {"turns": 7, "searches": 4, "stop_reason": "success"}

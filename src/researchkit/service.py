@@ -654,7 +654,7 @@ class SocialResearchService:
                 # honest stdlib article saying what failed.
                 written["article"] = render_failure_article(req.topic, status)
             states = list(status["slots"].values())
-            successes = states.count("complete")
+            successes = status["with_sources"]  # partial slots with sources count
             empty = states.count("empty")
             failures = len(states) - successes - empty
             emit(
@@ -678,6 +678,12 @@ class SocialResearchService:
             report_json = bundle.to_dict()
             report_json["run_status"] = status
             report_json["timings"] = timeline
+            # Research depth per slot and branch (PLAN 3.7); "unknown" when
+            # the provider's output exposes none (API slots, agy).
+            report_json["depth"] = {
+                r.provider: r.meta.get("depth", "unknown")
+                for r in bundle.provider_results
+            }
             if materials_summary is not None:
                 report_json["materials"] = materials_summary
             if publication is not None:

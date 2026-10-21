@@ -68,6 +68,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Depth telemetry** (PLAN 3.7). `result.json` gains a `depth` block with
+  one entry per slot and branch, read from what each CLI already reports:
+  Codex (searches, pages opened, cited-but-never-opened), Kimi (search and
+  fetch tool calls), Grok (stop reason) and Claude (turns, server-side
+  searches, stop reason). Slots whose output exposes none (API providers,
+  agy) read `unknown`. A slot cut off at its deadline reports
+  `stop_reason: deadline`.
+
 - **Partial capture at the deadline** (PLAN 3.1). A Codex or Kimi research
   call killed at its time limit now keeps what it had already streamed: the
   last answer text, or failing that the pages it opened, which the archive
