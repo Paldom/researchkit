@@ -77,7 +77,7 @@ def run_subprocess(
     always captured and decoded as UTF-8 with ``errors="replace"``.
 
     ``TimeoutExpired`` is re-raised after cleanup so existing callers' handling is
-    unchanged.
+    unchanged; its ``output``/``stderr`` hold everything written before the kill.
 
     Every child is stamped with ``NESTED_ENV_VAR`` (see below) so an agent CLI we
     launch cannot turn around and start a researchkit run. Stamping here rather
@@ -104,10 +104,13 @@ def run_subprocess(
     proc = subprocess.Popen(cmd, **popen_kwargs)  # type: ignore[call-overload]
     try:
         out, err = proc.communicate(input=input, timeout=timeout)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
         _kill_process_group(proc)
         with contextlib.suppress(Exception):
-            proc.communicate(timeout=5)  # reap so no zombie
+            # Reap (no zombie) and keep what the CLI wrote before the deadline:
+            # streaming CLIs (codex --json, kimi stream-json) leave a usable
+            # partial answer that callers salvage from ``e.output`` (PLAN 3.1).
+            e.output, e.stderr = proc.communicate(timeout=5)
         raise
     except BaseException:
         _kill_process_group(proc)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import subprocess
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -99,6 +100,37 @@ class Source:
         )
 
 
+class PartialText(str):
+    """Answer text salvaged from a CLI killed at its deadline (PLAN 3.1).
+
+    A ``str`` so every caller keeps working; the provider checks
+    ``isinstance(text, PartialText)`` to record ``meta.partial`` and the slot
+    reports ``partial`` instead of losing the half-hour it already paid for.
+    """
+
+
+def salvage_timeout(
+    exc: subprocess.TimeoutExpired,
+    parse: Callable[[str], tuple[str, list[str]]],
+) -> tuple[PartialText, list[str]] | None:
+    """(partial text, opened urls) from a timed-out streaming CLI, or None.
+
+    With no answer yet but pages already opened, the pages are the result:
+    the archive fetches them and the writer reads them (archive-first).
+    """
+    out = exc.output
+    stdout = out.decode("utf-8", "replace") if isinstance(out, bytes) else out or ""
+    try:
+        text, opened = parse(stdout)
+    except RuntimeError:  # an error event in the stream: nothing to salvage
+        return None
+    if not text.strip() and opened:
+        text = "The research hit its deadline before answering. Pages it read:\n" + (
+            "\n".join(f"- {url}" for url in opened)
+        )
+    return (PartialText(text), opened) if text.strip() else None
+
+
 @dataclass
 class ProviderResult:
     """Result from a provider's insight collection."""
@@ -127,8 +159,11 @@ class ProviderResult:
 
     @property
     def slot_state(self) -> str:
-        """``complete`` / ``empty`` (answered, no sources) / a failure kind."""
+        """``complete`` / ``partial`` (salvaged at the deadline) / ``empty``
+        (answered, no sources) / a failure kind."""
         if self.is_success:
+            if self.meta.get("partial"):
+                return "partial"
             return "complete" if self.sources else "empty"
         return self.failure or "error"
 

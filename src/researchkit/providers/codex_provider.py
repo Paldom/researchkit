@@ -36,6 +36,7 @@ from researchkit.network_retry import with_network_retry
 from researchkit.providers.base import (
     CLI_QUICK_TIMEOUT,
     BaseProvider,
+    PartialText,
     ProviderResult,
     Source,
     SourceType,
@@ -45,6 +46,7 @@ from researchkit.providers.base import (
     get_web_system_prompt,
     get_web_user_prompt,
     run_branches,
+    salvage_timeout,
 )
 from researchkit.safe_io import (
     extract_urls_balanced,
@@ -258,7 +260,14 @@ class CodexProvider(BaseProvider):
                 )
             return proc
 
-        proc = with_network_retry(_call, label=label, provider=self.provider_name)
+        try:
+            proc = with_network_retry(_call, label=label, provider=self.provider_name)
+        except subprocess.TimeoutExpired as e:
+            salvaged = None if quick else salvage_timeout(e, self._parse_jsonl)
+            if salvaged is None:
+                raise
+            logger.warning(f"{label}: deadline hit, keeping the partial answer")
+            return salvaged
         return self._parse_jsonl(proc.stdout)
 
     def _extract_sources(
@@ -365,6 +374,9 @@ class CodexProvider(BaseProvider):
                 if out is None or isinstance(out, BaseException):
                     continue
                 text, opened = out
+                if isinstance(text, PartialText):
+                    meta["partial"] = True
+                    meta.setdefault("partial_branches", []).append(name)
                 sources.extend(self._extract_sources(text, opened, kind))
                 meta[f"{name}_opened_urls"] = opened
                 sections.append(f"# {heading}\n\n{text}")

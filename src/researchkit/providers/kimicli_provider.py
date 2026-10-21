@@ -38,10 +38,15 @@ backfilled — the same recovery path CodexProvider uses.
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 
 from researchkit.network_retry import with_network_retry
-from researchkit.providers.base import CLI_QUICK_TIMEOUT, cli_harness_timeout
+from researchkit.providers.base import (
+    CLI_QUICK_TIMEOUT,
+    cli_harness_timeout,
+    salvage_timeout,
+)
 from researchkit.providers.codex_provider import CodexProvider
 from researchkit.safe_io import run_subprocess, scrubbed_env
 
@@ -202,4 +207,10 @@ class KimiCliProvider(CodexProvider):
             # ("rate limit", "overloaded") must reach the retry policy.
             return self._parse_output(proc.stdout)
 
-        return with_network_retry(_call, label=label, provider=self.provider_name)
+        try:
+            return with_network_retry(_call, label=label, provider=self.provider_name)
+        except subprocess.TimeoutExpired as e:
+            salvaged = None if quick else salvage_timeout(e, self._parse_output)
+            if salvaged is None:
+                raise
+            return salvaged

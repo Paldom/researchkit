@@ -196,19 +196,23 @@ def run_status(
     """The run's honest outcome, recorded in result.json and the exit code.
 
     ``failed``: no slot returned a single source, so there is nothing cited.
-    ``degraded``: something failed (a slot hit quota, timed out, errored) or
-    the article is missing. ``ok`` otherwise. A slot that answered without
+    ``degraded``: something failed (a slot hit quota, timed out, errored), a
+    slot was cut off at its deadline (``partial``), or the article is missing. ``ok`` otherwise. A slot that answered without
     sources is ``empty``: routine for keyless providers, so it is reported but
     does not degrade the run on its own.
     """
     slots = {r.provider: r.slot_state for r in provider_results}
-    with_sources = sum(1 for state in slots.values() if state == "complete")
+    # A slot salvaged at its deadline (``partial``) still cites what it read.
+    with_sources = sum(1 for r in provider_results if r.is_success and r.sources)
+    partial = sorted(n for n, state in slots.items() if state == "partial")
     failed_slots = sorted(
-        n for n, state in slots.items() if state not in ("complete", "empty")
+        n for n, state in slots.items() if state not in ("complete", "empty", "partial")
     )
     reasons: list[str] = []
     if with_sources == 0:
         reasons.append("no provider returned sources")
+    if partial:
+        reasons.append("cut off at the deadline: " + ", ".join(partial))
     if failed_slots:
         reasons.append(
             "failed slots: " + ", ".join(f"{n} ({slots[n]})" for n in failed_slots)

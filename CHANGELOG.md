@@ -64,6 +64,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Partial capture at the deadline** (PLAN 3.1). A Codex or Kimi research
+  call killed at its time limit now keeps what it had already streamed: the
+  last answer text, or failing that the pages it opened, which the archive
+  fetches and the writer reads. The slot reports `partial`
+  (`meta.partial_branches` names the branch), still counts toward cited
+  sources, and the run is `degraded` with the reason "cut off at the
+  deadline". Before this, a 30-minute timeout threw away everything the
+  run had paid for. The research budget itself is unchanged.
+
 - **Shared brains** (`researchkit.brains`): one brainkit brain fed by many
   runs.
   - `researchkit brain create NAME` makes an empty brain in advance.
