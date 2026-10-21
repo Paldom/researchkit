@@ -725,10 +725,13 @@ def _add_research_args(parser: argparse.ArgumentParser) -> None:
         "--providers",
         "-p",
         nargs="+",
-        default=["openai", "gemini", "grok", "perplexity"],
+        # None: the preset decides (harness presets declare their set); a
+        # hard-coded list here silently overrode harness-fast with API slots.
+        default=None,
         help=(
-            "Providers to query (default: openai gemini grok perplexity; "
-            "see `researchkit plugins` for everything available)"
+            "Providers to query (default: the preset's declared set, e.g. "
+            "harness-fast's CLIs + keyless sources; otherwise openai gemini grok "
+            "perplexity. See `researchkit plugins` for everything available)"
         ),
     )
     parser.add_argument(

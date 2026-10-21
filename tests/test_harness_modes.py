@@ -790,3 +790,21 @@ class TestPresetRunDefaults:
             "default", None, None
         )
         assert providers == list(DEFAULT_PROVIDERS) and site is True
+
+
+def test_cli_providers_default_defers_to_the_preset() -> None:
+    """Live validation (2026-10-21) found `--providers` defaulting to the API
+    list, so `--preset harness-fast` silently ran openai/perplexity slots."""
+    import argparse
+
+    from researchkit.cli import _add_research_args
+    from researchkit.service import SocialResearchService
+
+    parser = argparse.ArgumentParser()
+    _add_research_args(parser)
+    args = parser.parse_args(["--preset", "harness-fast"])
+    assert args.providers is None
+    providers, _ = SocialResearchService().resolve_run_defaults(
+        "harness-fast", args.providers, None
+    )
+    assert "openai" not in providers and "perplexity" not in providers

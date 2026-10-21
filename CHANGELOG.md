@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `--providers` defaulted to `openai gemini grok perplexity` on the command
+  line, so `--preset harness-fast` silently ran a Codex research slot and the
+  Perplexity API instead of its declared set (found by a live validation
+  run). The flag now defaults to the preset's set.
+
 - The web server substituted _every_ known provider when a request named
   none, bypassing the preset's declared set (a harness-preset request called
   Perplexity, Tavily and the rest). It now defers to the preset.
