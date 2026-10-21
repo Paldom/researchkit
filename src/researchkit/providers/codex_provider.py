@@ -44,6 +44,7 @@ from researchkit.providers.base import (
     get_user_prompt,
     get_web_system_prompt,
     get_web_user_prompt,
+    run_branches,
 )
 from researchkit.safe_io import (
     extract_urls_balanced,
@@ -331,31 +332,44 @@ class CodexProvider(BaseProvider):
             meta: dict[str, Any] = {}
             sections: list[str] = []
 
+            # Social and web run concurrently, each kept on its own: a failed
+            # web branch no longer discards a paid social answer.
+            branches: dict[str, Any] = {}
             if "social" in self.sources:
                 self._log_query("social")
-                social_text, social_opened = self._run_query(
+                branches["social"] = lambda: self._run_query(
                     system_prompt=get_base_system_prompt(days),
                     user_prompt=get_user_prompt(topic, days),
                     label=f"{self._label_prefix}:social",
                 )
-                sources.extend(
-                    self._extract_sources(social_text, social_opened, SourceType.SOCIAL)
-                )
-                meta["social_opened_urls"] = social_opened
-                sections.append(f"# Social Media Analysis\n\n{social_text}")
-
             if "web" in self.sources:
                 self._log_query("web")
-                web_text, web_opened = self._run_query(
+                branches["web"] = lambda: self._run_query(
                     system_prompt=get_web_system_prompt(days),
                     user_prompt=get_web_user_prompt(topic, days),
                     label=f"{self._label_prefix}:web",
                 )
-                sources.extend(
-                    self._extract_sources(web_text, web_opened, SourceType.WEB)
-                )
-                meta["web_opened_urls"] = web_opened
-                sections.append(f"# Web Research Analysis\n\n{web_text}")
+            outcomes = run_branches(branches)
+            errors = {
+                name: str(out)
+                for name, out in outcomes.items()
+                if isinstance(out, BaseException)
+            }
+            if errors and len(errors) == len(outcomes):
+                raise RuntimeError("; ".join(f"{n}: {e}" for n, e in errors.items()))
+            for name, heading, kind in (
+                ("social", "Social Media Analysis", SourceType.SOCIAL),
+                ("web", "Web Research Analysis", SourceType.WEB),
+            ):
+                out = outcomes.get(name)
+                if out is None or isinstance(out, BaseException):
+                    continue
+                text, opened = out
+                sources.extend(self._extract_sources(text, opened, kind))
+                meta[f"{name}_opened_urls"] = opened
+                sections.append(f"# {heading}\n\n{text}")
+            if errors:
+                meta["branch_errors"] = errors
 
             # Codex gives URLs but no titles — backfill them so sources match
             # the Responses API path (url + title).

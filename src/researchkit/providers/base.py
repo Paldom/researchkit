@@ -6,9 +6,10 @@ import logging
 import math
 import os
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, TypeVar
 
 from researchkit.prompts import (
     get_social_system_prompt as get_base_system_prompt,
@@ -35,6 +36,7 @@ __all__ = [
     "provider_http_timeout",
     "recency_to_glm_filter",
     "recency_to_perplexity_filter",
+    "run_branches",
 ]
 
 logger = logging.getLogger(__name__)
@@ -220,6 +222,46 @@ _CLI_HARNESS_TIMEOUT = 1800.0
 # gracefully (empty keyword list, "summarization failed" stub), so a wedged one
 # should cost minutes, not the full answer budget.
 CLI_QUICK_TIMEOUT = 300.0
+
+_T = TypeVar("_T")
+
+
+def run_branches(
+    branches: dict[str, Callable[[], _T]],
+) -> dict[str, _T | BaseException]:
+    """Run a slot's independent queries (social, web) concurrently.
+
+    Same queries, same model and effort as running them one after the other:
+    only the wait changes (Claude's two ~19-21 min queries were 38 of a
+    44.5 min run). Each branch's outcome is kept on its own, so one failing
+    branch never discards the other's paid answer. contextvars (run_id) are
+    copied into each worker so the per-run log stays attributed.
+    """
+    import contextvars
+    from concurrent.futures import ThreadPoolExecutor
+
+    if len(branches) <= 1:
+        out: dict[str, _T | BaseException] = {}
+        for name, fn in branches.items():
+            try:
+                out[name] = fn()
+            except Exception as e:  # recorded per branch, never raised
+                out[name] = e
+        return out
+
+    def _guarded(fn: Callable[[], _T]) -> _T | BaseException:
+        try:
+            return fn()
+        except Exception as e:  # recorded per branch, never raised
+            return e
+
+    with ThreadPoolExecutor(max_workers=len(branches)) as pool:
+        futures = {
+            name: pool.submit(contextvars.copy_context().run, _guarded, fn)
+            for name, fn in branches.items()
+        }
+        return {name: f.result() for name, f in futures.items()}
+
 
 # Every headless `claude -p` researchkit spawns passes these. Hooks are the
 # operator's interactive tooling, not the writer's: a repo Stop hook that runs

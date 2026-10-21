@@ -183,3 +183,59 @@ class TestRunStatus:
         st = run_status([self._r("grok"), self._r("kimi", error="timed out")], "a")
         assert st["status"] == "failed"
         assert "no provider returned sources" in st["reasons"]
+
+
+class TestIntegrity:
+    """PLAN 1.4 / 1.5."""
+
+    def test_result_json_written_last_and_stale_artifacts_removed(
+        self, tmp_path: object
+    ) -> None:
+        from pathlib import Path
+
+        from researchkit.project import ProjectConfig, create_project
+
+        project = create_project(ProjectConfig(topic="t"), Path(str(tmp_path)))
+        project.save_article("old article")
+        project.save_skill("old skill")
+        order: list[str] = []
+        import researchkit.project as proj
+
+        real = proj.atomic_write_text
+
+        def spy(path: Path, text: str) -> None:
+            order.append(Path(path).name)
+            real(path, text)
+
+        proj.atomic_write_text = spy  # type: ignore[assignment]
+        try:
+            project.save_article(None)
+            project.save_skill(None)
+            project.save_results({"topic": "t"}, "# report")
+        finally:
+            proj.atomic_write_text = real  # type: ignore[assignment]
+        assert order[-1] == "result.json"
+        assert not project.article_path.exists() and not project.skill_path.exists()
+
+    def test_failed_partial_is_not_resumed(self) -> None:
+        from researchkit.service import _stale_partial_reason
+        from researchkit.system_config import SystemConfigManager
+
+        em = SystemConfigManager().resolve_effective_models("harness")
+        failed = ProviderResult("kimi", "kimicli:kimi-code/k3", "", error="usage limit")
+        assert "failed" in (_stale_partial_reason(failed, em) or "")
+        ok = ProviderResult("kimi", "kimicli:kimi-code/k3", "text")
+        assert _stale_partial_reason(ok, em) is None
+        old = ProviderResult("grok", "grokcli:grok-4.6", "text")
+        assert "model changed" in (_stale_partial_reason(old, em) or "")
+
+    def test_cached_summary_keeps_its_origin(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        from researchkit.materials import _cached_origin
+
+        d = Path(str(tmp_path))
+        (d / "a.md").write_text("---\nurl: https://x\ncontent_kind: summary\n---\nbody")
+        (d / "b.md").write_text("---\nurl: https://y\n---\nbody")
+        assert _cached_origin(d / "a.md") == "summary"
+        assert _cached_origin(d / "b.md") == "cached"

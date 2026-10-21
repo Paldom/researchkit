@@ -217,6 +217,23 @@ def run_status(
     }
 
 
+def _stale_partial_reason(result: ProviderResult, slots: EffectiveModels) -> str | None:
+    """Why a saved provider result must not be reused, or None to reuse it.
+
+    Only successful answers are worth keeping: a failure (quota, timeout)
+    replayed on resume just repeats an outage that may be over. A result
+    produced by a different model than the preset now pins is stale too.
+    """
+    if not result.is_success:
+        return f"previous attempt failed ({result.slot_state})"
+    spec = getattr(slots, result.provider, None)
+    if isinstance(spec, str) and ":" in spec and not spec.startswith("deep"):
+        base = spec.split("@", 1)[0]
+        if result.model not in (spec, base):
+            return f"model changed ({result.model} -> {base})"
+    return None
+
+
 def refuse_api_billed_llm(em: EffectiveModels, providers: Iterable[str]) -> None:
     """Raise before any spend if a harness_only preset would bill an LLM API."""
     if bad := em.api_billed_llm_slots(providers):
@@ -728,11 +745,20 @@ class SocialResearchService:
 
         preloaded: dict[str, ProviderResult] = {}
         if resume:
+            slots = self.get_effective_models(project.config.preset_name)
             for name, payload in project.load_partials().items():
                 try:
-                    preloaded[name] = ProviderResult.from_dict(payload)
+                    result = ProviderResult.from_dict(payload)
                 except (KeyError, TypeError, ValueError) as e:
                     logger.warning(f"Ignoring unusable partial for {name}: {e}")
+                    continue
+                if reason := _stale_partial_reason(result, slots):
+                    logger.info(
+                        f"Re-running {name} instead of reusing its partial: {reason}",
+                        extra={"stage": "partial_rerun", "provider": name},
+                    )
+                    continue
+                preloaded[name] = result
         # Convert project config to research request
         req = ResearchRequest(
             topic=project.config.topic,
@@ -770,12 +796,12 @@ class SocialResearchService:
             repo_keep_clones=repo_keep_clones,
         )
 
-        # Save results to project folder
+        # Save in dependency order: the derived artifacts first (a rerun that
+        # produced none removes the stale ones), result.json — the completion
+        # marker — last.
+        project.save_article(artifacts.article_markdown)
+        project.save_skill(artifacts.skill_markdown)
         project.save_results(artifacts.report_json, artifacts.report_markdown)
-        if artifacts.article_markdown:
-            project.save_article(artifacts.article_markdown)
-        if artifacts.skill_markdown:
-            project.save_skill(artifacts.skill_markdown)
         # result.json now supersedes the per-provider partials.
         project.clear_partials()
 

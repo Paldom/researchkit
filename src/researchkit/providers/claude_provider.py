@@ -30,6 +30,7 @@ from researchkit.providers.base import (
     get_user_prompt,
     get_web_system_prompt,
     get_web_user_prompt,
+    run_branches,
 )
 from researchkit.safe_io import claude_subscription_env, run_subprocess
 
@@ -547,28 +548,46 @@ class ClaudeProvider(BaseProvider):
             meta: dict[str, Any] = {}
             sections: list[str] = []
 
+            # Social and web run concurrently (same queries, same model and
+            # effort), each kept on its own: one failed branch never discards
+            # the other's paid answer.
+            branches: dict[str, Any] = {}
             if "social" in self.sources:
                 self._log_query("social")
-                text, social_sources, social_meta = self._run_claude_subprocess(
+                branches["social"] = lambda: self._run_claude_subprocess(
                     get_base_system_prompt(days),
                     get_user_prompt(topic, days),
                     allowed_domains=SOCIAL_DOMAINS,
                     source_type=SourceType.SOCIAL,
                 )
-                sources.extend(social_sources)
-                meta["social"] = social_meta
-                sections.append(f"# Social Media Analysis\n\n{text}")
-
             if "web" in self.sources:
                 self._log_query("web")
-                text, web_sources, web_meta = self._run_claude_subprocess(
+                branches["web"] = lambda: self._run_claude_subprocess(
                     get_web_system_prompt(days),
                     get_web_user_prompt(topic, days),
                     source_type=SourceType.WEB,
                 )
-                sources.extend(web_sources)
-                meta["web"] = web_meta
-                sections.append(f"# Web Research Analysis\n\n{text}")
+            outcomes = run_branches(branches)
+            errors = {
+                name: str(out)
+                for name, out in outcomes.items()
+                if isinstance(out, BaseException)
+            }
+            if errors and len(errors) == len(outcomes):
+                raise RuntimeError("; ".join(f"{n}: {e}" for n, e in errors.items()))
+            for name, heading in (
+                ("social", "Social Media Analysis"),
+                ("web", "Web Research Analysis"),
+            ):
+                out = outcomes.get(name)
+                if out is None or isinstance(out, BaseException):
+                    continue
+                text, branch_sources, branch_meta = out
+                sources.extend(branch_sources)
+                meta[name] = branch_meta
+                sections.append(f"# {heading}\n\n{text}")
+            if errors:
+                meta["branch_errors"] = errors
 
             combined = "\n\n---\n\n".join(sections)
             self._log_done(len(sources), len(combined))

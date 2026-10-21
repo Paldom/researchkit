@@ -280,12 +280,20 @@ class Project:
     def brain_dir(self) -> Path:
         return self.path / BRAIN_DIRNAME
 
-    def save_article(self, markdown: str) -> None:
-        self.article_path.write_text(markdown, encoding="utf-8")
+    def save_article(self, markdown: str | None) -> None:
+        """Write article.md, or remove a stale one when this run made none."""
+        if markdown:
+            atomic_write_text(self.article_path, markdown)
+        else:
+            self.article_path.unlink(missing_ok=True)
 
-    def save_skill(self, markdown: str) -> None:
-        self.skill_path.parent.mkdir(parents=True, exist_ok=True)
-        self.skill_path.write_text(markdown, encoding="utf-8")
+    def save_skill(self, markdown: str | None) -> None:
+        """Write skill/SKILL.md, or remove a stale one when this run made none."""
+        if markdown:
+            self.skill_path.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write_text(self.skill_path, markdown)
+        else:
+            self.skill_path.unlink(missing_ok=True)
 
     @property
     def partial_dir(self) -> Path:
@@ -482,9 +490,14 @@ class Project:
         logger.info(f"Saved config to {self.config_path}")
 
     def save_results(self, result_json: dict[str, Any], report_markdown: str) -> None:
-        """Save the results and report atomically (crash mid-write can't corrupt them)."""
-        atomic_write_text(self.result_path, json.dumps(result_json, indent=2))
+        """Save the report, then result.json LAST.
+
+        result.json is the research pack's "run complete" marker (brainkit
+        gates ingest on it), so it is published only after everything it
+        describes is on disk. Both writes are atomic.
+        """
         atomic_write_text(self.report_path, report_markdown)
+        atomic_write_text(self.result_path, json.dumps(result_json, indent=2))
         logger.info(f"Saved results to {self.result_path}")
         logger.info(f"Saved report to {self.report_path}")
 

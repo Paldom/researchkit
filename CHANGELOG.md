@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `result.json`, the research pack's "run complete" marker, is now written
+  _last_, after the report, article and skill. A rerun that produces no
+  article or skill removes the stale one instead of leaving it next to newer
+  research.
+- Resume reuses only _successful_ provider partials whose model still
+  matches the preset. A partial left by a quota failure or a timeout is
+  re-run instead of replayed after the outage is over.
+- A connector summary archived as a fallback keeps origin `summary` when it's
+  reused on a later run, instead of becoming `cached` and passing as source
+  text.
+
 - **Security: the Kimi Code CLI could run shell commands from web content.**
   Headless `kimi -p` auto-approves every tool: a planted instruction ran
   `touch` on the host (verified live). Research calls now pass an
@@ -65,6 +76,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `github: codex:gpt-6.1-sol`.
 
 ### Changed
+
+- Each CLI research slot runs its social and web queries **concurrently**
+  (Claude, Codex, Antigravity, Grok, Kimi). They're the same two queries on
+  the same model and effort, so only the wait changes: Claude's two serial
+  ~19–21 min queries were 38 of a 44.5 min `harness` run. Each branch is kept
+  on its own: a failed web query no longer discards a paid social answer, and
+  `meta.branch_errors` records what failed. The slot fails only when every
+  branch fails.
 
 - `advise` and `council` give Claude the preset's full `claude_max_budget`
   ($15 on harness) instead of the in-run $3 cap, which stopped Fable 5.1

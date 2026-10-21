@@ -389,6 +389,22 @@ def _file_matches_url(path: Path, url: str) -> bool:
     return any(line.strip() == f"url: {url}" for line in head.splitlines()[:12])
 
 
+def _cached_origin(path: Path) -> str:
+    """Manifest origin for a reused material: ``summary`` stays ``summary``.
+
+    A connector summary archived as a fallback is not source text; reusing it
+    on a later run must not relabel it ``cached`` and let it pass as a page.
+    """
+    try:
+        head = path.read_text(encoding="utf-8")[:2000]
+    except OSError:
+        return "cached"
+    for line in head.splitlines()[:16]:
+        if line.strip().replace('"', "") == "content_kind: summary":
+            return "summary"
+    return "cached"
+
+
 def _material_filename(position: int, ref: SourceRef) -> str:
     host = urlsplit(ref.url).netloc.lower().removeprefix("www.")
     stem = slugify(f"{host} {ref.title}"[:80], max_length=60) or "source"
@@ -554,7 +570,7 @@ def download_materials(
         path = materials_dir / filename
         if path.exists() and not refresh and _file_matches_url(path, ref.url):
             entry.status = "fetched"
-            entry.origin = "cached"
+            entry.origin = _cached_origin(path)
             entry.file = filename
             entry.chars = len(path.read_text(encoding="utf-8"))
             continue

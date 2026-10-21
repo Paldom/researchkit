@@ -33,6 +33,7 @@ import logging
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from typing import Any
 
 import requests
@@ -49,6 +50,7 @@ from researchkit.providers.base import (
     get_user_prompt,
     get_web_system_prompt,
     get_web_user_prompt,
+    run_branches,
 )
 from researchkit.safe_io import run_subprocess, scrubbed_env
 
@@ -290,29 +292,45 @@ class AntigravityProvider(BaseProvider):
             meta: dict[str, Any] = {}
             sections: list[str] = []
 
+            # Social and web run concurrently, each kept on its own.
+            prompts: dict[str, str] = {}
             if "social" in self.sources:
                 self._log_query("social")
-                prompt = (
+                prompts["social"] = (
                     f"{get_base_system_prompt(days)}\n\n"
                     f"{get_user_prompt(topic, days)}{_SOURCES_INSTRUCTION}"
                 )
-                social_text = self._run_cli(prompt, "agy.print:social")
-                social_sources = self._extract_sources(social_text, SourceType.SOCIAL)
-                sources.extend(social_sources)
-                meta["social_source_count"] = len(social_sources)
-                sections.append(f"# Social Media Analysis\n\n{social_text}")
-
             if "web" in self.sources:
                 self._log_query("web")
-                prompt = (
+                prompts["web"] = (
                     f"{get_web_system_prompt(days)}\n\n"
                     f"{get_web_user_prompt(topic, days)}{_SOURCES_INSTRUCTION}"
                 )
-                web_text = self._run_cli(prompt, "agy.print:web")
-                web_sources = self._extract_sources(web_text, SourceType.WEB)
-                sources.extend(web_sources)
-                meta["web_source_count"] = len(web_sources)
-                sections.append(f"# Web Research Analysis\n\n{web_text}")
+
+            def _branch(prompt: str, name: str) -> Callable[[], str]:
+                return lambda: self._run_cli(prompt, f"agy.print:{name}")
+
+            outcomes = run_branches({n: _branch(p, n) for n, p in prompts.items()})
+            errors = {
+                name: str(out)
+                for name, out in outcomes.items()
+                if isinstance(out, BaseException)
+            }
+            if errors and len(errors) == len(outcomes):
+                raise RuntimeError("; ".join(f"{n}: {e}" for n, e in errors.items()))
+            for name, heading, kind in (
+                ("social", "Social Media Analysis", SourceType.SOCIAL),
+                ("web", "Web Research Analysis", SourceType.WEB),
+            ):
+                out = outcomes.get(name)
+                if out is None or isinstance(out, BaseException):
+                    continue
+                branch_sources = self._extract_sources(out, kind)
+                sources.extend(branch_sources)
+                meta[f"{name}_source_count"] = len(branch_sources)
+                sections.append(f"# {heading}\n\n{out}")
+            if errors:
+                meta["branch_errors"] = errors
 
             combined_text = "\n\n---\n\n".join(sections)
             self._log_done(len(sources), len(combined_text))
