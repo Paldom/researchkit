@@ -151,6 +151,12 @@ class TestPartialPersistenceAndResume:
         monkeypatch.setattr(service_module, "InsightAggregator", CapturingAggregator)
 
         svc = SocialResearchService(projects_dir=tmp_path)
+        # Pin slots: a local models.yaml harness pin would mark the partial stale.
+        monkeypatch.setattr(
+            svc,
+            "get_effective_models",
+            lambda preset_name=None: _make_effective_models(),
+        )
         project = svc.create_project(topic="resume", providers=["openai"])
         project.save_partial(
             "openai",
