@@ -42,7 +42,7 @@ import json
 import tempfile
 
 from researchkit.network_retry import with_network_retry
-from researchkit.providers.base import cli_harness_timeout
+from researchkit.providers.base import CLI_QUICK_TIMEOUT, cli_harness_timeout
 from researchkit.providers.codex_provider import CodexProvider
 from researchkit.safe_io import run_subprocess, scrubbed_env
 
@@ -162,10 +162,14 @@ class KimiCliProvider(CodexProvider):
         return text, []
 
     def _exec(
-        self, prompt: str, *, web_search: bool, label: str
+        self, prompt: str, *, web_search: bool, label: str, quick: bool = False
     ) -> tuple[str, list[str]]:
         """Run one headless ``kimi`` invocation; return (final_text, [])."""
-        timeout = cli_harness_timeout()
+        # Side calls (keywords, summaries) get the short budget; research keeps
+        # the full one.
+        timeout = (
+            cli_harness_timeout(CLI_QUICK_TIMEOUT) if quick else cli_harness_timeout()
+        )
 
         def _call() -> tuple[str, list[str]]:
             # Own process group + kill-on-timeout, UTF-8 decode, and a

@@ -39,6 +39,7 @@ import requests
 
 from researchkit.network_retry import with_network_retry
 from researchkit.providers.base import (
+    CLI_QUICK_TIMEOUT,
     BaseProvider,
     ProviderResult,
     Source,
@@ -207,9 +208,13 @@ class AntigravityProvider(BaseProvider):
         cmd += ["--print-timeout", print_timeout, "-p", prompt]
         return cmd
 
-    def _run_cli(self, prompt: str, label: str) -> str:
+    def _run_cli(self, prompt: str, label: str, *, quick: bool = False) -> str:
         """Run ``agy`` non-interactively and return its printed response text."""
-        timeout = cli_harness_timeout()
+        # Side calls (keywords, summaries) get the short budget; research keeps
+        # the full one.
+        timeout = (
+            cli_harness_timeout(CLI_QUICK_TIMEOUT) if quick else cli_harness_timeout()
+        )
         cmd = self._build_cmd(prompt, timeout=timeout)
 
         def _call() -> subprocess.CompletedProcess[str]:
@@ -331,7 +336,9 @@ class AntigravityProvider(BaseProvider):
                 f"{get_keyword_generation_user_prompt(topic, days, context)}\n\n"
                 "Do not search the web. Respond ONLY with the JSON."
             )
-            return parse_keyword_json(self._run_cli(prompt, "agy.print:keywords"))
+            return parse_keyword_json(
+                self._run_cli(prompt, "agy.print:keywords", quick=True)
+            )
         except Exception as e:
             logger.warning(f"Antigravity keyword generation failed: {e}")
             return []
@@ -348,7 +355,7 @@ class AntigravityProvider(BaseProvider):
             f"**Topic:** {topic}\n\n---\n{raw_text}\n---"
         )
         try:
-            return self._run_cli(prompt, "agy.print:summarize") or (
+            return self._run_cli(prompt, "agy.print:summarize", quick=True) or (
                 raw_text[:500] + "..." if len(raw_text) > 500 else raw_text
             )
         except Exception as e:

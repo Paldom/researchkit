@@ -40,18 +40,50 @@ os.environ.setdefault("GRPC_VERBOSITY", "error")
 logging.getLogger(__name__).addHandler(NullHandler())
 
 
-from researchkit.project import (  # noqa: E402
-    Project,
-    ProjectConfig,
-    create_project,
-    list_projects,
-    load_project,
-)
-from researchkit.service import (  # noqa: E402
-    ResearchArtifacts,
-    ResearchRequest,
-    SocialResearchService,
-)
+# Exports resolve lazily (PEP 562) so `import researchkit` — and every CLI
+# invocation, MCP boot and web request — doesn't pay for the service graph.
+from typing import TYPE_CHECKING, Any  # noqa: E402
+
+if TYPE_CHECKING:
+    from researchkit.project import (
+        Project,
+        ProjectConfig,
+        create_project,
+        list_projects,
+        load_project,
+    )
+    from researchkit.service import (
+        ResearchArtifacts,
+        ResearchRequest,
+        SocialResearchService,
+    )
+
+_EXPORTS: dict[str, str] = {
+    "Project": "researchkit.project",
+    "ProjectConfig": "researchkit.project",
+    "create_project": "researchkit.project",
+    "list_projects": "researchkit.project",
+    "load_project": "researchkit.project",
+    "ResearchArtifacts": "researchkit.service",
+    "ResearchRequest": "researchkit.service",
+    "SocialResearchService": "researchkit.service",
+}
+
+
+def __getattr__(name: str) -> Any:
+    module = _EXPORTS.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import importlib
+
+    value = getattr(importlib.import_module(module), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted([*globals(), *_EXPORTS])
+
 
 __all__ = [
     # Project management

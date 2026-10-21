@@ -723,3 +723,42 @@ class TestCmdCouncilOutput:
         assert "Council answer" in out and "Do X." in out
         assert "Dissent" in out and "one member prefers Y" in out
         assert "failed: down" in out
+
+
+class TestSideCallBudgets:
+    """Keywords and summaries are short formatting calls: 300 s, not the
+    1800 s research budget (PLAN 1.7). Research calls keep the full budget."""
+
+    def _capture(self, monkeypatch: pytest.MonkeyPatch, module: Any) -> list[float]:
+        import subprocess
+
+        seen: list[float] = []
+
+        def fake(cmd: Any, **kw: Any) -> subprocess.CompletedProcess[str]:
+            seen.append(kw["timeout"])
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(module, "run_subprocess", fake)
+        monkeypatch.setattr(module.shutil, "which", lambda b: f"/bin/{b}")
+        monkeypatch.delenv("RESEARCHKIT_CLI_TIMEOUT", raising=False)
+        monkeypatch.delenv("PROVIDER_HTTP_TIMEOUT", raising=False)
+        return seen
+
+    def test_codex_side_calls_are_quick(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import researchkit.providers.codex_provider as mod
+
+        seen = self._capture(monkeypatch, mod)
+        p = mod.CodexProvider(model="gpt-6.1-sol")
+        p.summarize_result("raw", "topic")
+        p.generate_keywords("topic", 7)
+        p._exec("research", web_search=True, label="codex:web")
+        assert seen == [300.0, 300.0, 1800.0]
+
+    def test_agy_side_calls_are_quick(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import researchkit.providers.antigravity_provider as mod
+
+        seen = self._capture(monkeypatch, mod)
+        p = mod.AntigravityProvider(model="gemini-3.8-flash-high")
+        p.summarize_result("raw", "topic")
+        p._run_cli("research", "agy.print:web")
+        assert seen[0] == 300.0 and seen[-1] == 1800.0

@@ -34,6 +34,7 @@ from typing import Any
 
 from researchkit.network_retry import with_network_retry
 from researchkit.providers.base import (
+    CLI_QUICK_TIMEOUT,
     BaseProvider,
     ProviderResult,
     Source,
@@ -223,11 +224,15 @@ class CodexProvider(BaseProvider):
         return proc.stdout.strip()[-300:] or "(no output)"
 
     def _exec(
-        self, prompt: str, *, web_search: bool, label: str
+        self, prompt: str, *, web_search: bool, label: str, quick: bool = False
     ) -> tuple[str, list[str]]:
         """Run one ``codex exec`` invocation; return (final_text, opened_urls)."""
         cmd = self._build_cmd(web_search)
-        timeout = cli_harness_timeout()
+        # Side calls (keywords, summaries) get the short budget; research keeps
+        # the full one.
+        timeout = (
+            cli_harness_timeout(CLI_QUICK_TIMEOUT) if quick else cli_harness_timeout()
+        )
 
         def _call() -> subprocess.CompletedProcess[str]:
             # Own process group + kill-on-timeout (C2), UTF-8 decode (L26), and a
@@ -382,6 +387,7 @@ class CodexProvider(BaseProvider):
                 f"{system_prompt}\n\n{user_prompt}\n\nRespond ONLY with the JSON.",
                 web_search=False,
                 label=f"{self._label_prefix}:keywords",
+                quick=True,
             )
             return parse_keyword_json(text)
         except Exception as e:
@@ -416,6 +422,7 @@ Format as a markdown bullet list. Start each bullet with a bold label when appro
                 f"{system_prompt}\n\n{user_prompt}",
                 web_search=False,
                 label=f"{self._label_prefix}:summarize",
+                quick=True,
             )
             return text or (raw_text[:500] + "..." if len(raw_text) > 500 else raw_text)
         except Exception as e:

@@ -33,6 +33,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Startup is ~9x faster: `import researchkit.cli` takes 0.10 s instead of
+  0.88 s. The package and `researchkit.providers` resolve their exports
+  lazily, so the API SDKs (google-genai, openai) load only when an API slot
+  actually runs. Every `--help`, `doctor`, `advise`, MCP boot and web request
+  used to pay for them. API mode works exactly as before.
+- Keyword generation and per-provider summaries on the Codex, Antigravity,
+  Grok and Kimi CLIs get the 300 s side-call budget Claude already used,
+  instead of the 1800 s research budget. Research and writer calls keep their
+  full budget.
+
 - Gemini Flash pins moved from 3.7 to 3.8 everywhere: `gemini-3.8-flash` on the
   API slots (provider, meta-summarizer, council member) and
   `agy:gemini-3.8-flash-high` on the Antigravity harness. Both ids verified

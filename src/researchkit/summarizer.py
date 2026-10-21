@@ -15,8 +15,6 @@ from researchkit.prompts import (
     get_single_summary_user_prompt,
 )
 from researchkit.providers.base import ProviderResult
-from researchkit.providers.glm_provider import is_glm_model
-from researchkit.providers.kimi_provider import is_kimi_model
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +48,10 @@ class Summarizer:
         self.model = model or self.DEFAULT_MODEL
         # GLM models are served via the z.ai OpenAI-compatible endpoint rather
         # than the Gemini SDK, so callers can use GLM as the summarizer model.
+        # Deferred: these modules import the OpenAI SDK at load time.
+        from researchkit.providers.glm_provider import is_glm_model
+        from researchkit.providers.kimi_provider import is_kimi_model
+
         self._is_glm = is_glm_model(self.model)
         # Kimi models likewise route to the Moonshot OpenAI-compatible endpoint.
         self._is_kimi = is_kimi_model(self.model)
