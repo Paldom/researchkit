@@ -44,12 +44,21 @@ export function stripFrontmatter(text: string): string {
 export default function BrainView({ name }: { name: string }) {
   const [loaded, setLoaded] = useState<Loaded>({ state: 'loading' })
   const [path, setPath] = useState(INDEX)
-  const [note, setNote] = useState<string | null>(null)
+  // Fetched notes remember their path; the index comes straight from the
+  // loaded brain. The parent keys this component by project name, so a new
+  // project starts from fresh state instead of resetting it in an effect.
+  const [fetchedNote, setFetchedNote] = useState<{ path: string; text: string } | null>(null)
+  const note =
+    loaded.state !== 'ready'
+      ? null
+      : path === INDEX
+        ? loaded.brain.index
+        : fetchedNote?.path === path
+          ? fetchedNote.text
+          : null
 
   useEffect(() => {
     let cancelled = false
-    setLoaded({ state: 'loading' })
-    setPath(INDEX)
     getBrain(name).then(
       (brain) => {
         if (!cancelled) setLoaded({ state: 'ready', brain })
@@ -71,19 +80,14 @@ export default function BrainView({ name }: { name: string }) {
   }, [name])
 
   useEffect(() => {
-    if (loaded.state !== 'ready') return
-    if (path === INDEX) {
-      setNote(loaded.brain.index)
-      return
-    }
+    if (loaded.state !== 'ready' || path === INDEX) return
     let cancelled = false
-    setNote(null)
     getBrainNote(name, path).then(
       (text) => {
-        if (!cancelled) setNote(text)
+        if (!cancelled) setFetchedNote({ path, text })
       },
       () => {
-        if (!cancelled) setNote('*This note could not be loaded.*')
+        if (!cancelled) setFetchedNote({ path, text: '*This note could not be loaded.*' })
       },
     )
     return () => {

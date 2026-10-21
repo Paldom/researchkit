@@ -13,9 +13,10 @@ resolution-markers = [
 exclude-newer = "2026-07-04T00:00:00Z"
 
 [options.exclude-newer-package]
-cryptography = "2026-08-01T00:00:00Z"
-pyasn1 = "2026-08-01T00:00:00Z"
 aiohttp = "2026-08-01T00:00:00Z"
+cryptography = "2026-08-01T00:00:00Z"
+hatchling = "2026-08-01T00:00:00Z"
+pyasn1 = "2026-08-01T00:00:00Z"
 
 [[package]]
 name = "aiohappyeyeballs"

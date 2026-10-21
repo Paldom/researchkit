@@ -40,9 +40,25 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    void loadInitial()
-    return () => closeStream.current?.()
-  }, [loadInitial])
+    // Inline promise chain: state is only set from the async callbacks.
+    let cancelled = false
+    Promise.all([getConfig(), listProjects()]).then(
+      ([cfg, projs]) => {
+        if (cancelled) return
+        setConfig(cfg)
+        setProjects(projs)
+        setApiDown(false)
+      },
+      () => {
+        if (!cancelled) setApiDown(true)
+      },
+    )
+    const stream = closeStream
+    return () => {
+      cancelled = true
+      stream.current?.()
+    }
+  }, [])
 
   function toggleSidebar() {
     setSidebarOpen((open) => {

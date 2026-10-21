@@ -81,6 +81,9 @@ exclude-newer = "2026-07-04T00:00:00Z"
 aiohttp = "2026-08-01T00:00:00Z"
 cryptography = "2026-08-01T00:00:00Z"
 pyasn1 = "2026-08-01T00:00:00Z"
+# Build backend: the Dependabot floor (>=1.31.0, released 2026-07-08) postdates
+# the global cutoff; 2026-08-01 admits the 1.31.x line and still holds 1.32+.
+hatchling = "2026-08-01T00:00:00Z"
 
 [tool.pytest.ini_options]
 minversion = "9.0"

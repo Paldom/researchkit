@@ -32,11 +32,17 @@ const preClass =
 export default function OutputTabs({ name }: { name: string }) {
   const [tab, setTab] = useState<Tab>('Report')
   const [mode, setMode] = useState<LinksMode>('strict')
-  const [loaded, setLoaded] = useState<Loaded>({ state: 'loading' })
+  // Each result remembers which tab/mode it was fetched for; a stale one
+  // reads as loading, so the effect never has to reset state synchronously.
+  const key = `${name}\u0000${tab}\u0000${mode}`
+  const [fetched, setFetched] = useState<{ key: string; value: Loaded } | null>(null)
+  const loaded: Loaded = fetched?.key === key ? fetched.value : { state: 'loading' }
 
   useEffect(() => {
     let cancelled = false
-    setLoaded({ state: 'loading' })
+    const settle = (value: Loaded) => {
+      if (!cancelled) setFetched({ key, value })
+    }
     const fetchers: Record<Tab, () => Promise<Loaded>> = {
       Report: async () => ({ state: 'text', text: await getReport(name) }),
       Article: async () => ({ state: 'text', text: await getArticle(name) }),
@@ -50,27 +56,21 @@ export default function OutputTabs({ name }: { name: string }) {
       Links: async () => ({ state: 'links', links: await getLinks(name, mode) }),
       Log: async () => ({ state: 'text', text: await getLog(name) }),
     }
-    fetchers[tab]().then(
-      (result) => {
-        if (!cancelled) setLoaded(result)
-      },
-      (err: unknown) => {
-        if (cancelled) return
-        setLoaded({
-          state: 'error',
-          message:
-            err instanceof ApiError && err.status === 404
-              ? tab === 'Skill'
-                ? 'No skill file — the research was too thin for one, or this run predates skill generation.'
-                : 'Not available yet — run the project first.'
-              : 'Failed to load. Is the backend up?',
-        })
-      },
-    )
+    fetchers[tab]().then(settle, (err: unknown) => {
+      settle({
+        state: 'error',
+        message:
+          err instanceof ApiError && err.status === 404
+            ? tab === 'Skill'
+              ? 'No skill file — the research was too thin for one, or this run predates skill generation.'
+              : 'Not available yet — run the project first.'
+            : 'Failed to load. Is the backend up?',
+      })
+    })
     return () => {
       cancelled = true
     }
-  }, [name, tab, mode])
+  }, [key, name, tab, mode])
 
   return (
     <section aria-label="Project output">
@@ -132,7 +132,7 @@ export default function OutputTabs({ name }: { name: string }) {
           </div>
         )}
 
-        {loaded.state === 'brain' && tab === 'Brain' && <BrainView name={name} />}
+        {loaded.state === 'brain' && tab === 'Brain' && <BrainView key={name} name={name} />}
 
         {loaded.state === 'text' && tab === 'Prompt' && (
           <div>
