@@ -44,3 +44,20 @@ def _no_network_archiving(monkeypatch: pytest.MonkeyPatch) -> None:
         "safe_fetch",
         lambda url, **kw: FetchResult(url, url, error="network disabled in tests"),
     )
+
+
+@pytest.fixture(autouse=True)
+def _no_real_claude_writers(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The publication stage spawns Claude Code writers; a unit test must never
+    # bill a subscription. Tests that exercise the writer command patch
+    # researchkit.final_summary.run_subprocess themselves, which overrides this.
+    import subprocess
+
+    import researchkit.final_summary as final_summary
+
+    def _blocked(cmd: list[str], **kw: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            cmd, 1, stdout="", stderr="real Claude CLI disabled in tests"
+        )
+
+    monkeypatch.setattr(final_summary, "run_subprocess", _blocked)

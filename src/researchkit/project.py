@@ -489,6 +489,45 @@ class Project:
         atomic_write_text(self.config_path, json.dumps(data, indent=2))
         logger.info(f"Saved config to {self.config_path}")
 
+    @property
+    def evidence_path(self) -> Path:
+        return self.path / "evidence.md"
+
+    @property
+    def providers_path(self) -> Path:
+        return self.path / "providers.md"
+
+    @property
+    def claims_path(self) -> Path:
+        return self.path / "claims.jsonl"
+
+    def save_publication(
+        self,
+        *,
+        evidence_markdown: str | None,
+        providers_markdown: str | None,
+        claims: list[dict[str, Any]],
+    ) -> None:
+        """Write the report's appendices and claims table (PLAN 2.8, 2.9).
+
+        Stale ones from an earlier run are removed when this run made none.
+        """
+        for path, text in (
+            (self.evidence_path, evidence_markdown),
+            (self.providers_path, providers_markdown),
+        ):
+            if text:
+                atomic_write_text(path, text)
+            else:
+                path.unlink(missing_ok=True)
+        if claims:
+            atomic_write_text(
+                self.claims_path,
+                "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in claims),
+            )
+        else:
+            self.claims_path.unlink(missing_ok=True)
+
     def save_results(self, result_json: dict[str, Any], report_markdown: str) -> None:
         """Save the report, then result.json LAST.
 

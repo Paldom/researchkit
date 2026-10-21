@@ -307,6 +307,16 @@ Site Research (optional):
         help="With --probe, also probe LLM API slots (each is a tiny billed request)",
     )
 
+    # --- republish command ---
+    republish_parser = subparsers.add_parser(
+        "republish",
+        help=(
+            "Re-run only the report/article writers on a finished project "
+            "(same research, no provider calls; archives sources if needed)"
+        ),
+    )
+    republish_parser.add_argument("name", help="Project name or path")
+
     # --- council command ---
     council_parser = subparsers.add_parser(
         "council",
@@ -1439,6 +1449,29 @@ def _print_next_steps(path: Path) -> None:
     )
 
 
+def cmd_republish(args, service: SocialResearchService) -> int:
+    """Handle 'republish': new publication over a project's frozen research."""
+    try:
+        project = find_project(args.name, args.projects_dir)
+        if not project:
+            print(f"Error: Project not found: {args.name}", file=sys.stderr)
+            return 1
+        artifacts = service.republish(
+            project, progress=make_progress_callback(args.verbose)
+        )
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    pub = artifacts.report_json.get("publication", {})
+    print(
+        f"Republished {project.name}: {pub.get('sources_cited', 0)} sources cited, "
+        f"{pub.get('claims', 0)} claims, {len(pub.get('hard_issues', []))} hard issues",
+        file=sys.stderr,
+    )
+    print(f"wrote: {project.report_path}", file=sys.stderr)
+    return 1 if artifacts.status == "failed" else 0
+
+
 def cmd_doctor(args) -> int:
     """Handle 'doctor': preflight the preset's slots, harnesses, and keys."""
     from researchkit.doctor import format_report, run_doctor
@@ -1949,6 +1982,7 @@ SUBCOMMANDS = frozenset(
         "advise-session",
         "council",
         "doctor",
+        "republish",
         "explore",
         "links",
         "improve-topic",
@@ -2107,6 +2141,8 @@ def main() -> int:
         return cmd_create(args, service)
     elif args.command == "doctor":
         return cmd_doctor(args)
+    elif args.command == "republish":
+        return cmd_republish(args, service)
     elif args.command == "advise":
         return cmd_advise(args)
     elif args.command == "advise-session":

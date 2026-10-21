@@ -8,7 +8,9 @@ should use. It coordinates provider collection, summarization, formatting, and s
 from __future__ import annotations
 
 import contextvars
+import dataclasses
 import logging
+import os
 import shutil
 import time
 from collections.abc import Callable, Iterable, Sequence
@@ -39,6 +41,7 @@ from researchkit.project import (
     create_subproject,
 )
 from researchkit.prompts import run_context_note_scope
+from researchkit.publish import Publication, publish, render_failure_article
 from researchkit.run_limit import run_slot
 from researchkit.system_config import EffectiveModels, SystemConfigManager
 from researchkit.utils import slugify
@@ -97,6 +100,10 @@ class ResearchArtifacts:
     skill_markdown: str | None = None
     # Honest outcome (see run_status): "ok" / "degraded" / "failed".
     status: str = "ok"
+    # Archive-first publication outputs (None/empty on the legacy path).
+    evidence_markdown: str | None = None
+    providers_markdown: str | None = None
+    claims: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -349,6 +356,130 @@ class SocialResearchService:
             user_file_contents=bundle.user_file_contents,
         )
 
+    def _legacy_publication(
+        self,
+        *,
+        req: ResearchRequest,
+        bundle: InsightBundle,
+        effective_models: EffectiveModels,
+        emit: Callable[[ProgressEvent], None],
+        repo_cards: list[str],
+    ) -> tuple[dict[str, str | None], str]:
+        """The four independent writers (digest, overview, article, skill).
+
+        Kept only for the A/B against the archive-first publication
+        (``RESEARCHKIT_REPORT=legacy``); scheduled for deletion once the
+        frozen-evidence comparison passes (PLAN 2.7).
+        """
+        # Every writer's output by stage; None = skipped, failed, declined.
+        written: dict[str, str | None] = {}
+
+        # Skip the Claude CLI writers entirely when no provider succeeded —
+        # otherwise they spend budget summarizing the "*All providers
+        # failed*" notice. (Review L2; mirrors the keyword-gen gate in the
+        # aggregator.)
+        any_success = any(r.is_success for r in bundle.provider_results)
+
+        # All four writers see the same research body and run at once: the
+        # research is bought, so the only thing left to wait on is wall
+        # clock, and these are independent of each other.
+        summary_specs: dict[
+            str,
+            tuple[str, str, str, ClaudeFinalSummaryGenerator],
+        ] = {
+            "digest": (
+                "Generating digest summary",
+                "Digest generated",
+                "Digest skipped",
+                DigestGenerator.from_effective_models(effective_models),
+            ),
+            "professional_overview": (
+                "Generating professional overview",
+                "Professional overview generated",
+                "Professional overview skipped",
+                ProfessionalOverviewGenerator.from_effective_models(effective_models),
+            ),
+            "article": (
+                "Writing article",
+                "Article written",
+                "Article skipped",
+                ArticleGenerator.from_effective_models(effective_models),
+            ),
+            "skill": (
+                "Distilling skill",
+                "Skill distilled",
+                "Skill skipped",
+                SkillGenerator.from_effective_models(effective_models),
+            ),
+        }
+        if not any_success:
+            for stage, spec in summary_specs.items():
+                emit({"stage": f"{stage}_done", "message": spec[2]})
+            summary_specs = {}
+
+        future_map: dict[Future[str | None], str] = {}
+        with ThreadPoolExecutor(max_workers=max(1, len(summary_specs))) as executor:
+            for stage, spec in summary_specs.items():
+                message, _, _, generator = spec
+                emit(
+                    {
+                        "stage": stage,
+                        "message": message,
+                    }
+                )
+                # Propagate contextvars (run_id) into the worker so the
+                # final-summary stage's logs land in the per-run log file
+                # instead of being stamped run_id="-" and filtered out.
+                # (Review L3.)
+                ctx = contextvars.copy_context()
+                future = executor.submit(
+                    ctx.run,
+                    self._generate_final_summary,
+                    generator,
+                    bundle,
+                    req.topic,
+                    req.days,
+                    repo_cards,
+                )
+                future_map[future] = stage
+
+            for future in as_completed(future_map):
+                stage = future_map[future]
+                _, done_message, skipped_message, _ = summary_specs[stage]
+                try:
+                    text = future.result()
+                except Exception as e:
+                    logger.warning(
+                        f"{stage} generation failed: {e}",
+                        extra={"stage": f"{stage}_error"},
+                    )
+                    text = None
+
+                written[stage] = text
+
+                emit(
+                    {
+                        "stage": f"{stage}_done",
+                        "message": done_message if text else skipped_message,
+                    }
+                )
+
+        bundle.professional_overview_markdown = written.get("professional_overview")
+
+        emit(
+            {
+                "stage": "formatting",
+                "message": "Formatting report",
+            }
+        )
+
+        md = format_as_markdown(
+            bundle,
+            include_raw=req.include_raw,
+            digest_markdown=written.get("digest"),
+        )
+        return written, md
+
     @staticmethod
     def _enrich_with_repos(
         repo_dir: Path,
@@ -595,115 +726,34 @@ class SocialResearchService:
                         "error": str(e),
                     }
 
-            # Every writer's output by stage; None = skipped, failed, declined.
+            # --- Publication (PLAN 2.4-2.11) ---------------------------------
             written: dict[str, str | None] = {}
-
-            # Skip the Claude CLI writers entirely when no provider succeeded —
-            # otherwise they spend budget summarizing the "*All providers
-            # failed*" notice. (Review L2; mirrors the keyword-gen gate in the
-            # aggregator.)
+            publication: Publication | None = None
             any_success = any(r.is_success for r in bundle.provider_results)
-
-            # All four writers see the same research body and run at once: the
-            # research is bought, so the only thing left to wait on is wall
-            # clock, and these are independent of each other.
-            summary_specs: dict[
-                str,
-                tuple[str, str, str, ClaudeFinalSummaryGenerator],
-            ] = {
-                "digest": (
-                    "Generating digest summary",
-                    "Digest generated",
-                    "Digest skipped",
-                    DigestGenerator.from_effective_models(effective_models),
-                ),
-                "professional_overview": (
-                    "Generating professional overview",
-                    "Professional overview generated",
-                    "Professional overview skipped",
-                    ProfessionalOverviewGenerator.from_effective_models(
-                        effective_models
-                    ),
-                ),
-                "article": (
-                    "Writing article",
-                    "Article written",
-                    "Article skipped",
-                    ArticleGenerator.from_effective_models(effective_models),
-                ),
-                "skill": (
-                    "Distilling skill",
-                    "Skill distilled",
-                    "Skill skipped",
-                    SkillGenerator.from_effective_models(effective_models),
-                ),
-            }
-            if not any_success:
-                for stage, spec in summary_specs.items():
-                    emit({"stage": f"{stage}_done", "message": spec[2]})
-                summary_specs = {}
-
-            future_map: dict[Future[str | None], str] = {}
-            with ThreadPoolExecutor(max_workers=max(1, len(summary_specs))) as executor:
-                for stage, spec in summary_specs.items():
-                    message, _, _, generator = spec
-                    emit(
-                        {
-                            "stage": stage,
-                            "message": message,
-                        }
-                    )
-                    # Propagate contextvars (run_id) into the worker so the
-                    # final-summary stage's logs land in the per-run log file
-                    # instead of being stamped run_id="-" and filtered out.
-                    # (Review L3.)
-                    ctx = contextvars.copy_context()
-                    future = executor.submit(
-                        ctx.run,
-                        self._generate_final_summary,
-                        generator,
-                        bundle,
-                        req.topic,
-                        req.days,
-                        repo_cards,
-                    )
-                    future_map[future] = stage
-
-                for future in as_completed(future_map):
-                    stage = future_map[future]
-                    _, done_message, skipped_message, _ = summary_specs[stage]
-                    try:
-                        text = future.result()
-                    except Exception as e:
-                        logger.warning(
-                            f"{stage} generation failed: {e}",
-                            extra={"stage": f"{stage}_error"},
-                        )
-                        text = None
-
-                    written[stage] = text
-
-                    emit(
-                        {
-                            "stage": f"{stage}_done",
-                            "message": done_message if text else skipped_message,
-                        }
-                    )
-
-            bundle.professional_overview_markdown = written.get("professional_overview")
-
-            emit(
-                {
-                    "stage": "formatting",
-                    "message": "Formatting report",
-                }
-            )
-
-            md = format_as_markdown(
-                bundle,
-                include_raw=req.include_raw,
-                digest_markdown=written.get("digest"),
-            )
+            if os.environ.get("RESEARCHKIT_REPORT") == "legacy":
+                written, md = self._legacy_publication(
+                    req=req,
+                    bundle=bundle,
+                    effective_models=effective_models,
+                    emit=emit,
+                    repo_cards=repo_cards,
+                )
+            elif any_success:
+                publication = publish(
+                    topic=req.topic,
+                    days=req.days,
+                    bundle=bundle,
+                    project_dir=repo_dir,
+                    effective_models=effective_models,
+                    run_id=run_id,
+                    emit=emit,
+                )
+                md = publication.report_markdown
+                written["article"] = publication.article_markdown
+                # Back-compat: the overview field now carries the lead.
+                bundle.professional_overview_markdown = publication.lead
+            else:
+                md = format_as_markdown(bundle, include_raw=req.include_raw)
 
             report_path: Path | None = None
             if save:
@@ -722,6 +772,10 @@ class SocialResearchService:
             status = run_status(
                 bundle.provider_results, written.get("article"), materials_summary
             )
+            if status["status"] == "failed" and not written.get("article"):
+                # Never an LLM on an empty trace (gpt-researcher #1204): an
+                # honest stdlib article saying what failed.
+                written["article"] = render_failure_article(req.topic, status)
             states = list(status["slots"].values())
             successes = states.count("complete")
             empty = states.count("empty")
@@ -749,6 +803,12 @@ class SocialResearchService:
             report_json["timings"] = timeline
             if materials_summary is not None:
                 report_json["materials"] = materials_summary
+            if publication is not None:
+                report_json["publication"] = publication.summary()
+                report_json["citations"] = [
+                    {"n": c.n, "url": c.url, "title": c.title, "status": c.status}
+                    for c in publication.sources
+                ]
             # skills.sh-style hits go to skillskit as candidates, not evidence.
             report_json["skill_candidates"] = [
                 s.url
@@ -767,6 +827,13 @@ class SocialResearchService:
                 article_markdown=written.get("article"),
                 skill_markdown=written.get("skill"),
                 status=status["status"],
+                evidence_markdown=publication.evidence_markdown
+                if publication
+                else None,
+                providers_markdown=publication.providers_markdown
+                if publication
+                else None,
+                claims=publication.claims if publication else [],
             )
 
     def create_project(
@@ -911,6 +978,11 @@ class SocialResearchService:
         # marker — last.
         project.save_article(artifacts.article_markdown)
         project.save_skill(artifacts.skill_markdown)
+        project.save_publication(
+            evidence_markdown=artifacts.evidence_markdown,
+            providers_markdown=artifacts.providers_markdown,
+            claims=artifacts.claims,
+        )
         project.save_results(artifacts.report_json, artifacts.report_markdown)
         # result.json now supersedes the per-provider partials.
         project.clear_partials()
@@ -919,16 +991,95 @@ class SocialResearchService:
         if artifacts.log_path and artifacts.log_path.exists():
             shutil.move(str(artifacts.log_path), str(project.log_path))
 
-        # Update artifacts with project paths
+        # Same artifacts with project paths. dataclasses.replace keeps every
+        # field (status included: a field-by-field rebuild once dropped it,
+        # so the CLI exit code always read "ok").
+        return dataclasses.replace(
+            artifacts, report_path=project.report_path, log_path=project.log_path
+        )
+
+    def republish(
+        self,
+        project: Project,
+        *,
+        progress: ProgressCallback | None = None,
+    ) -> ResearchArtifacts:
+        """Re-run only the publication stage on a finished project.
+
+        Same research, new report/article/claims: no provider is queried
+        again. Archives the cited sources first when ``materials/`` is
+        missing. This is how report-writing changes are A/B'd on frozen
+        evidence, and how an older run gets the archive-first report.
+        """
+        from researchkit.materials import download_materials
+        from researchkit.providers.base import ProviderResult
+
+        result = project.load_results()
+        if result is None:
+            raise FileNotFoundError(
+                f"{project.result_path} not found: run the project first"
+            )
+        emit: Callable[[dict[str, Any]], None] = progress or (lambda evt: None)
+        if not (project.path / "materials" / "index.json").is_file():
+            emit({"stage": "materials_start", "message": "Archiving cited sources"})
+            download_materials(project, result=result)
+        bundle = InsightBundle(
+            topic=str(result.get("topic") or project.config.topic),
+            keywords=list(result.get("keywords") or []),
+            days=int(result.get("days") or project.config.days),
+            providers_queried=list(result.get("providers_queried") or []),
+            meta_summary=str(result.get("meta_summary") or ""),
+            provider_results=[
+                ProviderResult.from_dict(r)
+                for r in result.get("provider_results") or []
+            ],
+            individual_summaries=dict(result.get("individual_summaries") or {}),
+            provider_models=dict(result.get("provider_models") or {}),
+            system_config_used=dict(result.get("system_config_used") or {}),
+        )
+        effective_models = self.get_effective_models(project.config.preset_name)
+        publication = publish(
+            topic=bundle.topic,
+            days=bundle.days,
+            bundle=bundle,
+            project_dir=project.path,
+            effective_models=effective_models,
+            run_id=str(result.get("run_id") or project.name),
+            emit=emit,
+        )
+        result["professional_overview_markdown"] = publication.lead
+        result["publication"] = publication.summary()
+        result["citations"] = [
+            {"n": c.n, "url": c.url, "title": c.title, "status": c.status}
+            for c in publication.sources
+        ]
+        status = run_status(
+            bundle.provider_results,
+            publication.article_markdown,
+            result.get("materials"),
+        )
+        result["run_status"] = status
+        article = publication.article_markdown
+        if status["status"] == "failed" and not article:
+            article = render_failure_article(bundle.topic, status)
+        project.save_article(article)
+        project.save_publication(
+            evidence_markdown=publication.evidence_markdown,
+            providers_markdown=publication.providers_markdown,
+            claims=publication.claims,
+        )
+        project.save_results(result, publication.report_markdown)
         return ResearchArtifacts(
-            run_id=artifacts.run_id,
-            bundle=artifacts.bundle,
-            report_markdown=artifacts.report_markdown,
-            report_json=artifacts.report_json,
+            run_id=str(result.get("run_id") or project.name),
+            bundle=bundle,
+            report_markdown=publication.report_markdown,
+            report_json=result,
             report_path=project.report_path,
-            log_path=project.log_path,
-            article_markdown=artifacts.article_markdown,
-            skill_markdown=artifacts.skill_markdown,
+            article_markdown=article,
+            status=status["status"],
+            evidence_markdown=publication.evidence_markdown,
+            providers_markdown=publication.providers_markdown,
+            claims=publication.claims,
         )
 
     def create_and_run_project(

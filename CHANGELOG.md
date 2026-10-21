@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `run_project` dropped the run status when it rebuilt the artifacts, so
+  the CLI exit code on the project path always read "ok".
+
 - `result.json`, the research pack's "run complete" marker, is now written
   _last_, after the report, article and skill. A rerun that produces no
   article or skill removes the stale one instead of leaving it next to newer
@@ -80,6 +83,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `github: codex:gpt-6.1-sol`.
 
 ### Changed
+
+- **One breadth-first report, written from the archive.** `report.md` used
+  to stack three independent writers that restated the same answer under the
+  same headings (14–21k words). The new publication stage
+  (`researchkit.publish`) works in four steps:
+  1. **Evidence:** every cited source is numbered, and archived pages are
+     split into passages (`researchkit.evidence`).
+  2. **Body:** one writer turns the analysis's questions into 3–5 finding
+     sections, each written from its own selected passages and ending with
+     "What the sources did not answer".
+  3. **Lead and article:** the TL;DR and "In brief" are written _last_, from
+     the finished body. The article is written in parallel as a second
+     render of the same cited report, and may link only its sources.
+  4. **Citations in code:** `[n]` anchors are mapped and renumbered by first
+     appearance, unused sources dropped, and one Sources list kept. Inline
+     URLs a writer used become anchors (`researchkit.citations`).
+
+  `report.md` is TL;DR → In brief → sections → Sources, with
+  `evidence.md` (cross-source analysis) and `providers.md` (per-provider
+  summaries) as appendices. Raw output stays in `result.json`.
+
+- `claims.jsonl`: one row per cited sentence and source (verbatim sentence,
+  hedge words, numbers, canonical URL, content hash, archive status), the
+  handoff unit for brainkit and skillskit. `result.json` gains `publication`
+  (sources cited, claims, hard issues, advisories, writer errors) and
+  `citations`.
+- Integrity gate:
+  - **Hard:** unknown citation numbers, off-list URLs (report and article),
+    chatbot artifacts, "corroborated" backed by one origin.
+  - **Advisory:** cited sources without archived text, and numbers that
+    appear in none of a sentence's archived sources.
+- A run with no citable research gets an honest stdlib "what failed"
+  article instead of an LLM writing on an empty trace. If the body writer
+  fails, the report falls back to the cross-source analysis and says so.
+- `researchkit republish <project>`: re-run only the writers on a finished
+  project. It uses the same research and makes no provider calls.
+- The skill is no longer written on every run (skillskit owns the
+  pack → skill rewrite, see PLAN 2.14). `RESEARCHKIT_REPORT=legacy` keeps the
+  old four writers for the A/B until they are deleted.
 
 - **Archive first.** A project run downloads its cited sources into
   `materials/` _before_ the writers start, from the in-memory result

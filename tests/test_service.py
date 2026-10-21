@@ -159,6 +159,9 @@ class TestSocialResearchService:
         monkeypatch,
         tmp_path: Path,
     ) -> None:
+        monkeypatch.setenv(
+            "RESEARCHKIT_REPORT", "legacy"
+        )  # old writers, until PLAN 2.7
         RecordingDigestGenerator.calls = []
         RecordingProfessionalOverviewGenerator.calls = []
 
@@ -221,6 +224,9 @@ class TestSocialResearchService:
         monkeypatch,
         tmp_path: Path,
     ) -> None:
+        monkeypatch.setenv(
+            "RESEARCHKIT_REPORT", "legacy"
+        )  # old writers, until PLAN 2.7
         import researchkit.service as service_module
 
         monkeypatch.setattr(service_module, "InsightAggregator", FakeAggregator)
@@ -341,6 +347,9 @@ class TestPartialPersistenceAndResume:
     def test_run_project_writes_article_and_skill_next_to_the_report(
         self, monkeypatch, tmp_path: Path
     ) -> None:
+        monkeypatch.setenv(
+            "RESEARCHKIT_REPORT", "legacy"
+        )  # old writers, until PLAN 2.7
         import researchkit.service as service_module
         from researchkit.service import SocialResearchService
 
@@ -529,7 +538,7 @@ class TestArchiveFirst:
             log_dir=tmp_path,
             archive=archive,
         )
-        assert order.index("archive") < order.index("digest")
+        assert order.index("archive") < order.index("report_body")
         assert artifacts.report_json["materials"] == {"fetched": 2, "total_cited": 3}
 
     def test_nothing_archived_fails_the_run(self) -> None:
