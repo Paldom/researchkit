@@ -60,11 +60,11 @@ describe('BrainView', () => {
 
     fireEvent.click(await screen.findByRole('link', { name: 'Topic one' }))
     await screen.findByText(/Topic body/)
-    expect(getBrainNote).toHaveBeenCalledWith('proj', 'notes/topics/t1.md')
+    expect(getBrainNote).toHaveBeenCalledWith('proj', 'notes/topics/t1.md', false)
 
     fireEvent.click(screen.getByRole('link', { name: 's1' }))
     await screen.findByText('Source body')
-    expect(getBrainNote).toHaveBeenCalledWith('proj', 'notes/sources/s1.md')
+    expect(getBrainNote).toHaveBeenCalledWith('proj', 'notes/sources/s1.md', false)
     expect(screen.getByRole('link', { name: /source/ }).getAttribute('href')).toBe(
       'https://x.test/a',
     )

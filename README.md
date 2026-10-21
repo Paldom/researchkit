@@ -68,7 +68,7 @@ cd web && npm install && npm run build && cd ..
 uv run researchkit-server
 ```
 
-Open `http://127.0.0.1:8000` — submit a topic, watch live per-provider progress, read the rendered report, browse past runs. Each project has tabs for the report, the article, the skill (copy or download `SKILL.md`), and the brain — its index and every topic, report and source note, navigable by wiki-link — beside the prompt, raw JSON, links and log. The API is documented at `/api/docs`.
+Open `http://127.0.0.1:8000` — submit a topic, watch live per-provider progress, read the rendered report, browse past runs. Each project has tabs for the report, the article, the skill (copy or download `SKILL.md`), and the brain — its index and every topic, report and source note, navigable by wiki-link — beside the prompt, raw JSON, links and log. The **Shared brain** field on the form feeds a run into a named brain (pick one or type a new name); the sidebar lists shared brains, creates one in advance and opens any of them, and a project's "add to brain…" box attaches an earlier run. The API is documented at `/api/docs`.
 
 The server binds `127.0.0.1` and is unauthenticated by default. To expose it beyond localhost, set `RESEARCHKIT_AUTH_TOKEN` (clients send `Authorization: Bearer <token>`) — the server refuses to bind a non-loopback host without it.
 
@@ -309,6 +309,17 @@ The run prints which providers it is reusing. `partial/` is deleted once `result
 ## Build a brain from your research
 
 Every run already carries its own brain: once the materials are archived, `projects/<run>/brain/` is built with [brainkit](https://github.com/Paldom/brainkit) when it is installed in the environment (`uv pip install -e ../brainkit --python .venv/bin/python`) — a topic note, one note per archived source, the report's sections, and an `index.md` to descend from. The web UI's Brain tab browses it; `brainkit --brain projects/<run>/brain search "question"` queries it. Boosted runs get one per sub-project and one over the whole study on the parent. `researchkit materials <run> --refresh` rebuilds it.
+
+**Shared brains** let many runs feed one brain. Create it in advance, point runs at it, attach earlier runs later; a run with `--brain` also starts from what the brain already knows (matching source notes join the evidence as citable "(earlier research)" sources, the web search still runs):
+
+```bash
+uv run researchkit brain create team-notes          # under ~/.researchkit/brains (RESEARCHKIT_BRAINS_DIR)
+uv run researchkit "your topic" --brain team-notes  # research, then ingest into it
+uv run researchkit brain add team-notes projects/<earlier-run>
+uv run researchkit brain list                       # runs and notes per brain
+```
+
+The web UI, the HTTP API (`/api/brains`) and the MCP server (`research(brain=…)`, `list_brains`, `brain_context`) take the same brain names.
 
 Beyond one run, pair researchkit with brainkit to turn any number of runs into a portable, citation-backed knowledge base that AI agents can query later — every answer traces back to a research run and a source URL:
 

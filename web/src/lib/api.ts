@@ -32,6 +32,8 @@ export interface ResearchRequest {
   user_files: UserFile[]
   user_urls: string[]
   user_texts: string[]
+  // A named shared brain to feed and start from; null = none.
+  brain?: string | null
 }
 
 export interface ResearchStarted {
@@ -162,14 +164,48 @@ export interface BrainResponse {
   notes: BrainNote[]
 }
 
-export function getBrain(name: string): Promise<BrainResponse> {
-  return requestJson(`/api/projects/${encodeURIComponent(name)}/brain`)
+// A brain lives either inside one project or in the shared registry.
+const brainBase = (name: string, shared: boolean) =>
+  shared
+    ? `/api/brains/${encodeURIComponent(name)}`
+    : `/api/projects/${encodeURIComponent(name)}/brain`
+
+export function getBrain(name: string, shared = false): Promise<BrainResponse> {
+  return requestJson(brainBase(name, shared))
 }
 
-export function getBrainNote(name: string, path: string): Promise<string> {
-  return requestText(
-    `/api/projects/${encodeURIComponent(name)}/brain/note?path=${encodeURIComponent(path)}`,
-  )
+export function getBrainNote(name: string, path: string, shared = false): Promise<string> {
+  return requestText(`${brainBase(name, shared)}/note?path=${encodeURIComponent(path)}`)
+}
+
+export interface SharedBrain {
+  name: string
+  path: string
+  notes: number
+  runs: number
+}
+
+// Same rule as the server: lowercase letters, digits, '.', '_' or '-'.
+export const BRAIN_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/
+
+export function listBrains(): Promise<SharedBrain[]> {
+  return requestJson('/api/brains')
+}
+
+export function createBrain(name: string): Promise<SharedBrain> {
+  return requestJson('/api/brains', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function addToBrain(brain: string, projects: string[]): Promise<unknown[]> {
+  return requestJson(`/api/brains/${encodeURIComponent(brain)}/ingest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projects }),
+  })
 }
 
 export function getLinks(name: string, mode: LinksMode): Promise<LinksResponse> {

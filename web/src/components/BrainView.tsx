@@ -41,7 +41,7 @@ export function stripFrontmatter(text: string): string {
   return end === -1 ? text : text.slice(end + 4).replace(/^\n+/, '')
 }
 
-export default function BrainView({ name }: { name: string }) {
+export default function BrainView({ name, shared = false }: { name: string; shared?: boolean }) {
   const [loaded, setLoaded] = useState<Loaded>({ state: 'loading' })
   const [path, setPath] = useState(INDEX)
   // Fetched notes remember their path; the index comes straight from the
@@ -59,7 +59,7 @@ export default function BrainView({ name }: { name: string }) {
 
   useEffect(() => {
     let cancelled = false
-    getBrain(name).then(
+    getBrain(name, shared).then(
       (brain) => {
         if (!cancelled) setLoaded({ state: 'ready', brain })
       },
@@ -69,7 +69,9 @@ export default function BrainView({ name }: { name: string }) {
           state: 'error',
           message:
             err instanceof ApiError && err.status === 404
-              ? 'No brain yet — it is built from the archived materials after a run.'
+              ? shared
+                ? 'This brain is empty — run a research with it, or add a finished project.'
+                : 'No brain yet — it is built from the archived materials after a run.'
               : 'Failed to load. Is the backend up?',
         })
       },
@@ -77,12 +79,12 @@ export default function BrainView({ name }: { name: string }) {
     return () => {
       cancelled = true
     }
-  }, [name])
+  }, [name, shared])
 
   useEffect(() => {
     if (loaded.state !== 'ready' || path === INDEX) return
     let cancelled = false
-    getBrainNote(name, path).then(
+    getBrainNote(name, path, shared).then(
       (text) => {
         if (!cancelled) setFetchedNote({ path, text })
       },
@@ -93,7 +95,7 @@ export default function BrainView({ name }: { name: string }) {
     return () => {
       cancelled = true
     }
-  }, [name, path, loaded])
+  }, [name, path, loaded, shared])
 
   if (loaded.state === 'loading') {
     return <p className="animate-pulse text-sm text-neutral-500">Loading…</p>

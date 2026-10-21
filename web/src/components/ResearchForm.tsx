@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react'
 import {
+  BRAIN_NAME,
   improveTopic,
   setActivePreset,
   type ConfigResponse,
@@ -56,9 +57,11 @@ interface Props {
   config: ConfigResponse
   running: boolean
   onSubmit: (request: ResearchRequest) => void
+  // Existing shared brain names, offered as suggestions.
+  brains?: string[]
 }
 
-export default function ResearchForm({ config, running, onSubmit }: Props) {
+export default function ResearchForm({ config, running, onSubmit, brains = [] }: Props) {
   const [topic, setTopic] = useState('')
   const [days, setDays] = useState(7)
   const [providers, setProviders] = useState<string[]>(config.default_providers)
@@ -68,6 +71,7 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
   const [includeRaw, setIncludeRaw] = useState(true)
   const [siteResearch, setSiteResearch] = useState(true)
   const [sites, setSites] = useState<string[]>(config.default_sites)
+  const [brain, setBrain] = useState('')
   const [improving, setImproving] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -79,6 +83,8 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const daysValid = Number.isFinite(days) && days >= 1 && days <= MAX_DAYS
+  const brainName = brain.trim()
+  const brainValid = !brainName || BRAIN_NAME.test(brainName)
   const sourcesDisabled = boost || running
   const harnessAvailable = config.presets.includes('harness')
   // ponytail: harness overrides are derived, not stored — toggling off restores prior selections.
@@ -140,7 +146,7 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!topic.trim() || effectiveProviders.length === 0 || !daysValid) return
+    if (!topic.trim() || effectiveProviders.length === 0 || !daysValid || !brainValid) return
     onSubmit({
       topic: topic.trim(),
       days,
@@ -156,6 +162,7 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
       user_files: files,
       user_urls: splitLines(userUrls),
       user_texts: userText.trim() ? [userText.slice(0, MAX_TEXT_CHARS)] : [],
+      brain: brainName || null,
     })
   }
 
@@ -253,6 +260,32 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
             ))}
           </select>
         </div>
+      </div>
+
+      <div>
+        <label htmlFor="brain" className="mb-1 block text-sm font-medium">
+          Shared brain
+        </label>
+        <input
+          id="brain"
+          list="brain-names"
+          value={brain}
+          disabled={running}
+          onChange={(e) => setBrain(e.target.value)}
+          placeholder="none"
+          aria-invalid={!brainValid || undefined}
+          className={`w-64 ${inputClass}`}
+        />
+        <datalist id="brain-names">
+          {brains.map((b) => (
+            <option key={b} value={b} />
+          ))}
+        </datalist>
+        <p className={`mt-1 text-xs ${brainValid ? 'text-neutral-500' : 'text-red-600'}`}>
+          {brainValid
+            ? 'pick an existing brain or type a new name; the run starts from what it already knows and feeds it'
+            : "lowercase letters, digits, '.', '_' or '-'"}
+        </p>
       </div>
 
       {harnessAvailable && (
@@ -495,7 +528,9 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
 
       <button
         type="submit"
-        disabled={running || !topic.trim() || effectiveProviders.length === 0 || !daysValid}
+        disabled={
+          running || !topic.trim() || effectiveProviders.length === 0 || !daysValid || !brainValid
+        }
         className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white
           hover:bg-orange-500 disabled:cursor-not-allowed disabled:opacity-50"
       >

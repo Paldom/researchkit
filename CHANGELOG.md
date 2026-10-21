@@ -80,6 +80,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     entrypoint gets it). It is serialized per brain, retried while another
     process holds brainkit's writer lock, and recorded in `result.json`
     `brain`.
+  - Web UI: a **Shared brain** field on the research form (existing names
+    suggested, a new name creates the brain), a sidebar list of shared
+    brains with create and a browser reusing the Brain tab, and an
+    "add to brain…" box on each project.
   - HTTP API: `GET/POST /api/brains`, `GET /api/brains/{name}` (+`/note`),
     `POST /api/brains/{name}/ingest`, and `brain` on `/api/research`. MCP:
     `research(brain=…)`, `list_brains`, `brain_context`. Over HTTP and MCP a

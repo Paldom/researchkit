@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import BrainView from './components/BrainView'
+import { AddToBrain, BrainList } from './components/Brains'
 import OutputTabs from './components/OutputTabs'
 import ProgressFeed from './components/ProgressFeed'
 import ProjectList from './components/ProjectList'
 import ResearchForm from './components/ResearchForm'
 import {
   getConfig,
+  listBrains,
   listProjects,
   startResearch,
   type ConfigResponse,
   type Project,
+  type SharedBrain,
   type ResearchRequest,
 } from './lib/api'
 import { subscribeToRun, type RunProgress } from './lib/sse'
@@ -23,10 +27,17 @@ export default function App() {
   const [events, setEvents] = useState<RunProgress[]>([])
   const [runError, setRunError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
+  const [brains, setBrains] = useState<SharedBrain[]>([])
+  const [selectedBrain, setSelectedBrain] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(
     () => localStorage.getItem(SIDEBAR_KEY) !== 'closed',
   )
   const closeStream = useRef<(() => void) | null>(null)
+
+  // Brains are optional (brainkit may be missing): a failed list is just empty.
+  const refreshBrains = useCallback(() => {
+    listBrains().then(setBrains, () => setBrains([]))
+  }, [])
 
   const loadInitial = useCallback(async () => {
     try {
@@ -53,6 +64,12 @@ export default function App() {
         if (!cancelled) setApiDown(true)
       },
     )
+    listBrains().then(
+      (list) => {
+        if (!cancelled) setBrains(list)
+      },
+      () => undefined,
+    )
     const stream = closeStream
     return () => {
       cancelled = true
@@ -73,6 +90,7 @@ export default function App() {
     setEvents([])
     setRunError(null)
     setSelected(null)
+    setSelectedBrain(null)
     try {
       const { run_id } = await startResearch(request)
       closeStream.current = subscribeToRun(run_id, {
@@ -81,6 +99,7 @@ export default function App() {
           setRunning(false)
           setSelected(project)
           listProjects().then(setProjects, () => undefined)
+          if (request.brain) refreshBrains()
         },
         onError: (message) => {
           setRunning(false)
@@ -161,7 +180,23 @@ export default function App() {
                 border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900
                 lg:static lg:z-auto lg:bg-transparent lg:dark:bg-transparent"
             >
-              <ProjectList projects={projects} selected={selected} onSelect={setSelected} />
+              <ProjectList
+                projects={projects}
+                selected={selected}
+                onSelect={(name) => {
+                  setSelected(name)
+                  setSelectedBrain(null)
+                }}
+              />
+              <BrainList
+                brains={brains}
+                selected={selectedBrain}
+                onSelect={(name) => {
+                  setSelectedBrain(name)
+                  setSelected(null)
+                }}
+                onChanged={refreshBrains}
+              />
             </aside>
           </>
         )}
@@ -171,7 +206,12 @@ export default function App() {
           <div className="mx-auto max-w-[980px] space-y-6">
             {config && (
               <div className={card}>
-                <ResearchForm config={config} running={running} onSubmit={startRun} />
+                <ResearchForm
+                  config={config}
+                  running={running}
+                  onSubmit={startRun}
+                  brains={brains.map((b) => b.name)}
+                />
               </div>
             )}
 
@@ -191,8 +231,21 @@ export default function App() {
               </div>
             )}
 
+            {selectedBrain && (
+              <div className={card}>
+                <h2 className="mb-3 text-lg font-semibold">Brain: {selectedBrain}</h2>
+                <BrainView key={selectedBrain} name={selectedBrain} shared />
+              </div>
+            )}
+
             {selected && (
               <div className={card}>
+                <AddToBrain
+                  key={selected}
+                  project={selected}
+                  brains={brains}
+                  onAdded={refreshBrains}
+                />
                 <OutputTabs name={selected} />
               </div>
             )}

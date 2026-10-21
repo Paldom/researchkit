@@ -119,7 +119,23 @@ describe('ResearchForm', () => {
       user_files: [],
       user_urls: ['https://a.com', 'https://b.com'],
       user_texts: ['pasted context'],
+      brain: null,
     })
+  })
+
+  it('sends a shared brain name and blocks submit on an invalid one', () => {
+    const onSubmit = vi.fn()
+    render(<ResearchForm config={config} running={false} onSubmit={onSubmit} brains={['team']} />)
+    fireEvent.change(screen.getByLabelText('Topic'), { target: { value: 'AI agents' } })
+    const brain = screen.getByLabelText('Shared brain')
+    const button = screen.getByRole('button', { name: 'Start research' })
+
+    fireEvent.change(brain, { target: { value: 'Bad Name' } })
+    expect(button).toHaveProperty('disabled', true)
+
+    fireEvent.change(brain, { target: { value: ' team ' } })
+    fireEvent.submit(button)
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ brain: 'team' }))
   })
 
   it('quick-pick chips set the days input and out-of-range days block submit', () => {
