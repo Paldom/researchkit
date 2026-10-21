@@ -41,7 +41,15 @@ _HEDGE = re.compile(
     re.I,
 )
 _NUMBER = re.compile(r"\b\d[\d,.]*%?")
+# Talk about the research instead of the topic (the writer rules ban it; a
+# live run still printed "Providers found a few measurement posts").
+_META_TALK = re.compile(
+    r"\b(?:providers?|the (?:analysis|passages|archive|summaries|corpus)|"
+    r"page text|this report|a research pass|the sources show)\b",
+    re.I,
+)
 _SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(\[*])")
+_LEADING_ANCHORS = re.compile(r"^(?:\[\d{1,3}(?:\s*[,;]\s*\d{1,3})*\]\s*)+")
 
 
 @dataclass
@@ -150,9 +158,19 @@ def _sentences(text: str) -> list[tuple[str, str]]:
             continue
         if not stripped or stripped.startswith(("|---", "```")):
             continue
+        line_sents: list[str] = []
         for sent in _SENTENCE.split(stripped.lstrip("-*> ").strip()):
-            if sent.strip():
-                out.append((heading, sent.strip()))
+            sent = sent.strip()
+            # Writers often cite after the full stop ("…2026. [14] Next…"):
+            # the split puts those anchors at the head of the NEXT sentence.
+            # They belong to the sentence they follow.
+            lead = _LEADING_ANCHORS.match(sent)
+            if lead and line_sents:
+                line_sents[-1] = f"{line_sents[-1]} {lead.group(0).strip()}"
+                sent = sent[lead.end() :].strip()
+            if sent:
+                line_sents.append(sent)
+        out.extend((heading, sent) for sent in line_sents)
     return out
 
 
@@ -187,6 +205,8 @@ def extract_claims(
             plain = re.sub(
                 r"\s+([.,;:!?])", r"\1", _ANCHOR_GROUP.sub("", sentence)
             ).strip()
+            if not re.search(r"\w", plain):
+                continue  # anchors with no claim text
             for n in nums:
                 source = by_n.get(n)
                 if source is None:
@@ -224,14 +244,18 @@ def check_publication(
 
     Hard: off-list or unknown citations (from renumbering), chatbot
     artifacts, a sentence calling a claim "corroborated" while citing one
-    origin. Advisory: citations of sources with no archived text, and
-    numbers in a cited sentence that appear in none of its archived sources.
+    origin. Advisory: citations of sources with no archived text, numbers in
+    a cited sentence that appear in none of its archived sources, and
+    sentences about the research rather than the topic (``meta_talk``).
     """
     issues = list(cited.issues)
     by_n = {s.n: s for s in cited.sources}
     for name, text in documents.items():
         for m in _ARTIFACTS.finditer(text):
             issues.append(Issue(True, "chatbot_artifact", f"{name}: {m.group(0)!r}"))
+        for _, sentence in _sentences(text):
+            if _META_TALK.search(sentence):
+                issues.append(Issue(False, "meta_talk", f"{name}: {sentence[:160]}"))
         for _, sentence in _sentences(text):
             nums = {
                 int(n)

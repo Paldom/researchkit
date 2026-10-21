@@ -352,3 +352,31 @@ def test_skill_is_made_on_request_with_claims(
     text = SocialResearchService(projects_dir=tmp_path).make_skill(project)
     assert text and project.skill_path.read_text().startswith("---")
     assert "Codex may cache. (https://a.b)" in seen["meta_summary"]
+
+
+def test_citations_after_the_full_stop_belong_to_the_sentence_before() -> None:
+    """Live run 2026-10-21: '…2026. [14] Next…' shifted every claim one source."""
+    from researchkit.citations import _sentences
+
+    text = (
+        "Kimi's search retired on 20 October 2026. [14] Codex scored 24/24 [9]. "
+        "Grok streams messages. [3][5]"
+    )
+    assert _sentences(text) == [
+        ("", "Kimi's search retired on 20 October 2026. [14]"),
+        ("", "Codex scored 24/24 [9]."),
+        ("", "Grok streams messages. [3][5]"),
+    ]
+
+
+def test_meta_talk_is_an_advisory_and_bare_anchors_make_no_claim() -> None:
+    from researchkit.citations import CitedDocuments
+
+    cited = CitedDocuments(texts=[], sources=[EvidenceSource(n=1, url="https://a.io")])
+    text = "Providers found a few posts [1]. Codex caches results [1]."
+    issues = check_publication({"report.md": text}, cited, {})
+    assert [(i.hard, i.kind) for i in issues if i.kind == "meta_talk"] == [
+        (False, "meta_talk")
+    ]
+    rows = extract_claims({"report.md": "Codex caches. [1]\n\n[1]"}, cited, "r")
+    assert [r["sentence"] for r in rows] == ["Codex caches."]

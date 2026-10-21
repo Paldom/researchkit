@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Claims were attached to the wrong source** whenever the writer cited
+  after the full stop ("…20 October 2026. [14] Next sentence…", 51 of 52
+  anchors in a live run). The sentence splitter gave each anchor group to the
+  _next_ sentence and left bare `[n]` as empty claims, which skewed
+  `claims.jsonl`, the integrity gate and `researchkit verify` alike
+  (122/152 "unsupported" on the validation run). Anchors that open a
+  sentence now belong to the one before, and anchor-only fragments make no
+  claim. The gate also flags sentences about the research rather than the
+  topic ("Providers found…") as a `meta_talk` advisory.
+
 - Keyword synthesis for site research always used the OpenAI client, so a
   GLM or Kimi improver model failed. A summarizer set to a non-Gemini API id
   failed in the Gemini SDK. The topic improver had no retry policy. All
