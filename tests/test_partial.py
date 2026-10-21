@@ -56,7 +56,6 @@ def test_codex_timeout_becomes_a_partial_slot(monkeypatch: pytest.MonkeyPatch) -
 
     monkeypatch.setattr(mod.shutil, "which", lambda b: f"/bin/{b}")
     p = mod.CodexProvider(model="gpt-6.1-sol", sources=["web"])
-    monkeypatch.setattr(p, "_backfill_titles", lambda sources: None)
     msg = _codex_line({"type": "agent_message", "text": "found https://a.io/x"})
 
     def deadline(*_: Any, **__: Any) -> Any:

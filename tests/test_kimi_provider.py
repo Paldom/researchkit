@@ -424,7 +424,6 @@ class TestKimicliFetchInsights:
             "run_subprocess",
             _fake_run("Found [thing](https://example.test/story). More prose."),
         )
-        monkeypatch.setattr(KimiCliProvider, "_backfill_titles", lambda self, s: None)
 
         result = provider.fetch_insights("ai agents", days=7)
         assert result.is_success

@@ -34,6 +34,7 @@ import re
 import shutil
 import subprocess
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import requests
@@ -110,16 +111,15 @@ def _clean_url(url: str) -> str:
     return url.rstrip(".,;:)]}>\"'")
 
 
-def _resolve_grounding_url(
-    url: str, provider_name: str, timeout: float = 5.0
-) -> tuple[str, str | None]:
-    """Resolve a Gemini grounding redirect to (real_url, page_title).
+def _resolve_grounding_url(url: str, provider_name: str, timeout: float = 5.0) -> str:
+    """Resolve a Gemini grounding redirect to the real URL (one HEAD).
 
-    Non-grounding URLs pass through unchanged. On any failure the original URL
-    is returned with no title.
+    Non-grounding URLs pass through unchanged; on any failure the original
+    URL is returned. Titles come from the archived page, not a second GET
+    here (PLAN 3.3).
     """
     if _GROUNDING_MARKER not in url:
-        return url, None
+        return url
     try:
         head = with_network_retry(
             requests.head,
@@ -130,31 +130,10 @@ def _resolve_grounding_url(
             timeout=timeout,
             headers={"User-Agent": _UA},
         )
-        final_url = head.url
-        title: str | None = None
-        try:
-            got = with_network_retry(
-                requests.get,
-                final_url,
-                label="antigravity.resolve.get",
-                provider=provider_name,
-                timeout=timeout,
-                headers={"User-Agent": _UA},
-            )
-            if got.status_code == 200:
-                content = got.text[:10000]
-                low = content.lower()
-                if "<title>" in low:
-                    start = low.find("<title>") + 7
-                    end = low.find("</title>")
-                    if end > start:
-                        title = " ".join(content[start:end].split())[:200]
-        except Exception:
-            pass  # title is best-effort
-        return final_url, title
+        return str(head.url)
     except Exception as e:
         logger.debug(f"Failed to resolve grounding redirect: {e}")
-        return url, None
+        return url
 
 
 class AntigravityProvider(BaseProvider):
@@ -264,17 +243,19 @@ class AntigravityProvider(BaseProvider):
 
         sources: list[Source] = []
         seen: set[str] = set()
-        for link_title, url in pairs:
-            real_url, page_title = _resolve_grounding_url(url, self.provider_name)
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            resolved = list(
+                pool.map(
+                    lambda u: _resolve_grounding_url(u, self.provider_name),
+                    [url for _, url in pairs],
+                )
+            )
+        for (link_title, _), real_url in zip(pairs, resolved, strict=True):
             if not real_url or real_url in seen:
                 continue
             seen.add(real_url)
             sources.append(
-                Source(
-                    url=real_url,
-                    title=page_title or link_title,
-                    source_type=source_type,
-                )
+                Source(url=real_url, title=link_title, source_type=source_type)
             )
         return sources
 

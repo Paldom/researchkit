@@ -133,6 +133,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **No provider-side page fetches** (PLAN 3.3). Codex, Grok CLI and Kimi no
+  longer scrape every cited page for its `<title>`, and agy no longer GETs
+  each page after resolving its grounding redirect (the HEAD that resolves
+  the redirect stays, and now runs concurrently). The materials stage
+  already fetches every cited page and takes the title from it, so each page
+  was fetched twice.
+
 - **Per-provider summaries run only when site research needs them** (PLAN
   3.2). Their one real consumer is keyword synthesis for site research; the
   report writers read the archive. Harness presets turn site research off,

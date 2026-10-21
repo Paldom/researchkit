@@ -23,13 +23,10 @@ so sources carry titles like the Responses API path.
 
 from __future__ import annotations
 
-import html
 import json
 import logging
-import re
 import shutil
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from researchkit.network_retry import with_network_retry
@@ -51,17 +48,10 @@ from researchkit.providers.base import (
 from researchkit.safe_io import (
     extract_urls_balanced,
     run_subprocess,
-    safe_fetch_text,
     scrubbed_env,
 )
 
 logger = logging.getLogger(__name__)
-
-# First <title>...</title> of an HTML page, for source title backfill.
-_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
-
-_TITLE_FETCH_TIMEOUT = 8.0
-_TITLE_FETCH_WORKERS = 8
 
 # Appended to research prompts so the answer carries a parseable citation
 # list — the headless CLIs return no citation array, and without the nudge
@@ -70,10 +60,6 @@ _TITLE_FETCH_WORKERS = 8
 _SOURCES_INSTRUCTION = (
     "\n\nAt the very end, add a '## Sources' section listing EVERY web source "
     "you used, one per line as a markdown link: - [title](url)."
-)
-_BROWSER_UA = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
 
 
@@ -287,38 +273,6 @@ class CodexProvider(BaseProvider):
             sources.append(Source(url=url, title=None, source_type=source_type))
         return sources
 
-    @staticmethod
-    def _fetch_title(url: str) -> str | None:
-        """Best-effort fetch of a page's <title> (None on any failure).
-
-        Goes through the SSRF-guarded fetch helper: the URLs come from untrusted
-        web/model output, so a poisoned ``http://169.254.169.254/…`` must not turn
-        into a server-side request to an internal endpoint. (Review S2.)
-        """
-        page, _ = safe_fetch_text(
-            url,
-            timeout=_TITLE_FETCH_TIMEOUT,
-            max_bytes=15_000,
-            headers={"User-Agent": _BROWSER_UA},
-        )
-        if not page:
-            return None
-        match = _TITLE_RE.search(page)
-        if match:
-            return html.unescape(match.group(1).strip())[:300] or None
-        return None
-
-    def _backfill_titles(self, sources: list[Source]) -> None:
-        """Populate missing titles concurrently via a lightweight HTML scrape."""
-        targets = [s for s in sources if not s.title]
-        if not targets:
-            return
-        with ThreadPoolExecutor(max_workers=_TITLE_FETCH_WORKERS) as pool:
-            titles = list(pool.map(self._fetch_title, [s.url for s in targets]))
-        for source, title in zip(targets, titles, strict=True):
-            if title:
-                source.title = title
-
     def _run_query(
         self, system_prompt: str, user_prompt: str, label: str
     ) -> tuple[str, list[str]]:
@@ -383,10 +337,8 @@ class CodexProvider(BaseProvider):
             if errors:
                 meta["branch_errors"] = errors
 
-            # Codex gives URLs but no titles — backfill them so sources match
-            # the Responses API path (url + title).
-            self._backfill_titles(sources)
-
+            # No title backfill: materials fetch every cited page anyway and
+            # derive its title there (PLAN 3.3); fetching twice cost time.
             combined_text = "\n\n---\n\n".join(sections)
             self._log_done(len(sources), len(combined_text))
 

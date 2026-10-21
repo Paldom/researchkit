@@ -51,7 +51,6 @@ def test_codex_keeps_social_when_web_fails(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr(mod.shutil, "which", lambda b: f"/bin/{b}")
     p = mod.CodexProvider(model="gpt-6.1-sol")
-    monkeypatch.setattr(p, "_backfill_titles", lambda sources: None)
 
     def fake(*, system_prompt: str, user_prompt: str, label: str) -> Any:
         if label.endswith(":web"):
