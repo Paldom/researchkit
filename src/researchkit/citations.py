@@ -48,7 +48,12 @@ _META_TALK = re.compile(
     r"page text|this report|a research pass|the sources show)\b",
     re.I,
 )
-_SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(\[*])")
+# A sentence also ends after closing markup: "…evidence.** Issue #35415…"
+# (a bold lead-in) used to glue the lead-in and the next sentences into one
+# claim row.
+_SENTENCE = re.compile(
+    r"(?:(?<=[.!?])|(?<=[.!?]\*\*)|(?<=[.!?][*_)\"'`]))\s+(?=[A-Z0-9\"'(\[*])"
+)
 _LEADING_ANCHORS = re.compile(r"^(?:\[\d{1,3}(?:\s*[,;]\s*\d{1,3})*\]\s*)+")
 
 

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A bold lead-in (`**Codex drops results.** Issue…`) no longer glues itself
+  and the following sentences into one `claims.jsonl` row: a sentence now
+  also ends after closing markup (`**`, `*`, `_`, a quote, a bracket or a
+  backtick).
+
 - **trafilatura could abort a run.** Concurrent calls from the archive's
   fetch pool crashed lxml ("Fatal Python error: Aborted", 1 in 3
   reproductions), killing a live A/B run mid-archive with no traceback.
