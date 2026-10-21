@@ -78,12 +78,24 @@ exclude-newer = "2026-07-04T00:00:00Z"
 # Security fixes that postdate the cutoff above (Dependabot, 2026-09-07). Each
 # entry lifts the cutoff for ONE package; the rest of the tree stays pinned.
 [tool.uv.exclude-newer-package]
-aiohttp = "2026-08-01T00:00:00Z"
+aiohttp = "2026-10-06T00:00:00Z"
 cryptography = "2026-08-01T00:00:00Z"
 pyasn1 = "2026-08-01T00:00:00Z"
 # Build backend: the Dependabot floor (>=1.31.0, released 2026-07-08) postdates
 # the global cutoff; 2026-08-01 admits the 1.31.x line and still holds 1.32+.
 hatchling = "2026-08-01T00:00:00Z"
+# Dependabot alerts 2026-10-21: each lifted to the day after its patched release.
+pyjwt = "2026-09-24T00:00:00Z"
+httpx2 = "2026-08-19T00:00:00Z"
+httpcore2 = "2026-08-19T00:00:00Z"
+virtualenv = "2026-09-25T00:00:00Z"
+urllib3 = "2026-09-16T00:00:00Z"
+mcp = "2026-09-08T00:00:00Z"
+anyio = "2026-07-13T00:00:00Z"
+# Transitive floors those fixes require.
+yarl = "2026-09-16T00:00:00Z"
+python-discovery = "2026-08-29T00:00:00Z"
+httpx2-jsfetch = "2026-08-08T00:00:00Z"
 
 [tool.pytest.ini_options]
 minversion = "9.0"
