@@ -213,7 +213,7 @@ presets:
       grok: grokcli:grok-4.7
       perplexity: sonar # unused
       tavily: tavily-search # unused
-      claude: claude:claude-sonnet-5-5 # the four writers (overview, digest, article, skill) run here
+      claude: claude:claude-sonnet-5-5 # the writers (report body, then lead + article) run here
       github: codex:gpt-6.1-sol # GitHub REST search + analysis on Codex
       glm: glm-5.3 # API only: a harness_only run refuses it
       kimi: kimicli:kimi-code/k3
