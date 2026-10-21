@@ -133,6 +133,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Per-provider summaries run only when site research needs them** (PLAN
+  3.2). Their one real consumer is keyword synthesis for site research; the
+  report writers read the archive. Harness presets turn site research off,
+  so a harness run no longer makes one extra CLI call per slot. `providers.md`
+  shows an excerpt of each slot's own answer instead. API presets with site
+  research on are unchanged.
+
 - **One breadth-first report, written from the archive.** `report.md` used
   to stack three independent writers that restated the same answer under the
   same headings (14–21k words). The new publication stage

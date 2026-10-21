@@ -841,10 +841,13 @@ class InsightAggregator:
         user_keywords: list[str],
         progress: ProgressCallback | None,
     ) -> tuple[list[ProviderResult], dict[str, str], str]:
-        """Phases 1-2: providers, then per-provider summaries and meta-summary.
+        """Phases 1-2: providers, then the meta-summary (and summaries if needed).
 
-        The meta-summary reads the raw provider results, not the per-provider
-        summaries, so the two run side by side.
+        The meta-summary reads the raw provider results. Per-provider
+        summaries feed only keyword synthesis for site research, so they run
+        (beside the meta-summary) only when that will happen: on harness
+        presets, which turn site research off, they were N paid CLI calls
+        nobody read (PLAN 3.2).
         """
         # Phase 1: Run providers (concurrently)
         # User keywords are forwarded to keyword-based providers (e.g. github).
@@ -854,20 +857,6 @@ class InsightAggregator:
             providers,
             progress,
             keywords=user_keywords or None,
-        )
-
-        # Generate individual summaries using provider self-summarization
-        if progress:
-            progress(
-                {
-                    "stage": "summarizing",
-                    "message": "Generating individual summaries (provider self-summarization)",
-                }
-            )
-
-        logger.info(
-            "Starting individual summarization (provider self-summarization)",
-            extra={"stage": "summarizing"},
         )
 
         if progress:
@@ -895,8 +884,17 @@ class InsightAggregator:
 
         individual_summaries: dict[str, str] = {}
         successful_results = [r for r in provider_results if r.is_success]
+        needs_summaries = self.site_research_enabled and not user_keywords
 
-        if successful_results:
+        if successful_results and needs_summaries:
+            if progress:
+                progress(
+                    {
+                        "stage": "summarizing",
+                        "message": "Generating individual summaries (provider self-summarization)",
+                    }
+                )
+
             # Use provider self-summarization: each provider summarizes its own results
             async def _summarize_with_provider(
                 result: ProviderResult,

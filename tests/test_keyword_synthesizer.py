@@ -580,6 +580,7 @@ class TestAggregatorIntegration:
                 "_generate_keywords_from_providers",
                 return_value={},
             ) as gen_mock,
+            patch.object(aggregator, "_create_provider") as create_mock,
         ):
             bundle = await aggregator.collect_and_summarize_async(
                 topic="t",
@@ -590,3 +591,6 @@ class TestAggregatorIntegration:
 
         gen_mock.assert_not_called()
         assert bundle.synthesized_keywords is None
+        # PLAN 3.2: no site research, no consumer, no per-provider summary call.
+        create_mock.assert_not_called()
+        assert bundle.individual_summaries == {}

@@ -236,11 +236,18 @@ def render_failure_article(topic: str, run_status: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _excerpt(text: str, words: int = 250) -> str:
+    parts = (text or "").split()
+    return " ".join(parts[:words]) + (" …" if len(parts) > words else "")
+
+
 def _providers_md(bundle: InsightBundle) -> str:
     lines = ["# Per-provider summaries", ""]
     for r in bundle.provider_results:
         lines.append(f"## {r.provider} — {r.slot_state}")
-        summary = bundle.individual_summaries.get(r.provider)
+        # Summaries exist only when site research ran; otherwise the slot's
+        # own answer, trimmed, is the appendix (no extra model call).
+        summary = bundle.individual_summaries.get(r.provider) or _excerpt(r.raw_text)
         if summary:
             lines += ["", summary.strip()]
         elif r.error:

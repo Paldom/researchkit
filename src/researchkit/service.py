@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING, Any
 
 from researchkit.aggregator import InsightAggregator, InsightBundle
 from researchkit.final_summary import (
-    ClaudeFinalSummaryGenerator,
     SuperSummaryGenerator,
 )
 from researchkit.formatter import format_as_markdown
@@ -334,28 +333,6 @@ class SocialResearchService:
         if site is None:
             site = True if em.site_research is None else em.site_research
         return chosen, site
-
-    def _generate_final_summary(
-        self,
-        generator: ClaudeFinalSummaryGenerator,
-        bundle: InsightBundle,
-        topic: str,
-        days: int,
-        repo_cards: list[str] | None = None,
-    ) -> str | None:
-        """Generate a final Claude-based report summary."""
-        return generator.generate(
-            repo_cards=repo_cards or [],
-            meta_summary=bundle.meta_summary,
-            individual_summaries=bundle.individual_summaries,
-            topic=topic,
-            days=days,
-            provider_results=bundle.provider_results,
-            site_research=bundle.site_research,
-            user_url_sources=bundle.user_url_sources,
-            user_file_sources=bundle.user_file_sources,
-            user_file_contents=bundle.user_file_contents,
-        )
 
     @staticmethod
     def _enrich_with_repos(
