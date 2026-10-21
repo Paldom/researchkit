@@ -13,10 +13,9 @@ const DAY_PRESETS = [7, 30, 90, 180, 365]
 const SOURCE_TABS = ['Files', 'Links', 'Text'] as const
 type SourceTab = (typeof SOURCE_TABS)[number]
 
-// The five CLI harnesses plus every keyless provider — same set the `explore`
-// command runs, so the toggle and the CLI produce the same research. The
-// keyless ones need no API key, which is what the toggle promises.
-const HARNESS_PROVIDERS = [
+// Fallback when the backend predates preset_providers: the five CLI
+// harnesses plus every keyless provider (models.yaml's harness preset).
+const HARNESS_FALLBACK = [
   'openai',
   'gemini',
   'grok',
@@ -83,7 +82,10 @@ export default function ResearchForm({ config, running, onSubmit }: Props) {
   const sourcesDisabled = boost || running
   const harnessAvailable = config.presets.includes('harness')
   // ponytail: harness overrides are derived, not stored — toggling off restores prior selections.
-  const effectiveProviders = harness ? HARNESS_PROVIDERS : providers
+  const harnessProviders = config.preset_providers?.harness?.length
+    ? config.preset_providers.harness
+    : HARNESS_FALLBACK
+  const effectiveProviders = harness ? harnessProviders : providers
   const effectiveSiteResearch = harness ? false : siteResearch
 
   async function handleImprove() {

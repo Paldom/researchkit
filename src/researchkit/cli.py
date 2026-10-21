@@ -800,7 +800,9 @@ def cmd_create(args, service: SocialResearchService) -> int:
         sources=list(args.sources),
         include_raw=not args.no_raw,
         preset_name=getattr(args, "preset", None),
-        site_research_enabled=not getattr(args, "no_site_research", False),
+        site_research_enabled=(
+            False if getattr(args, "no_site_research", False) else None
+        ),
         site_research_sites=getattr(args, "site_research_sites", None),
     )
 
@@ -1646,18 +1648,17 @@ def cmd_explore(args, service: SocialResearchService) -> int:
     args.boost = True
     # The five CLI harnesses, plus every provider that needs no API key —
     # they cost nothing and keep explore's zero-key guarantee intact.
-    args.providers = args.providers or [
-        "openai",
-        "gemini",
-        "grok",
-        "claude",
-        "kimi",
-        "hackernews",
-        "skillsh",
-        "arxiv",
-        "stackexchange",
-        "openalex",
-    ]
+    # The preset's declared zero-key set (harness: the five CLIs plus the
+    # keyless sources). A preset that declares none falls back to harness's,
+    # so explore stays subscription-only whatever --preset says.
+    from researchkit.system_config import SystemConfigManager
+
+    configs = SystemConfigManager()
+    args.providers = (
+        args.providers
+        or configs.resolve_effective_models(args.preset).providers
+        or configs.resolve_effective_models("harness").providers
+    )
     args.sources = ["social", "web"]
     args.no_site_research = True
     args.preset_name = args.preset
@@ -1760,7 +1761,9 @@ def _cmd_instant_boosted(args, service: SocialResearchService, topic: str) -> in
             providers=getattr(args, "providers", None),
             sources=getattr(args, "sources", None),
             include_raw=not getattr(args, "no_raw", False),
-            site_research_enabled=not getattr(args, "no_site_research", False),
+            site_research_enabled=(
+                False if getattr(args, "no_site_research", False) else None
+            ),
             site_research_sites=getattr(args, "site_research_sites", None),
             force_boost=True,
             progress=progress,
@@ -1860,7 +1863,9 @@ def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
             sources=getattr(args, "sources", None),
             include_raw=not getattr(args, "no_raw", False),
             preset_name=getattr(args, "preset", None),
-            site_research_enabled=not getattr(args, "no_site_research", False),
+            site_research_enabled=(
+                False if getattr(args, "no_site_research", False) else None
+            ),
             site_research_sites=getattr(args, "site_research_sites", None),
             progress=progress,
             log_level=args.log_level,

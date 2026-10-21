@@ -74,7 +74,8 @@ class ResearchIn(BaseModel):
     sources: list[str] = Field(default_factory=lambda: ["social", "web"])
     keywords: list[str] = Field(default_factory=list, max_length=25)
     include_raw: bool = True
-    site_research: bool = True
+    # None = the preset decides (harness presets turn it off).
+    site_research: bool | None = None
     site_research_sites: list[str] | None = None
     # Boost: LLM council refines the topic and may fan out into parallel
     # sub-projects (manual keywords and custom sources are ignored there).
@@ -365,6 +366,16 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
 
+    def _preset_providers(manager: Any) -> dict[str, list[str]]:
+        """Each preset's declared provider set; empty when it declares none."""
+        out: dict[str, list[str]] = {}
+        for name in manager.get_preset_names():
+            try:
+                out[name] = list(manager.resolve_effective_models(name).providers)
+            except (AttributeError, ValueError, KeyError):
+                out[name] = []
+        return out
+
     @app.get("/api/config")
     def config() -> dict[str, Any]:
         from researchkit.plugins import get_registry
@@ -381,6 +392,9 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
             "connectors": list(_known_connectors()),
             "default_sites": list(_known_connectors()),
             "plugins": registry.plugin_versions(),
+            # Each preset's declared run defaults (models.yaml); the UI's
+            # "harness only" mode reads the harness preset's set from here.
+            "preset_providers": _preset_providers(manager),
         }
 
     @app.post("/api/research", status_code=202)

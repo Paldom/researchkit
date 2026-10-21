@@ -131,6 +131,12 @@ class EffectiveModels:
     # Subscription-only preset: every LLM step must run on a logged-in CLI
     # harness. Search APIs (perplexity, tavily, brave, exa, ...) stay allowed.
     harness_only: bool = False
+    # Run defaults a preset may declare (used only when the caller sets none):
+    # the provider list and whether keyword site research runs. Harness
+    # presets set site research off and their zero-key provider set, so
+    # `--preset harness-fast` alone is the time-boxed, subscription-only run.
+    providers: list[str] = field(default_factory=list)
+    site_research: bool | None = None
 
     def api_billed_llm_slots(self, providers: Iterable[str]) -> list[str]:
         """``slot=spec`` for each LLM step that would bill an API.
@@ -228,6 +234,12 @@ class EffectiveModels:
             **({"plugin_models": self.plugin_models} if self.plugin_models else {}),
             **({"plugin_options": self.plugin_options} if self.plugin_options else {}),
             **({"harness_only": True} if self.harness_only else {}),
+            **({"providers": self.providers} if self.providers else {}),
+            **(
+                {"site_research": self.site_research}
+                if self.site_research is not None
+                else {}
+            ),
             "preset_name": self.preset_name,
             "preset_description": self.preset_description,
             "fingerprint": self.fingerprint(),
@@ -412,4 +424,10 @@ class SystemConfigManager:
             plugin_models=plugin_models,
             plugin_options=plugin_options,
             harness_only=bool(preset.get("harness_only", False)),
+            providers=[str(p) for p in (preset.get("providers") or [])],
+            site_research=(
+                None
+                if preset.get("site_research") is None
+                else bool(preset["site_research"])
+            ),
         )

@@ -37,7 +37,7 @@ server = [
     "uvicorn>=0.30",
 ]
 mcp = [
-    "mcp>=1.2",
+    "mcp>=1.2,<2",
 ]
 analytics = [
     "tldextract>=5.3.0",

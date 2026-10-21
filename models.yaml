@@ -143,6 +143,22 @@ presets:
     # Refuse, before any spend, a run whose LLM steps would bill an API (see
     # `harness_only` in docs/models-guide.md); `researchkit doctor` reports it.
     harness_only: true
+    # Run defaults when the caller names none: the five CLI harnesses plus the
+    # keyless sources, and no keyword site research (Exa + plugin connectors).
+    providers:
+      [
+        openai,
+        gemini,
+        grok,
+        claude,
+        kimi,
+        hackernews,
+        skillsh,
+        arxiv,
+        stackexchange,
+        openalex,
+      ]
+    site_research: false
     models:
       openai: codex:gpt-6.1-sol # Codex CLI, ChatGPT-subscription billing
       gemini: agy:gemini-3.8-flash-high # Antigravity CLI, Google account (`agy models` lists ids; effort is baked into the id)
@@ -187,6 +203,10 @@ presets:
     # claude research slots and a RESEARCHKIT_CLI_TIMEOUT cap on stragglers.
     description: Subscription-only, time-boxed — the harness preset without the slow outliers (no Codex research, Sonnet writes the summaries, council without Codex)
     harness_only: true
+    # The explore-fast set: no Codex/Claude research slots (the time outliers).
+    providers:
+      [gemini, grok, kimi, hackernews, skillsh, arxiv, stackexchange, openalex]
+    site_research: false
     models:
       openai: codex:gpt-6.1-sol # kept for parity; explore-fast does not run this slot
       gemini: agy:gemini-3.8-flash-high

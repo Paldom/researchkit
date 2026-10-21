@@ -310,7 +310,8 @@ def test_boost_routes_to_boosted_run(tmp_path: Path) -> None:
     ).json()["run_id"]
     _wait_done(client, run_id)
     assert service.boost_calls[0]["force_boost"] is True
-    assert service.boost_calls[0]["site_research_enabled"] is True
+    # Unset = the preset decides (harness presets turn site research off).
+    assert service.boost_calls[0]["site_research_enabled"] is None
 
     with client.stream("GET", f"/api/research/{run_id}/events") as stream:
         body = "".join(stream.iter_text())

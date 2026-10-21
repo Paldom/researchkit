@@ -109,19 +109,14 @@ def research(
 # The five logged-in coding-agent CLIs plus every keyless provider — the same
 # set `researchkit explore` uses, so a remote explore costs exactly what a local
 # one does (nothing beyond the subscriptions already paid for).
-_EXPLORE_PROVIDERS = (
-    "openai",
-    "gemini",
-    "grok",
-    "claude",
-    "kimi",
-    "hackernews",
-    "skillsh",
-    "arxiv",
-    "stackexchange",
-    "openalex",
-)
 _EXPLORE_PRESET = "harness"
+
+
+def _explore_providers() -> list[str]:
+    """The harness preset's declared zero-key provider set (models.yaml)."""
+    from researchkit.system_config import SystemConfigManager
+
+    return SystemConfigManager().resolve_effective_models(_EXPLORE_PRESET).providers
 
 
 @dataclass
@@ -189,7 +184,7 @@ def explore_start(topic: str, days: int = 7, materials: bool = True) -> dict[str
             result = _get_service().create_and_run_boosted(
                 topic=state.topic,
                 days=days,
-                providers=list(_EXPLORE_PROVIDERS),
+                providers=_explore_providers(),
                 preset_name=_EXPLORE_PRESET,
                 site_research_enabled=False,
                 force_boost=True,

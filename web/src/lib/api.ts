@@ -10,6 +10,8 @@ export interface ConfigResponse {
   default_providers: string[]
   connectors: string[]
   default_sites: string[]
+  // Run defaults each preset declares in models.yaml (empty = none).
+  preset_providers?: Record<string, string[]>
 }
 
 export interface UserFile {

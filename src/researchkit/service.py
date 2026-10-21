@@ -288,6 +288,25 @@ class SocialResearchService:
         """
         return self.config_manager.resolve_effective_models(preset_name)
 
+    def resolve_run_defaults(
+        self,
+        preset_name: str | None,
+        providers: list[str] | None,
+        site_research_enabled: bool | None,
+    ) -> tuple[list[str], bool]:
+        """Providers and site research for a run: caller > preset > built-in.
+
+        Harness presets declare their zero-key provider set and site research
+        off, so ``--preset harness-fast`` alone is the subscription-only,
+        time-boxed run (the CLI, MCP and web UI no longer hard-code it).
+        """
+        em = self.get_effective_models(preset_name)
+        chosen = list(providers or em.providers or DEFAULT_PROVIDERS)
+        site = site_research_enabled
+        if site is None:
+            site = True if em.site_research is None else em.site_research
+        return chosen, site
+
     def _generate_final_summary(
         self,
         generator: ClaudeFinalSummaryGenerator,
@@ -685,7 +704,7 @@ class SocialResearchService:
         sources: list[str] | None = None,
         include_raw: bool = True,
         preset_name: str | None = None,
-        site_research_enabled: bool = True,
+        site_research_enabled: bool | None = None,
         site_research_sites: list[str] | None = None,
     ) -> Project:
         """
@@ -705,11 +724,14 @@ class SocialResearchService:
         Returns:
             The created Project
         """
+        providers, site_research_enabled = self.resolve_run_defaults(
+            preset_name, providers, site_research_enabled
+        )
         config = ProjectConfig(
             topic=topic,
             keywords=keywords or [],
             days=days,
-            providers=providers or list(DEFAULT_PROVIDERS),
+            providers=providers,
             sources=sources or ["social", "web"],
             include_raw=include_raw,
             preset_name=preset_name,
@@ -837,7 +859,7 @@ class SocialResearchService:
         sources: list[str] | None = None,
         include_raw: bool = True,
         preset_name: str | None = None,
-        site_research_enabled: bool = True,
+        site_research_enabled: bool | None = None,
         site_research_sites: list[str] | None = None,
         progress: ProgressCallback | None = None,
         log_level: str = "DEBUG",
@@ -925,7 +947,7 @@ class SocialResearchService:
         sources: list[str] | None = None,
         include_raw: bool = True,
         preset_name: str | None = None,
-        site_research_enabled: bool = True,
+        site_research_enabled: bool | None = None,
         site_research_sites: list[str] | None = None,
         keyword_count: int = 10,
         force_boost: bool = False,
@@ -943,8 +965,11 @@ class SocialResearchService:
         from researchkit.council import LLMCouncil
 
         effective_models = self.get_effective_models(preset_name)
+        providers, site_research_enabled = self.resolve_run_defaults(
+            preset_name, providers, site_research_enabled
+        )
         # Before the council spends: sub-runs repeat this check per project.
-        refuse_api_billed_llm(effective_models, providers or list(DEFAULT_PROVIDERS))
+        refuse_api_billed_llm(effective_models, providers)
         if auth_problem := claude_cli_login_problem():
             logger.error(auth_problem, extra={"stage": "claude_cli_auth_error"})
 
@@ -1029,7 +1054,7 @@ class SocialResearchService:
                 topic=sub_topic,
                 keywords=[],  # each sub-run synthesizes keywords grounded in its findings
                 days=days,
-                providers=providers or list(DEFAULT_PROVIDERS),
+                providers=providers,
                 sources=sources or ["social", "web"],
                 include_raw=include_raw,
                 preset_name=preset_name,

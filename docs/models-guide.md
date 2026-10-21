@@ -12,6 +12,8 @@ presets:
   my-preset:
     description: One line shown in the CLI/UI
     harness_only: false # true = every LLM step must run on a CLI harness
+    providers: [] # run default when the caller names none (harness presets set theirs)
+    site_research: null # true/false run default; null = on
     models:
       openai: gpt-5.4-mini # provider slots — one per provider
       gemini: agy:gemini-3.8-flash-high
@@ -106,6 +108,15 @@ stay allowed. A run that would bill an LLM API is refused before anything
 spends, naming each offending `slot=spec`; `researchkit doctor` reports the
 same thing up front (pipeline steps fail, an API-only research slot such as
 `glm` warns, since only selecting it is refused).
+
+## Preset run defaults
+
+`providers:` and `site_research:` are used only when a run doesn't name its
+own (`--providers`, `--no-site-research`, the API's `providers`/`site_research`).
+`harness` and `harness-fast` declare their zero-key sets and turn site research
+off, so `researchkit "topic" --preset harness-fast` alone is the time-boxed,
+subscription-only run. The CLI's `explore`, the MCP explore tool and the web UI's
+"Harness only" mode all read the set from here.
 
 ## The presets that ship
 

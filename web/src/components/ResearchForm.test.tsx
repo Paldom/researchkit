@@ -15,7 +15,7 @@ const ALL_PROVIDERS = [
 ]
 
 // The set harness mode locks to: the five CLI harnesses plus every keyless
-// provider. Kept in step with HARNESS_PROVIDERS in ResearchForm.tsx. Not added
+// provider. Kept in step with HARNESS_FALLBACK in ResearchForm.tsx. Not added
 // to ALL_PROVIDERS: that fixture is what the *config* reports, and other tests
 // assert exact payloads built from it.
 const HARNESS_SET = [

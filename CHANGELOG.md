@@ -77,6 +77,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Presets can declare run defaults in `models.yaml`: `providers:` and
+  `site_research:`. They apply only when the run names none. `harness` and
+  `harness-fast` declare their zero-key sets and turn site research off, so
+  `researchkit "topic" --preset harness-fast` alone is the subscription-only,
+  time-boxed run: no Perplexity or Exa calls, no ChatGPT web browser
+  connector, no keyword fan-out. `explore`, the MCP explore tool and the web
+  UI's "Harness only" mode read the set from the preset instead of three
+  hard-coded copies. API presets are unchanged (`openai gemini grok
+perplexity`, site research on). `--no-site-research` and the API's
+  `site_research` are tri-state: unset means the preset decides.
+- `mcp` is pinned `>=1.2,<2`: `mcp_server.py` uses `FastMCP`, which SDK 2.x
+  replaced with `MCPServer`.
+
 - skills.sh hits are marked as procedures (`meta.evidence = "procedures"`).
   The meta-summary is told, through the pipeline-verified channel, never to
   cite them as support or count them toward corroboration, and `result.json`

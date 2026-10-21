@@ -762,3 +762,31 @@ class TestSideCallBudgets:
         p.summarize_result("raw", "topic")
         p._run_cli("research", "agy.print:web")
         assert seen[0] == 300.0 and seen[-1] == 1800.0
+
+
+class TestPresetRunDefaults:
+    """PLAN 1.6: harness presets declare their providers and site research."""
+
+    def test_harness_fast_alone_is_zero_key_and_time_boxed(self) -> None:
+        from researchkit.service import SocialResearchService
+
+        svc = SocialResearchService()
+        providers, site = svc.resolve_run_defaults("harness-fast", None, None)
+        assert "openai" not in providers and "claude" not in providers
+        assert {"gemini", "grok", "kimi"} <= set(providers)
+        assert site is False
+
+    def test_caller_wins_over_preset(self) -> None:
+        from researchkit.service import SocialResearchService
+
+        svc = SocialResearchService()
+        providers, site = svc.resolve_run_defaults("harness", ["grok"], True)
+        assert providers == ["grok"] and site is True
+
+    def test_api_presets_keep_their_defaults(self) -> None:
+        from researchkit.service import DEFAULT_PROVIDERS, SocialResearchService
+
+        providers, site = SocialResearchService().resolve_run_defaults(
+            "default", None, None
+        )
+        assert providers == list(DEFAULT_PROVIDERS) and site is True
