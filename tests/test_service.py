@@ -492,3 +492,51 @@ class TestProvenance:
         monkeypatch.setenv("RESEARCHKIT_ORIGIN", "nightly-cron")
         svc = SocialResearchService(projects_dir=tmp_path)
         assert svc.create_project(topic="batch").config.origin == "nightly-cron"
+
+
+class TestArchiveFirst:
+    """PLAN 2.4: cited sources are archived before the writers run."""
+
+    def test_archive_runs_before_writers_and_is_recorded(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        import researchkit.service as service_module
+
+        order: list[str] = []
+        monkeypatch.setattr(service_module, "InsightAggregator", FakeAggregator)
+        monkeypatch.setattr(service_module, "DigestGenerator", RecordingDigestGenerator)
+        monkeypatch.setattr(
+            service_module,
+            "ProfessionalOverviewGenerator",
+            RecordingProfessionalOverviewGenerator,
+        )
+        service = SocialResearchService(projects_dir=tmp_path)
+        monkeypatch.setattr(
+            service,
+            "get_effective_models",
+            lambda preset_name=None: _make_effective_models(),
+        )
+
+        def archive(payload: dict) -> dict:
+            order.append("archive")
+            assert payload["provider_results"]  # the in-memory result, no result.json
+            return {"fetched": 2, "total_cited": 3}
+
+        events: list[dict[str, object]] = []
+        artifacts = service.run(
+            ResearchRequest(topic="AI agents", providers=["openai"]),
+            progress=lambda e: (events.append(e), order.append(str(e["stage"]))),
+            log_dir=tmp_path,
+            archive=archive,
+        )
+        assert order.index("archive") < order.index("digest")
+        assert artifacts.report_json["materials"] == {"fetched": 2, "total_cited": 3}
+
+    def test_nothing_archived_fails_the_run(self) -> None:
+        from researchkit.providers.base import ProviderResult, Source
+        from researchkit.service import run_status
+
+        r = ProviderResult("grok", "m", "t", sources=[Source(url="https://a.b")])
+        st = run_status([r], "article", {"fetched": 0, "total_cited": 5})
+        assert st["status"] == "failed"
+        assert "no cited source could be archived" in st["reasons"]

@@ -81,6 +81,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Archive first.** A project run downloads its cited sources into
+  `materials/` _before_ the writers start, from the in-memory result
+  (`download_materials(project, result=…)`; `result.json` is no longer a
+  prerequisite). This covers the CLI, the web server, MCP and every boosted
+  sub-run, which all go through `run_project`. `result.json` records
+  `materials: {fetched, total_cited}`, and a run whose citations could not be
+  archived at all is `failed`. `--no-materials` / `--materials-limit` apply
+  to the in-run archive. The post-run materials step is now an idempotent
+  cache hit that still builds the brain.
+
 - Materials follow a fetch policy by host class:
   - X, LinkedIn, Medium, YouTube, Instagram, Facebook and TikTok links stay
     cited but link-only (`tos-blocked`). Their terms forbid scraping, and a

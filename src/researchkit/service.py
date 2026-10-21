@@ -185,7 +185,9 @@ def claude_cli_login_problem() -> str | None:
 
 
 def run_status(
-    provider_results: Sequence[ProviderResult], article: str | None
+    provider_results: Sequence[ProviderResult],
+    article: str | None,
+    materials: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The run's honest outcome, recorded in result.json and the exit code.
 
@@ -209,7 +211,17 @@ def run_status(
         )
     if not article:
         reasons.append("article missing")
-    status = "failed" if with_sources == 0 else ("degraded" if reasons else "ok")
+    # Archive-first runs: citations with nothing archived can't support a claim.
+    archived_none = (
+        materials is not None and with_sources and not materials.get("fetched")
+    )
+    if archived_none:
+        reasons.append("no cited source could be archived")
+    status = (
+        "failed"
+        if with_sources == 0 or archived_none
+        else ("degraded" if reasons else "ok")
+    )
     return {
         "status": status,
         "reasons": reasons,
@@ -233,6 +245,13 @@ def _stale_partial_reason(result: ProviderResult, slots: EffectiveModels) -> str
         if result.model not in (spec, base):
             return f"model changed ({result.model} -> {base})"
     return None
+
+
+def _archive(project: Project, payload: dict[str, Any], limit: int) -> dict[str, Any]:
+    """Archive a run's cited sources from its in-memory result (PLAN 2.4)."""
+    from researchkit.materials import download_materials
+
+    return download_materials(project, result=payload, limit=limit)
 
 
 def refuse_api_billed_llm(em: EffectiveModels, providers: Iterable[str]) -> None:
@@ -408,6 +427,7 @@ class SocialResearchService:
         log_dir: Path = Path(".logs"),
         log_level: str = "DEBUG",
         partial_sink: Callable[[Any], None] | None = None,
+        archive: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         preloaded_results: dict[str, Any] | None = None,
         repos_enabled: bool = True,
         repo_dir: Path | None = None,
@@ -540,6 +560,41 @@ class SocialResearchService:
                     repo_dir, bundle, emit, keep_clones=repo_keep_clones
                 )
 
+            # --- Archive first (PLAN 2.4) ------------------------------------
+            # Cited sources are downloaded BEFORE the writers, so the archive
+            # exists when the report is written and checked, and a brain built
+            # later sees every source. Never raises: a failed archive degrades
+            # the run status, it does not cost the paid research.
+            materials_summary: dict[str, Any] | None = None
+            if archive is not None and any(
+                r.is_success for r in bundle.provider_results
+            ):
+                emit({"stage": "materials_start", "message": "Archiving cited sources"})
+                try:
+                    manifest = archive(bundle.to_dict())
+                    materials_summary = {
+                        "fetched": manifest.get("fetched", 0),
+                        "total_cited": manifest.get("total_cited", 0),
+                    }
+                    emit(
+                        {
+                            "stage": "materials_done",
+                            "message": (
+                                f"Archived {materials_summary['fetched']} of "
+                                f"{materials_summary['total_cited']} cited sources"
+                            ),
+                        }
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Archiving failed: {e}", extra={"stage": "materials_error"}
+                    )
+                    materials_summary = {
+                        "fetched": 0,
+                        "total_cited": 0,
+                        "error": str(e),
+                    }
+
             # Every writer's output by stage; None = skipped, failed, declined.
             written: dict[str, str | None] = {}
 
@@ -664,7 +719,9 @@ class SocialResearchService:
                     }
                 )
 
-            status = run_status(bundle.provider_results, written.get("article"))
+            status = run_status(
+                bundle.provider_results, written.get("article"), materials_summary
+            )
             states = list(status["slots"].values())
             successes = states.count("complete")
             empty = states.count("empty")
@@ -690,6 +747,8 @@ class SocialResearchService:
             report_json = bundle.to_dict()
             report_json["run_status"] = status
             report_json["timings"] = timeline
+            if materials_summary is not None:
+                report_json["materials"] = materials_summary
             # skills.sh-style hits go to skillskit as candidates, not evidence.
             report_json["skill_candidates"] = [
                 s.url
@@ -764,6 +823,8 @@ class SocialResearchService:
         resume: bool = True,
         repos_enabled: bool = True,
         repo_keep_clones: bool = False,
+        materials: bool = True,
+        materials_limit: int = 0,
     ) -> ResearchArtifacts:
         """
         Run research for an existing project and save results to the project folder.
@@ -834,6 +895,11 @@ class SocialResearchService:
             partial_sink=lambda result: project.save_partial(
                 result.provider, result.to_dict()
             ),
+            archive=(
+                (lambda payload: _archive(project, payload, materials_limit))
+                if materials
+                else None
+            ),
             preloaded_results=preloaded,
             repos_enabled=repos_enabled,
             repo_dir=project.path,
@@ -878,6 +944,8 @@ class SocialResearchService:
         site_research_sites: list[str] | None = None,
         progress: ProgressCallback | None = None,
         log_level: str = "DEBUG",
+        materials: bool = True,
+        materials_limit: int = 0,
         repos_enabled: bool = True,
         repo_keep_clones: bool = False,
     ) -> tuple[Project, ResearchArtifacts]:
@@ -918,6 +986,8 @@ class SocialResearchService:
             log_level=log_level,
             repos_enabled=repos_enabled,
             repo_keep_clones=repo_keep_clones,
+            materials=materials,
+            materials_limit=materials_limit,
         )
 
         return project, artifacts

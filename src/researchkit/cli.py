@@ -1059,6 +1059,8 @@ def cmd_run(args, service: SocialResearchService) -> int:
             resume=resume,
             repos_enabled=getattr(args, "repos", True),
             repo_keep_clones=getattr(args, "keep_clones", False),
+            materials=getattr(args, "materials", True),
+            materials_limit=getattr(args, "materials_limit", 0) or 0,
         )
     except KeyboardInterrupt:
         print("\nInterrupted by user", file=sys.stderr)
@@ -1869,6 +1871,8 @@ def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
             site_research_sites=getattr(args, "site_research_sites", None),
             progress=progress,
             log_level=args.log_level,
+            materials=getattr(args, "materials", True),
+            materials_limit=getattr(args, "materials_limit", 0) or 0,
         )
     except KeyboardInterrupt:
         print("\nInterrupted by user", file=sys.stderr)

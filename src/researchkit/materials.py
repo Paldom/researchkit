@@ -547,6 +547,7 @@ def download_materials(
     delay: float = DEFAULT_DELAY_S,
     refresh: bool = False,
     workers: int = DEFAULT_WORKERS,
+    result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Fetch a project's cited sources into ``materials/`` and write a manifest.
 
@@ -560,16 +561,20 @@ def download_materials(
             rate limits).
         refresh: Re-fetch URLs whose material file already exists.
         workers: How many fetches run at once.
+        result: The run's result payload. When given (archive-first: the run
+            calls this before its writers, PLAN 2.4) ``result.json`` need not
+            exist yet; otherwise it is read from the project.
 
     Returns:
         The manifest dict (also written to ``materials/index.json``).
     """
-    if not project.result_path.is_file():
-        raise FileNotFoundError(
-            f"{project.result_path} not found — run the project before "
-            "downloading materials."
-        )
-    result = json.loads(project.result_path.read_text(encoding="utf-8"))
+    if result is None:
+        if not project.result_path.is_file():
+            raise FileNotFoundError(
+                f"{project.result_path} not found — run the project before "
+                "downloading materials."
+            )
+        result = json.loads(project.result_path.read_text(encoding="utf-8"))
     refs = collect_source_refs(result)
     limit = max(0, limit)  # negative would otherwise skip everything
 

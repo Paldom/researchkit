@@ -29,3 +29,18 @@ def _clean_quota_registry() -> object:
     clear_exhausted()
     yield
     clear_exhausted()
+
+
+@pytest.fixture(autouse=True)
+def _no_network_archiving(monkeypatch: pytest.MonkeyPatch) -> None:
+    # run_project archives cited sources before its writers (PLAN 2.4); unit
+    # tests must never hit the network. Tests that exercise fetching patch
+    # researchkit.materials.safe_fetch themselves, which overrides this.
+    import researchkit.materials as materials
+    from researchkit.safe_io import FetchResult
+
+    monkeypatch.setattr(
+        materials,
+        "safe_fetch",
+        lambda url, **kw: FetchResult(url, url, error="network disabled in tests"),
+    )
