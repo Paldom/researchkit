@@ -11,7 +11,7 @@ Python >=3.11, managed entirely by uv.
 - Lint: `uv run ruff check .` (auto-fix: `uv run ruff check --fix .`)
 - Format: `uv run ruff format .` (verify: `uv run ruff format --check .`)
 - Type check: `uv run mypy src`
-- Test: `uv run pytest --cov -q` (the 90% branch threshold comes from
+- Test: `uv run pytest --cov -q` (the branch-coverage ratchet comes from
   `[tool.coverage.report] fail_under` in pyproject.toml — the one place it lives)
 - Full gate (run before calling any task done):
   `uv run ruff check . && uv run ruff format --check . && uv run mypy src && uv run pytest --cov -q`
@@ -98,7 +98,8 @@ This repo is strict from day one. Never loosen a gate to get green:
   specific error code and a reason; never disable strict flags.
 - ruff uses an explicit `select` list in `pyproject.toml`. Add rules if you
   like; never remove rules or add ignores to silence a finding you can fix.
-- Coverage `fail_under = 90` with branch coverage. It may go up, never down.
+- Coverage `fail_under` is a branch-coverage ratchet in `pyproject.toml`
+  (65 as of 2026-10-21). It may go up, never down.
 - No skipping/deleting failing tests, no `|| true`, no `--no-verify`, no
   `pragma: no cover` on reachable code.
 

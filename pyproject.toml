@@ -118,11 +118,11 @@ parallel = true
 relative_files = true
 
 [tool.coverage.report]
-# RATCHET, never lower: measured 36.6% at the initial port (2026-07-05).
-# The ported test suite (203 tests) covers the orchestration core; provider
-# HTTP paths are exercised against live APIs and are underrepresented here.
-# Raise this number as tests are added — it may go up, never down (AGENTS.md).
-fail_under = 35
+# RATCHET, never lower: measured 36.6% at the initial port (2026-07-05),
+# 66.2% on 2026-10-21 (672 tests). Provider HTTP paths are exercised against
+# live APIs and are underrepresented here. Raise this number as tests are
+# added — it may go up, never down (AGENTS.md).
+fail_under = 65
 show_missing = true
 skip_covered = true
 exclude_lines = [
