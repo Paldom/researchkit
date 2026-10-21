@@ -7,6 +7,7 @@ from typing import Any
 
 from perplexity import Perplexity
 
+from researchkit.citations import marker_native
 from researchkit.network_retry import with_network_retry
 from researchkit.providers.base import (
     SOCIAL_DOMAINS,
@@ -183,11 +184,16 @@ class PerplexityProvider(BaseProvider):
         top_items = [self._norm_item(r) for r in (last_search_results or [])]
         all_items = self._dedupe_by_url(top_items + tool_items)
 
+        text = "".join(content_parts)
         meta = {
             "search_results": all_items,
             "usage": self._as_dict(last_usage) if last_usage else None,
+            # [n] markers number the top-level results, before dedupe (A.2).
+            "native_citations": marker_native(
+                text, [str(i.get("url") or "") for i in top_items]
+            ),
         }
-        return "".join(content_parts), all_items, meta
+        return text, all_items, meta
 
     def _run_query_nonstream(
         self,
@@ -218,6 +224,9 @@ class PerplexityProvider(BaseProvider):
         meta = {
             "search_results": items,
             "usage": self._as_dict(getattr(response, "usage", None)),
+            "native_citations": marker_native(
+                text, [str(self._norm_item(r).get("url") or "") for r in raw_results]
+            ),
         }
         return text, items, meta
 
@@ -348,6 +357,9 @@ class PerplexityProvider(BaseProvider):
                     domain_filter=SOCIAL_DOMAINS,
                 )
                 sources.extend(self._items_to_sources(social_items, SourceType.SOCIAL))
+                meta.setdefault("native_citations", []).extend(
+                    social_meta.pop("native_citations", [])
+                )
                 meta["queries"]["social"] = social_meta
                 sections.append(f"# Social Media Analysis\n\n{social_text}")
 
@@ -361,6 +373,9 @@ class PerplexityProvider(BaseProvider):
                     recency_filter=recency_filter,
                 )
                 sources.extend(self._items_to_sources(web_items, SourceType.WEB))
+                meta.setdefault("native_citations", []).extend(
+                    web_meta.pop("native_citations", [])
+                )
                 meta["queries"]["web"] = web_meta
                 sections.append(f"# Web Research Analysis\n\n{web_text}")
 

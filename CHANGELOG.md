@@ -68,6 +68,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Provider-native citations reach the claims table** (PLAN A.2, A.9). The
+  API providers now keep their structured claim→source locators when they
+  read the response: OpenAI `url_citation` offsets (Responses or Chat
+  shape), Gemini grounding supports (the chunk list stays index-aligned,
+  and each chunk records the resolved URL), and Perplexity `[n]` markers
+  into its result list. Adapters in `researchkit.citations` normalize them
+  to `meta.native_citations`, and every `claims.jsonl` row carries
+  `native_spans`, the provider sentences that cited its source. Offline
+  parity tests replay SDK-shaped responses through each adapter and a
+  frozen API-style run through publication. `docs/research-pack.md` now
+  documents `claims.jsonl`, the labels file, and the newer `result.json`
+  run facts.
+
 - **Claim verifier v1: `researchkit verify <project>`** (PLAN 4.3). A
   Claude Code judge labels each `claims.jsonl` row from its archived source
   text alone: `supported`, `unsupported`, `contradicted`, or `unavailable`

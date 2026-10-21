@@ -10,6 +10,7 @@ from typing import Any
 from google import genai
 from google.genai import types
 
+from researchkit.citations import gemini_native
 from researchkit.network_retry import with_network_retry
 from researchkit.providers.base import (
     BaseProvider,
@@ -147,8 +148,10 @@ class GeminiProvider(BaseProvider):
                 redirect_url = chunk["web"]["uri"]
                 domain_title = chunk["web"].get("title")  # Usually just domain
 
-                # Resolve redirect to get actual URL
+                # Resolve redirect to get actual URL; kept on the chunk so
+                # grounding supports can name the real page (A.2).
                 actual_url, page_title = self._resolve_redirect_url(redirect_url)
+                chunk["web"]["resolved"] = actual_url
                 if not actual_url or actual_url in seen:
                     continue
                 seen.add(actual_url)
@@ -196,7 +199,7 @@ class GeminiProvider(BaseProvider):
         time_range: tuple[dt.datetime, dt.datetime],
         *,
         json_schema: dict[str, Any] | None = None,
-    ) -> tuple[str, list[dict]]:
+    ) -> tuple[str, list[dict], list[dict[str, Any]]]:
         """
         Run a single Gemini query with Google Search grounding.
 
@@ -208,7 +211,8 @@ class GeminiProvider(BaseProvider):
             json_schema: Optional JSON schema for structured output
 
         Returns:
-            Tuple of (response_text, grounding_chunks)
+            Tuple of (response_text, grounding_chunks, grounding_supports);
+            each support is ``{"segment": {"text"}, "grounding_chunk_indices"}``
         """
         full_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
 
@@ -277,6 +281,7 @@ class GeminiProvider(BaseProvider):
 
         # Extract grounding chunks
         grounding_chunks = []
+        supports: list[dict[str, Any]] = []
         if hasattr(response, "candidates") and response.candidates:
             for candidate in response.candidates:
                 if hasattr(candidate, "grounding_metadata"):
@@ -285,18 +290,34 @@ class GeminiProvider(BaseProvider):
                         hasattr(grounding, "grounding_chunks")
                         and grounding.grounding_chunks
                     ):
+                        # One entry per chunk, web or not: support indices
+                        # point into this list, so it must stay aligned.
                         grounding_chunks = [
                             {
                                 "web": {
-                                    "uri": getattr(chunk.web, "uri", None),
-                                    "title": getattr(chunk.web, "title", None),
+                                    "uri": getattr(
+                                        getattr(chunk, "web", None), "uri", None
+                                    ),
+                                    "title": getattr(
+                                        getattr(chunk, "web", None), "title", None
+                                    ),
                                 }
                             }
                             for chunk in grounding.grounding_chunks
-                            if hasattr(chunk, "web")
                         ]
+                    # Segment -> chunk links: the native claim locators (A.2).
+                    for sup in getattr(grounding, "grounding_supports", None) or []:
+                        segment = getattr(sup, "segment", None)
+                        supports.append(
+                            {
+                                "segment": {"text": getattr(segment, "text", "") or ""},
+                                "grounding_chunk_indices": list(
+                                    getattr(sup, "grounding_chunk_indices", None) or []
+                                ),
+                            }
+                        )
 
-        return text, grounding_chunks
+        return text, grounding_chunks, supports
 
     def fetch_insights(
         self,
@@ -329,7 +350,7 @@ class GeminiProvider(BaseProvider):
             # Social media query
             if "social" in self.sources:
                 self._log_query("social")
-                social_text, social_chunks = self._run_query(
+                social_text, social_chunks, social_supports = self._run_query(
                     client=client,
                     system_prompt=get_base_system_prompt(days),
                     user_prompt=get_user_prompt(topic, days),
@@ -339,12 +360,18 @@ class GeminiProvider(BaseProvider):
                     self._extract_sources(social_chunks, SourceType.SOCIAL, seen_urls)
                 )
                 meta["social_grounding_chunks"] = social_chunks
+                meta.setdefault("native_citations", []).extend(
+                    gemini_native(
+                        social_supports,
+                        [(c.get("web") or {}).get("resolved") for c in social_chunks],
+                    )
+                )
                 sections.append(f"# Social Media Analysis\n\n{social_text}")
 
             # Web research query
             if "web" in self.sources:
                 self._log_query("web")
-                web_text, web_chunks = self._run_query(
+                web_text, web_chunks, web_supports = self._run_query(
                     client=client,
                     system_prompt=get_web_system_prompt(days),
                     user_prompt=get_web_user_prompt(topic, days),
@@ -354,6 +381,12 @@ class GeminiProvider(BaseProvider):
                     self._extract_sources(web_chunks, SourceType.WEB, seen_urls)
                 )
                 meta["web_grounding_chunks"] = web_chunks
+                meta.setdefault("native_citations", []).extend(
+                    gemini_native(
+                        web_supports,
+                        [(c.get("web") or {}).get("resolved") for c in web_chunks],
+                    )
+                )
                 sections.append(f"# Web Research Analysis\n\n{web_text}")
 
             combined_text = "\n\n---\n\n".join(sections)

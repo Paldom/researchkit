@@ -10,7 +10,14 @@ projects/<timestamp>_<slug>/
 ├── report.md       # the cited synthesis; `## ` sections are chunkable
 ├── config.json     # run parameters
 ├── run.log         # full log
-├── materials/      # archived cited sources (with --materials)
+├── article.md      # publication-ready article over the same evidence
+├── claims.jsonl    # one row per cited sentence × source (see below)
+├── evidence.md     # the report's numbered sources with archive status
+├── providers.md    # per-slot appendix (state, summary or excerpt)
+├── claims.labels.jsonl  # optional: `researchkit verify` labels
+├── rubric.json     # optional: `researchkit score` grade
+├── brain/          # the pack's own brainkit brain over materials/
+├── materials/      # archived cited sources (default on)
 │   ├── index.json  # manifest; consumers ingest only status:"fetched" files
 │   └── NNN-*.md    # one frontmattered markdown file per source
 └── subprojects/    # boosted runs: each child is itself a valid pack
@@ -34,7 +41,22 @@ projects/<timestamp>_<slug>/
 4. **`report.md` `## ` headings are chunk boundaries** (fence-aware).
    researchkit demotes provider-emitted `## ` headings inside embedded raw
    text so only real sections chunk.
-5. **Additive evolution.** New frontmatter keys and result.json keys may
+5. **`claims.jsonl`** is the handoff unit: one JSON row per cited sentence
+   and source, `schema_version: 1`. Keys: `id` (stable across
+   renumbering), `run_id`, `document`, `section`, `sentence` (verbatim,
+   hedges and numbers kept), `canonical_url`, `content_hash`,
+   `archive_status`, `material_file`, `hedges`, `numbers`, `co_cited`, and
+   `native_spans` (the sentences an API provider natively cited this URL
+   for: OpenAI annotations, Gemini grounding supports, Perplexity markers;
+   a locator, not the source's text). `claims.labels.jsonl` rows join on
+   `id`: `label` is `supported` / `unsupported` / `contradicted` /
+   `unavailable`, and `unavailable` never counts as support.
+6. **`result.json` run facts**: `run_status` (`ok`/`degraded`/`failed`
+   with reasons and per-slot states, `partial` for a slot cut off at its
+   deadline), `timings`, `materials`, `publication`, `citations`, `depth`
+   (per slot and branch; `unknown` where the provider exposes none), and
+   `brain` when a shared brain was fed.
+7. **Additive evolution.** New frontmatter keys and result.json keys may
    appear at any time; consumers ignore unknown keys. Renames/removals bump
    this spec's version.
 

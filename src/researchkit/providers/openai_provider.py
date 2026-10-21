@@ -8,6 +8,7 @@ from typing import Any
 
 from openai import OpenAI
 
+from researchkit.citations import openai_native
 from researchkit.network_retry import with_network_retry
 from researchkit.providers.base import (
     SOCIAL_DOMAINS,
@@ -258,6 +259,9 @@ class OpenAIProvider(BaseProvider):
                 meta["social_annotations"] = self._serialize_annotations(
                     social_annotations
                 )
+                meta.setdefault("native_citations", []).extend(
+                    openai_native(social_text, social_annotations)
+                )
                 sections.append(f"# Social Media Analysis\n\n{social_text}")
 
             # Web research query
@@ -270,6 +274,9 @@ class OpenAIProvider(BaseProvider):
                 )
                 sources.extend(self._extract_sources(web_annotations, SourceType.WEB))
                 meta["web_annotations"] = self._serialize_annotations(web_annotations)
+                meta.setdefault("native_citations", []).extend(
+                    openai_native(web_text, web_annotations)
+                )
                 sections.append(f"# Web Research Analysis\n\n{web_text}")
 
             combined_text = "\n\n---\n\n".join(sections)

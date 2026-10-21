@@ -33,6 +33,7 @@ from researchkit.citations import (
     Issue,
     check_publication,
     extract_claims,
+    native_spans,
     renumber,
 )
 from researchkit.evidence import (
@@ -410,7 +411,12 @@ def publish(
     issues = check_publication({"report.md": report_text}, cited, archive_text)
     if article:
         issues += _article_link_issues(article, evidence)
-    claims = extract_claims({"report.md": report_text}, cited, run_id)
+    claims = extract_claims(
+        {"report.md": report_text},
+        cited,
+        run_id,
+        native=native_spans(bundle.provider_results),
+    )
     evidence_md = (
         "# Cross-source analysis\n\nThe intermediate synthesis the report was written from.\n\n"
         + (bundle.meta_summary or "")

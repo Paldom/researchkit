@@ -157,16 +157,21 @@ def _sentences(text: str) -> list[tuple[str, str]]:
 
 
 def extract_claims(
-    documents: dict[str, str], cited: CitedDocuments, run_id: str
+    documents: dict[str, str],
+    cited: CitedDocuments,
+    run_id: str,
+    native: dict[str, list[str]] | None = None,
 ) -> list[dict[str, Any]]:
     """One claims row per cited sentence and source (PLAN 2.9).
 
     The sentence is kept verbatim, with its hedge words and numbers, so
     brainkit and skillskit can carry qualifications forward instead of
     re-summarizing. IDs hash the sentence and the source identity, so they
-    are stable across renumbering.
+    are stable across renumbering. ``native`` (from :func:`native_spans`)
+    attaches the sentences API providers natively cited each source for.
     """
     by_n = {s.n: s for s in cited.sources}
+    spans_by_origin = native or {}
     rows: list[dict[str, Any]] = []
     for doc_name, text in documents.items():
         for heading, sentence in _sentences(text):
@@ -202,6 +207,11 @@ def extract_claims(
                         "hedges": sorted({h.lower() for h in _HEDGE.findall(plain)}),
                         "numbers": _NUMBER.findall(plain),
                         "co_cited": [by_n[m].url for m in nums if m != n and m in by_n],
+                        # What an API provider natively cited this URL for
+                        # (A.2): a locator, not the source's own text.
+                        "native_spans": spans_by_origin.get(origin_key(source.url), [])[
+                            :3
+                        ],
                     }
                 )
     return rows
@@ -270,3 +280,81 @@ def check_publication(
             seen.add(key)
             unique.append(issue)
     return unique
+
+
+# --- Provider-native citations (PLAN A.2) -----------------------------------
+# API providers return structured claim -> source locators: OpenAI
+# url_citation annotations with character offsets, Gemini grounding supports
+# with text segments, Perplexity [n] markers into its result list. The
+# adapters below turn each into one record shape, ``{"url", "text"}``: the
+# sentence the provider cited that URL for. Providers store them in
+# ``meta["native_citations"]``; claims rows carry them as ``native_spans``.
+
+
+def _sentence_at(text: str, index: int) -> str:
+    """The sentence of ``text`` containing character ``index``."""
+    index = max(0, min(index, len(text)))
+    start = max(text.rfind(c, 0, index) for c in ".!?\n") + 1
+    ends = [e for e in (text.find(c, index) for c in ".!?\n") if e != -1]
+    end = min(ends) + 1 if ends else len(text)
+    return " ".join(text[start:end].split())
+
+
+def _field(obj: Any, name: str) -> Any:
+    return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+
+
+def openai_native(text: str, annotations: list[Any]) -> list[dict[str, str]]:
+    """OpenAI ``url_citation`` annotations (Responses or Chat shape)."""
+    out: list[dict[str, str]] = []
+    for ann in annotations:
+        cite = _field(ann, "url_citation") or ann
+        url = _field(cite, "url")
+        start = _field(cite, "start_index")
+        if url and isinstance(start, int):
+            out.append({"url": str(url), "text": _sentence_at(text, start)})
+    return out
+
+
+def gemini_native(
+    supports: list[Any], chunk_urls: list[str | None]
+) -> list[dict[str, str]]:
+    """Gemini grounding supports: a text segment and the chunks backing it."""
+    out: list[dict[str, str]] = []
+    for support in supports:
+        segment = _field(support, "segment")
+        seg_text = " ".join(str(_field(segment, "text") or "").split())
+        for i in _field(support, "grounding_chunk_indices") or []:
+            if seg_text and isinstance(i, int) and 0 <= i < len(chunk_urls):
+                url = chunk_urls[i]
+                if url:
+                    out.append({"url": url, "text": seg_text})
+    return out
+
+
+def marker_native(text: str, urls: list[str]) -> list[dict[str, str]]:
+    """``[n]`` markers into an ordered URL list (Perplexity's citations)."""
+    out: list[dict[str, str]] = []
+    for m in _ANCHOR_GROUP.finditer(text):
+        sentence = _ANCHOR_GROUP.sub("", _sentence_at(text, m.start())).strip()
+        for raw in re.split(r"\s*[,;]\s*", m.group(1)):
+            n = int(raw)
+            if sentence and 1 <= n <= len(urls):
+                out.append({"url": urls[n - 1], "text": sentence})
+    return out
+
+
+def native_spans(provider_results: list[Any]) -> dict[str, list[str]]:
+    """:func:`origin_key` -> the provider sentences that cited it natively.
+
+    Keyed loosely (``www.``, trailing slash) like renumbering's aliases, so
+    a provider's cosmetic URL variant still finds the archived source.
+    """
+    spans: dict[str, list[str]] = {}
+    for result in provider_results:
+        for rec in (getattr(result, "meta", None) or {}).get("native_citations") or []:
+            url = origin_key(str(rec.get("url") or "")) if rec.get("url") else ""
+            text = str(rec.get("text") or "")
+            if url and text and text not in spans.setdefault(url, []):
+                spans[url].append(text)
+    return spans
