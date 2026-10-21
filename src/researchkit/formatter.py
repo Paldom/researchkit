@@ -57,7 +57,6 @@ class Formatter:
         self,
         bundle: InsightBundle,
         include_raw: bool = True,
-        digest_markdown: str | None = None,
     ) -> str:
         """
         Format the insight bundle as markdown.
@@ -66,7 +65,6 @@ class Formatter:
             bundle: The InsightBundle to format
             include_raw: Whether to include raw provider outputs and the
                 per-provider summaries they were distilled into
-            digest_markdown: Optional digest section rendered after the overview
         """
         lines = [
             "# Research Report",
@@ -103,18 +101,6 @@ class Formatter:
             )
 
         # Digest summary (concise, scannable overview of all findings)
-        if digest_markdown:
-            lines.extend(
-                [
-                    "---",
-                    "",
-                    "## Digest",
-                    "",
-                    digest_markdown,
-                    "",
-                ]
-            )
-
         lines.extend(
             [
                 "---",
@@ -668,7 +654,6 @@ default_formatter = Formatter()
 def format_as_markdown(
     bundle: InsightBundle,
     include_raw: bool = True,
-    digest_markdown: str | None = None,
 ) -> str:
     """
     Format the insight bundle as markdown using the default formatter.
@@ -676,12 +661,10 @@ def format_as_markdown(
     Args:
         bundle: The InsightBundle to format
         include_raw: Whether to include raw provider outputs and summaries
-        digest_markdown: Optional digest summary to include after header
     """
     return default_formatter.format_markdown(
         bundle,
         include_raw,
-        digest_markdown=digest_markdown,
     )
 
 

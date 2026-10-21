@@ -58,7 +58,7 @@ Rules:
   (`codex`, `claude`) uses that CLI's default model. Bare `claude-*` ids
   remain accepted as the legacy spelling of `claude:<id>`.
 - **Claude has no API route.** Every Claude step (the `claude` research
-  slot, the four writers, council members, the boss, the super-summary,
+  slot, the report writers (body, lead, article), council members, the boss, the super-summary,
   `advise-session`) runs on the Claude Code CLI against your claude.ai
   login. researchkit strips `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
   `ANTHROPIC_BASE_URL` and `CLAUDE_CODE_USE_BEDROCK` / `_VERTEX` /

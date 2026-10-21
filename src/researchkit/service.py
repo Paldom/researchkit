@@ -7,25 +7,20 @@ should use. It coordinates provider collection, summarization, formatting, and s
 
 from __future__ import annotations
 
-import contextvars
 import dataclasses
+import json
 import logging
-import os
 import shutil
 import time
 from collections.abc import Callable, Iterable, Sequence
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from researchkit.aggregator import InsightAggregator, InsightBundle
 from researchkit.final_summary import (
-    ArticleGenerator,
     ClaudeFinalSummaryGenerator,
-    DigestGenerator,
-    ProfessionalOverviewGenerator,
-    SkillGenerator,
     SuperSummaryGenerator,
 )
 from researchkit.formatter import format_as_markdown
@@ -356,130 +351,6 @@ class SocialResearchService:
             user_file_contents=bundle.user_file_contents,
         )
 
-    def _legacy_publication(
-        self,
-        *,
-        req: ResearchRequest,
-        bundle: InsightBundle,
-        effective_models: EffectiveModels,
-        emit: Callable[[ProgressEvent], None],
-        repo_cards: list[str],
-    ) -> tuple[dict[str, str | None], str]:
-        """The four independent writers (digest, overview, article, skill).
-
-        Kept only for the A/B against the archive-first publication
-        (``RESEARCHKIT_REPORT=legacy``); scheduled for deletion once the
-        frozen-evidence comparison passes (PLAN 2.7).
-        """
-        # Every writer's output by stage; None = skipped, failed, declined.
-        written: dict[str, str | None] = {}
-
-        # Skip the Claude CLI writers entirely when no provider succeeded —
-        # otherwise they spend budget summarizing the "*All providers
-        # failed*" notice. (Review L2; mirrors the keyword-gen gate in the
-        # aggregator.)
-        any_success = any(r.is_success for r in bundle.provider_results)
-
-        # All four writers see the same research body and run at once: the
-        # research is bought, so the only thing left to wait on is wall
-        # clock, and these are independent of each other.
-        summary_specs: dict[
-            str,
-            tuple[str, str, str, ClaudeFinalSummaryGenerator],
-        ] = {
-            "digest": (
-                "Generating digest summary",
-                "Digest generated",
-                "Digest skipped",
-                DigestGenerator.from_effective_models(effective_models),
-            ),
-            "professional_overview": (
-                "Generating professional overview",
-                "Professional overview generated",
-                "Professional overview skipped",
-                ProfessionalOverviewGenerator.from_effective_models(effective_models),
-            ),
-            "article": (
-                "Writing article",
-                "Article written",
-                "Article skipped",
-                ArticleGenerator.from_effective_models(effective_models),
-            ),
-            "skill": (
-                "Distilling skill",
-                "Skill distilled",
-                "Skill skipped",
-                SkillGenerator.from_effective_models(effective_models),
-            ),
-        }
-        if not any_success:
-            for stage, spec in summary_specs.items():
-                emit({"stage": f"{stage}_done", "message": spec[2]})
-            summary_specs = {}
-
-        future_map: dict[Future[str | None], str] = {}
-        with ThreadPoolExecutor(max_workers=max(1, len(summary_specs))) as executor:
-            for stage, spec in summary_specs.items():
-                message, _, _, generator = spec
-                emit(
-                    {
-                        "stage": stage,
-                        "message": message,
-                    }
-                )
-                # Propagate contextvars (run_id) into the worker so the
-                # final-summary stage's logs land in the per-run log file
-                # instead of being stamped run_id="-" and filtered out.
-                # (Review L3.)
-                ctx = contextvars.copy_context()
-                future = executor.submit(
-                    ctx.run,
-                    self._generate_final_summary,
-                    generator,
-                    bundle,
-                    req.topic,
-                    req.days,
-                    repo_cards,
-                )
-                future_map[future] = stage
-
-            for future in as_completed(future_map):
-                stage = future_map[future]
-                _, done_message, skipped_message, _ = summary_specs[stage]
-                try:
-                    text = future.result()
-                except Exception as e:
-                    logger.warning(
-                        f"{stage} generation failed: {e}",
-                        extra={"stage": f"{stage}_error"},
-                    )
-                    text = None
-
-                written[stage] = text
-
-                emit(
-                    {
-                        "stage": f"{stage}_done",
-                        "message": done_message if text else skipped_message,
-                    }
-                )
-
-        bundle.professional_overview_markdown = written.get("professional_overview")
-
-        emit(
-            {
-                "stage": "formatting",
-                "message": "Formatting report",
-            }
-        )
-
-        md = format_as_markdown(
-            bundle,
-            include_raw=req.include_raw,
-            digest_markdown=written.get("digest"),
-        )
-        return written, md
-
     @staticmethod
     def _enrich_with_repos(
         repo_dir: Path,
@@ -730,15 +601,7 @@ class SocialResearchService:
             written: dict[str, str | None] = {}
             publication: Publication | None = None
             any_success = any(r.is_success for r in bundle.provider_results)
-            if os.environ.get("RESEARCHKIT_REPORT") == "legacy":
-                written, md = self._legacy_publication(
-                    req=req,
-                    bundle=bundle,
-                    effective_models=effective_models,
-                    emit=emit,
-                    repo_cards=repo_cards,
-                )
-            elif any_success:
+            if any_success:
                 publication = publish(
                     topic=req.topic,
                     days=req.days,
@@ -747,6 +610,7 @@ class SocialResearchService:
                     effective_models=effective_models,
                     run_id=run_id,
                     emit=emit,
+                    repo_cards=repo_cards,
                 )
                 md = publication.report_markdown
                 written["article"] = publication.article_markdown
@@ -1081,6 +945,56 @@ class SocialResearchService:
             providers_markdown=publication.providers_markdown,
             claims=publication.claims,
         )
+
+    def make_skill(self, project: Project) -> str | None:
+        """Write skill/SKILL.md on request from a finished project (PLAN 2.14).
+
+        Runs no longer distill a skill by default (self-generated skills scored
+        8-11 points below no skill, digest 6; skillskit owns the validated
+        pack -> skill rewrite). The writer sees the analysis plus the run's
+        verified claims, so each instruction can carry its claim's hedges and
+        dates. Returns the skill text, or None when the writer declined.
+        """
+        from researchkit.final_summary import SkillGenerator
+        from researchkit.providers.base import ProviderResult
+
+        result = project.load_results()
+        if result is None:
+            raise FileNotFoundError(
+                f"{project.result_path} not found: run the project first"
+            )
+        claims_text = ""
+        if project.claims_path.is_file():
+            rows = [
+                json.loads(line)
+                for line in project.claims_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            claims_text = "\n".join(
+                f"- {r['sentence']} ({r['canonical_url']})" for r in rows[:200]
+            )
+        meta = str(result.get("meta_summary") or "")
+        if claims_text:
+            meta += (
+                "\n\n## Verified claims (verbatim, with their sources)\n\n"
+                + claims_text
+            )
+        generator = SkillGenerator.from_effective_models(
+            self.get_effective_models(project.config.preset_name)
+        )
+        text = generator.generate(
+            meta_summary=meta,
+            individual_summaries=dict(result.get("individual_summaries") or {}),
+            topic=str(result.get("topic") or project.config.topic),
+            days=int(result.get("days") or project.config.days),
+            provider_results=[
+                ProviderResult.from_dict(r)
+                for r in result.get("provider_results") or []
+            ],
+        )
+        if text:
+            project.save_skill(text)
+        return text
 
     def create_and_run_project(
         self,

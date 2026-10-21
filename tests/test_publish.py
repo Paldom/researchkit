@@ -136,6 +136,7 @@ class TestCitations:
             "## Finding\n"
             "Certainly! Here's the report.\n"
             "It is corroborated by one page [1].\n"
+            "Call a claim corroborated only with two sources [2].\n"
             "Usage rose 47% in 2026 [2].\n"
             "A post claims more [3]."
         )
@@ -304,3 +305,50 @@ def test_republish_rewrites_from_frozen_research(
     saved = json.loads(project.result_path.read_text())
     assert saved["publication"]["version"] == 2 and saved["citations"][0]["n"] == 1
     assert artifacts.status in ("ok", "degraded")
+
+
+def test_cosmetic_duplicates_share_one_number() -> None:
+    ev = Evidence(
+        sources=[
+            EvidenceSource(1, "https://idrc.example/brief", "Brief", "fetched", "1.md"),
+            EvidenceSource(
+                2, "https://www.idrc.example/brief/", "Brief", "fetched", "2.md"
+            ),
+        ]
+    )
+    cited = renumber(["A [1] and B [2]."], ev)
+    assert cited.texts == ["A [1] and B [1]."] and len(cited.sources) == 1
+
+
+def test_source_titles_are_cleaned() -> None:
+    from researchkit.publish import _clean_title
+
+    assert _clean_title("[[arxiv.org]", "https://arxiv.org/abs/1") == "arxiv.org"
+    assert _clean_title("x" * 200, "https://x.com/u/status/9") == "x.com/u/status/9"
+    assert _clean_title("Good title", "https://a.b") == "Good title"
+
+
+def test_skill_is_made_on_request_with_claims(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PLAN 2.14: no skill per run; `researchkit skill` feeds the claims."""
+    from researchkit.final_summary import SkillGenerator
+    from researchkit.project import ProjectConfig, create_project
+    from researchkit.service import SocialResearchService
+
+    project = create_project(ProjectConfig(topic="t"), tmp_path)
+    project.save_results({"topic": "t", "days": 7, "meta_summary": "m"}, "# r")
+    project.claims_path.write_text(
+        json.dumps({"sentence": "Codex may cache.", "canonical_url": "https://a.b"})
+        + "\n"
+    )
+    seen: dict[str, Any] = {}
+
+    def fake_generate(self: Any, **kw: Any) -> str:
+        seen.update(kw)
+        return "---\nname: t\n---\nskill"
+
+    monkeypatch.setattr(SkillGenerator, "generate", fake_generate)
+    text = SocialResearchService(projects_dir=tmp_path).make_skill(project)
+    assert text and project.skill_path.read_text().startswith("---")
+    assert "Codex may cache. (https://a.b)" in seen["meta_summary"]

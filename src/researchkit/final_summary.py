@@ -20,12 +20,6 @@ from researchkit.prompts import (
     get_article_system_prompt,
     get_article_user_prompt_footer,
     get_article_user_prompt_header,
-    get_digest_system_prompt,
-    get_digest_user_prompt_footer,
-    get_digest_user_prompt_header,
-    get_professional_overview_system_prompt,
-    get_professional_overview_user_prompt_footer,
-    get_professional_overview_user_prompt_header,
     get_skill_system_prompt,
     get_skill_user_prompt_footer,
     get_skill_user_prompt_header,
@@ -494,44 +488,6 @@ class ClaudeFinalSummaryGenerator:
             user_file_contents=user_file_contents,
         )
         return self._run_claude(user_prompt)
-
-
-class DigestGenerator(ClaudeFinalSummaryGenerator):
-    """Generate the concise digest summary."""
-
-    stage_name = "digest"
-    display_name = "digest"
-
-    def get_system_prompt(self) -> str:
-        """Return the digest system prompt."""
-        return get_digest_system_prompt()
-
-    def get_user_prompt_header(self, topic: str, days: int) -> str:
-        """Return the digest task header."""
-        return get_digest_user_prompt_header(topic, days)
-
-    def get_user_prompt_footer(self) -> str:
-        """Return the digest task footer."""
-        return get_digest_user_prompt_footer()
-
-
-class ProfessionalOverviewGenerator(ClaudeFinalSummaryGenerator):
-    """Generate the article-style professional overview."""
-
-    stage_name = "professional_overview"
-    display_name = "professional overview"
-
-    def get_system_prompt(self) -> str:
-        """Return the professional overview system prompt."""
-        return get_professional_overview_system_prompt()
-
-    def get_user_prompt_header(self, topic: str, days: int) -> str:
-        """Return the professional overview task header."""
-        return get_professional_overview_user_prompt_header(topic, days)
-
-    def get_user_prompt_footer(self) -> str:
-        """Return the professional overview task footer."""
-        return get_professional_overview_user_prompt_footer()
 
 
 class ArticleGenerator(ClaudeFinalSummaryGenerator):

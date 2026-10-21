@@ -25,7 +25,7 @@ on this machine's harness runs (about 120 samples per slot):
 | keyless (hackernews, skillsh, …)   | seconds | seconds | yes                                   |
 
 Two levers do the work: the `harness-fast` preset in `models.yaml` (no Codex
-research, `claude-sonnet-5-5` for the four writers, a council without Codex,
+research, `claude-sonnet-5-5` for the report writers, a council without Codex,
 effort `high`) and `RESEARCHKIT_CLI_TIMEOUT=900`, which turns a straggler into
 a dropped provider instead of an hour-long wait.
 

@@ -28,7 +28,13 @@ _ARTIFACTS = re.compile(
     r"here(?:'s| is) (?:the|your) (?:report|article|overview)|let me know if)",
     re.I,
 )
-_CORROBORATED = re.compile(r"\bcorroborat\w*", re.I)
+# Assertions only ("is corroborated", "corroborated by", "corroborates"):
+# a sentence *about* corroboration rules is not a corroboration claim.
+_CORROBORATED = re.compile(
+    r"\b(?:(?:is|are|was|were|been|being|independently|widely|fully)\s+corroborated"
+    r"|corroborated\s+by|corroborates?)\b",
+    re.I,
+)
 _HEDGE = re.compile(
     r"\b(may|might|could|likely|unlikely|appears?|suggests?|reportedly|"
     r"according to|unverified|uncited|preliminary|claims?|estimated?|about|roughly)\b",
@@ -84,13 +90,19 @@ def renumber(texts: list[str], evidence: Evidence) -> CitedDocuments:
     """Map anchors to sources and renumber them by first appearance."""
     issues: list[Issue] = []
     by_n = evidence.by_n()
-    url_to_n = {s.url: s.n for s in evidence.sources}
+    # Cosmetic variants of one page (www., trailing slash) share a number in
+    # the report; their canonical identities stay distinct elsewhere.
+    first_by_origin: dict[str, int] = {}
+    alias: dict[int, int] = {}
+    for src in evidence.sources:
+        alias[src.n] = first_by_origin.setdefault(origin_key(src.url), src.n)
+    url_to_n = {s.url: alias[s.n] for s in evidence.sources}
     texts = [_urls_to_anchors(t, url_to_n, issues) for t in texts]
     order: dict[int, int] = {}  # original n -> new number
 
     def collect(m: re.Match[str]) -> str:
         for raw in re.split(r"\s*[,;]\s*", m.group(1)):
-            n = int(raw)
+            n = alias.get(int(raw), int(raw))
             if n in by_n and n not in order:
                 order[n] = len(order) + 1
         return m.group(0)
@@ -101,7 +113,7 @@ def renumber(texts: list[str], evidence: Evidence) -> CitedDocuments:
     def rewrite(m: re.Match[str]) -> str:
         nums: list[int] = []
         for raw in re.split(r"\s*[,;]\s*", m.group(1)):
-            n = int(raw)
+            n = alias.get(int(raw), int(raw))
             if n not in by_n:
                 issues.append(Issue(True, "unknown_citation", f"[{n}]"))
                 continue

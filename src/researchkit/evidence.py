@@ -27,8 +27,10 @@ _NON_EVIDENCE_ORIGINS = ("summary",)
 _PASSAGE_MIN_WORDS = 60
 _PASSAGE_MAX_WORDS = 220
 _MAX_PASSAGES_PER_SOURCE = 40
-PER_SECTION_WORDS = 1500
-TOTAL_WORDS = 9000
+# Raised after the blind A/B: the compact writer dropped decisive numbers it
+# never received. Passages are cheap next to a lost finding (principle 8).
+PER_SECTION_WORDS = 2500
+TOTAL_WORDS = 14000
 _MAX_PER_SOURCE_PER_SECTION = 3
 _SKIP_HEADINGS = re.compile(
     r"^(tl;?dr|summary|overview|introduction|conclusion|sources?|references|"

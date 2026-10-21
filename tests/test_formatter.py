@@ -27,27 +27,20 @@ def _make_bundle(professional_overview: str | None) -> InsightBundle:
 
 
 class TestFormatter:
-    def test_professional_overview_renders_before_digest(self) -> None:
-        markdown = format_as_markdown(
-            _make_bundle("Overview text."),
-            include_raw=False,
-            digest_markdown="Digest text.",
-        )
+    def test_professional_overview_renders_before_analysis(self) -> None:
+        markdown = format_as_markdown(_make_bundle("Overview text."), include_raw=False)
 
         assert "## Professional Overview" in markdown
         assert "Overview text." in markdown
-        assert markdown.index("## Professional Overview") < markdown.index("## Digest")
-        assert markdown.index("## Digest") < markdown.index("## Consolidated Analysis")
-
-    def test_professional_overview_section_is_omitted_when_absent(self) -> None:
-        markdown = format_as_markdown(
-            _make_bundle(None),
-            include_raw=False,
-            digest_markdown="Digest text.",
+        assert "## Digest" not in markdown  # the digest writer is gone (PLAN 2.7)
+        assert markdown.index("## Professional Overview") < markdown.index(
+            "## Consolidated Analysis"
         )
 
+    def test_professional_overview_section_is_omitted_when_absent(self) -> None:
+        markdown = format_as_markdown(_make_bundle(None), include_raw=False)
+
         assert "## Professional Overview" not in markdown
-        assert "## Digest" in markdown
 
 
 def test_report_carries_no_pipeline_metadata() -> None:

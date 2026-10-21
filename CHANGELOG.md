@@ -120,8 +120,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `researchkit republish <project>`: re-run only the writers on a finished
   project. It uses the same research and makes no provider calls.
 - The skill is no longer written on every run (skillskit owns the
-  pack → skill rewrite, see PLAN 2.14). `RESEARCHKIT_REPORT=legacy` keeps the
-  old four writers for the A/B until they are deleted.
+  pack → skill rewrite). `researchkit skill <project>` distills one on request
+  from the analysis plus the run's verified claims.
+- Removed the digest and professional-overview writers, `digest.py`, and the
+  report stacking. A blind A/B on frozen evidence (Fable 5.1 and GPT-6 Astra
+  as judges, `.local/research-202610/ab/AB-RESULTS.md`) preferred the new
+  report on every topic, with completeness at parity after one fix round.
 
 - **Archive first.** A project run downloads its cited sources into
   `materials/` _before_ the writers start, from the in-memory result

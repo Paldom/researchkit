@@ -202,29 +202,29 @@ class TestFinalSummaryUnwrapsDeepSpec:
     def test_deep_spec_unwraps_to_underlying_model(self) -> None:
         from types import SimpleNamespace
 
-        from researchkit.final_summary import DigestGenerator
+        from researchkit.final_summary import ArticleGenerator
 
         em = SimpleNamespace(claude="deep:claude-opus-4-8", claude_max_budget=5.0)
-        gen = DigestGenerator.from_effective_models(em)  # type: ignore[arg-type]
+        gen = ArticleGenerator.from_effective_models(em)  # type: ignore[arg-type]
         assert gen.model == "claude-opus-4-8"
         assert gen.max_budget == 5.0
 
     def test_bare_deep_falls_back_to_default_model(self) -> None:
         from types import SimpleNamespace
 
-        from researchkit.final_summary import DigestGenerator
+        from researchkit.final_summary import ArticleGenerator
 
         em = SimpleNamespace(claude="deep", claude_max_budget=5.0)
-        gen = DigestGenerator.from_effective_models(em)  # type: ignore[arg-type]
+        gen = ArticleGenerator.from_effective_models(em)  # type: ignore[arg-type]
         assert gen.model == "claude-sonnet-5-5"
 
     def test_plain_model_passes_through(self) -> None:
         from types import SimpleNamespace
 
-        from researchkit.final_summary import DigestGenerator
+        from researchkit.final_summary import ArticleGenerator
 
         em = SimpleNamespace(claude="claude-opus-4-8", claude_max_budget=7.0)
-        gen = DigestGenerator.from_effective_models(em)  # type: ignore[arg-type]
+        gen = ArticleGenerator.from_effective_models(em)  # type: ignore[arg-type]
         assert gen.model == "claude-opus-4-8"
         assert gen.max_budget == 7.0
 

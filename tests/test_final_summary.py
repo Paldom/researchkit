@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from researchkit.final_summary import DigestGenerator
+from researchkit.final_summary import ArticleGenerator
 from researchkit.providers.base import ProviderResult, Source, SourceType
 from researchkit.site_research.types import (
     SiteItem,
@@ -51,7 +51,7 @@ def _make_site_research_bundle() -> SiteResearchBundle:
 
 class TestClaudeFinalSummaryGenerator:
     def test_build_user_prompt_includes_shared_context_sections(self) -> None:
-        generator = DigestGenerator(model="claude-test", max_budget=0.1)
+        generator = ArticleGenerator(model="claude-test", max_budget=0.1)
 
         prompt = generator._build_user_prompt(
             meta_summary="Meta summary text.",
@@ -78,7 +78,7 @@ class TestClaudeFinalSummaryGenerator:
     def test_generate_parses_json_response(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        generator = DigestGenerator(model="claude-test", max_budget=0.1)
+        generator = ArticleGenerator(model="claude-test", max_budget=0.1)
         seen: list[list[str]] = []
 
         def fake_run(*args, **kwargs) -> SimpleNamespace:
@@ -106,7 +106,7 @@ class TestClaudeFinalSummaryGenerator:
     def test_generate_falls_back_to_plain_text(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        generator = DigestGenerator(model="claude-test", max_budget=0.1)
+        generator = ArticleGenerator(model="claude-test", max_budget=0.1)
 
         def fake_run(*args, **kwargs) -> SimpleNamespace:
             return SimpleNamespace(
@@ -156,15 +156,10 @@ class TestClaudeFinalSummaryGenerator:
         assert result == expected
 
     def test_article_and_skill_are_distinct_writers(self) -> None:
-        from researchkit.final_summary import (
-            ArticleGenerator,
-            ProfessionalOverviewGenerator,
-            SkillGenerator,
-        )
+        from researchkit.final_summary import ArticleGenerator, SkillGenerator
 
         article = ArticleGenerator().get_system_prompt()
         assert "H1" in article
-        assert article != ProfessionalOverviewGenerator().get_system_prompt()
         assert "NO-SKILL" in SkillGenerator().get_system_prompt()
         assert (ArticleGenerator.stage_name, SkillGenerator.stage_name) == (
             "article",
@@ -174,7 +169,7 @@ class TestClaudeFinalSummaryGenerator:
     def test_generate_returns_none_on_timeout(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        generator = DigestGenerator(model="claude-test", max_budget=0.1)
+        generator = ArticleGenerator(model="claude-test", max_budget=0.1)
 
         def fake_run(*args, **kwargs) -> SimpleNamespace:
             raise subprocess.TimeoutExpired(cmd="claude", timeout=300)
@@ -197,7 +192,7 @@ class TestClaudeFinalSummaryGenerator:
     ) -> None:
         # What a logged-out Claude Code CLI really prints: exit 1 plus the
         # JSON result envelope; the reason lives in its `result` field.
-        generator = DigestGenerator(model="claude-test", max_budget=0.1)
+        generator = ArticleGenerator(model="claude-test", max_budget=0.1)
         envelope = {
             "type": "result",
             "is_error": True,
@@ -227,7 +222,7 @@ class TestClaudeFinalSummaryGenerator:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        generator = DigestGenerator(model="claude-test", max_budget=0.1)
+        generator = ArticleGenerator(model="claude-test", max_budget=0.1)
 
         def fake_run(*args, **kwargs) -> SimpleNamespace:
             return SimpleNamespace(
@@ -252,7 +247,7 @@ class TestClaudeFinalSummaryGenerator:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        generator = DigestGenerator(model="claude-test", max_budget=0.1)
+        generator = ArticleGenerator(model="claude-test", max_budget=0.1)
 
         def fake_run(*args, **kwargs) -> SimpleNamespace:
             return SimpleNamespace(

@@ -132,10 +132,64 @@ def _writers(em: EffectiveModels | None) -> tuple[str, float]:
 def _sources_md(sources: list[EvidenceSource]) -> str:
     lines = ["## Sources", ""]
     for s in sources:
-        label = s.title.strip() or s.url
+        label = _clean_title(s.title, s.url)
         note = "" if s.archived else " *(not archived)*"
         lines.append(f"{s.n}. [{label}]({s.url}){note}")
     return "\n".join(lines)
+
+
+_PROVIDER_FINDINGS_WORDS = 14000
+_MOJIBAKE = re.compile(r"[ÃÂâ€]{2,}")
+
+
+def _provider_findings(bundle: InsightBundle) -> str:
+    """Each successful provider's own report, capped: the decisive numbers the
+    cross-source analysis compressed away live here (blind A/B finding)."""
+    ok = [r for r in bundle.provider_results if r.is_success and r.raw_text]
+    if not ok:
+        return ""
+    per = max(_PROVIDER_FINDINGS_WORDS // len(ok), 1500)
+    parts: list[str] = []
+    for r in ok:
+        words = r.raw_text.split()
+        text = " ".join(words[:per]) + (" …" if len(words) > per else "")
+        parts.append(f"### Findings set {len(parts) + 1}\n{text}")
+    return "\n\n".join(parts)
+
+
+def _clean_title(title: str, url: str) -> str:
+    """A readable source label: scraped junk (a whole tweet, a ToS page in
+    another language, mojibake, stray brackets) falls back to host + path."""
+    t = " ".join((title or "").replace("[", "").replace("]", "").split())
+    if (
+        not t
+        or len(t) > 140
+        or _MOJIBAKE.search(t)
+        or t.lower().startswith(("http", "www."))
+    ):
+        from urllib.parse import urlsplit
+
+        try:
+            parts = urlsplit(url)
+            t = (parts.netloc.removeprefix("www.") + parts.path.rstrip("/"))[:100]
+        except ValueError:
+            t = url[:100]
+    return t
+
+
+def _title(topic: str) -> str:
+    """The report's H1: the topic, or its first sentence when the topic is a
+    long research brief (a reader's first stop must not be a 200-word prompt)."""
+    text = topic.strip()
+    if "research question:" in text.lower():
+        text = text[
+            text.lower().index("research question:") + len("research question:") :
+        ]
+    text = " ".join(text.split())
+    if len(text) <= 120:
+        return text
+    first = re.split(r"(?<=[.?!])\s+", text)[0]
+    return first if len(first) <= 140 else first[:137].rstrip() + "…"
 
 
 def _fallback_lead(body: str) -> str:
@@ -222,6 +276,7 @@ def publish(
     effective_models: EffectiveModels | None,
     run_id: str,
     emit: Callable[[dict[str, Any]], None] = lambda evt: None,
+    repo_cards: list[str] | None = None,
 ) -> Publication:
     """Write and check the report and article from the run's evidence."""
     payload = bundle.to_dict()
@@ -240,7 +295,9 @@ def publish(
         )
         for heading, orientation in sections
     ]
-    source_rows = [(s.n, s.title, s.url, s.archived) for s in evidence.sources]
+    source_rows = [
+        (s.n, _clean_title(s.title, s.url), s.url, s.archived) for s in evidence.sources
+    ]
     emit(
         {
             "stage": "report_body",
@@ -255,7 +312,13 @@ def publish(
     )
     body = body_writer.write(
         get_report_body_user_prompt(
-            topic, days, bundle.meta_summary, packets, source_rows
+            topic,
+            days,
+            bundle.meta_summary,
+            packets,
+            source_rows,
+            provider_findings=_provider_findings(bundle),
+            repo_cards="\n\n".join(repo_cards or []),
         )
     )
     if body is None:
@@ -284,13 +347,17 @@ def publish(
     article_writer = _Writer(
         get_article_system_prompt(), model=model, max_budget=budget, stage="article"
     )
-    article_sources = [(s.n, s.title, s.url) for s in evidence.sources]
+    article_sources = [
+        (s.n, _clean_title(s.title, s.url), s.url) for s in evidence.sources
+    ]
     emit({"stage": "report_lead", "message": "Writing lead and article"})
     outputs = _run_parallel(
         {
             "lead": lambda: lead_writer.write(get_report_lead_user_prompt(topic, body)),
             "article": lambda: article_writer.write(
-                get_article_from_report_user_prompt(topic, days, body, article_sources)
+                get_article_from_report_user_prompt(
+                    topic, days, body, article_sources, analysis=bundle.meta_summary
+                )
             ),
         }
     )
@@ -307,7 +374,7 @@ def publish(
     report_text = f"{final_lead}\n\n{final_body}"
     report_md = "\n\n".join(
         [
-            f"# {topic}",
+            f"# {_title(topic)}",
             report_text,
             _sources_md(cited.sources),
             "---\n\nDetail: [cross-source analysis](evidence.md) · "

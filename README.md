@@ -34,7 +34,7 @@ cp .env.example .env    # add at least one provider API key
 uv run researchkit "developer sentiment on AI coding agents" --days 7
 ```
 
-Expected result: a progress log per provider, then a new `projects/<timestamp>_<topic>/` folder containing `report.md` (the cited report), `result.json`, and `run.log`, plus the handoff artifacts written once the research is in: `article.md` (a publication-ready article), `skill/SKILL.md` (a single-file Agent Skill distilled from the findings, skipped when the research is too thin for one), `materials/` (the archived sources) and `brain/` (a brainkit brain over those materials). The four Claude Code writers (overview, digest, article, skill) run concurrently. Providers without keys are skipped gracefully — one key is enough to try it.
+Expected result: a progress log per provider, then a new `projects/<timestamp>_<topic>/` folder containing `report.md` (the cited report), `result.json`, and `run.log`, plus the handoff artifacts written once the research is in: `article.md` (a publication-ready article), `claims.jsonl` (one row per cited sentence, the handoff unit for brainkit and skillskit), `evidence.md` and `providers.md` (the report's appendices), `materials/` (the archived sources, downloaded _before_ the report is written) and `brain/` (a brainkit brain over those materials). `report.md` reads breadth-first: TL;DR, In brief, finding sections, Sources. Three Claude Code writer calls produce it: the body, then the lead and the article in parallel. The skill is made on request (`researchkit skill <project>`). Providers without keys are skipped gracefully — one key is enough to try it.
 
 ## Use it from an AI agent (MCP)
 

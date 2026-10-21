@@ -317,6 +317,13 @@ Site Research (optional):
     )
     republish_parser.add_argument("name", help="Project name or path")
 
+    # --- skill command ---
+    skill_parser = subparsers.add_parser(
+        "skill",
+        help="Distill skill/SKILL.md from a finished project, on request",
+    )
+    skill_parser.add_argument("name", help="Project name or path")
+
     # --- council command ---
     council_parser = subparsers.add_parser(
         "council",
@@ -1472,6 +1479,24 @@ def cmd_republish(args, service: SocialResearchService) -> int:
     return 1 if artifacts.status == "failed" else 0
 
 
+def cmd_skill(args, service: SocialResearchService) -> int:
+    """Handle 'skill': an on-request Agent Skill from a project's research."""
+    project = find_project(args.name, args.projects_dir)
+    if not project:
+        print(f"Error: Project not found: {args.name}", file=sys.stderr)
+        return 1
+    try:
+        text = service.make_skill(project)
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    if not text:
+        print("No skill: the research was too thin for one.", file=sys.stderr)
+        return 1
+    print(f"wrote: {project.skill_path}", file=sys.stderr)
+    return 0
+
+
 def cmd_doctor(args) -> int:
     """Handle 'doctor': preflight the preset's slots, harnesses, and keys."""
     from researchkit.doctor import format_report, run_doctor
@@ -1983,6 +2008,7 @@ SUBCOMMANDS = frozenset(
         "council",
         "doctor",
         "republish",
+        "skill",
         "explore",
         "links",
         "improve-topic",
@@ -2143,6 +2169,8 @@ def main() -> int:
         return cmd_doctor(args)
     elif args.command == "republish":
         return cmd_republish(args, service)
+    elif args.command == "skill":
+        return cmd_skill(args, service)
     elif args.command == "advise":
         return cmd_advise(args)
     elif args.command == "advise-session":

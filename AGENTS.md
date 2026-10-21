@@ -34,9 +34,12 @@ Every live run spends. Test with the smallest thing that proves the change:
   `--providers hackernews skillsh arxiv stackexchange openalex`
 - **Minimum iterations.** One small run, then stop. Do not re-run to admire
   the output. `--days 7`, a narrow `--providers`, `--no-site-research`.
-- **Every run ends in four Claude Code writers** (overview, digest, article,
-  skill), concurrent, billed to the subscription. Even a keyless smoke run
-  pays for those four; the brain that follows is free (stdlib brainkit).
+- **Every run ends in three Claude Code writer calls** (report body, then the
+  lead and the article in parallel), billed to the subscription. Even a
+  keyless smoke run pays for those three. `researchkit republish <project>`
+  re-runs only those three on frozen research (no provider calls), which is
+  the cheap way to test a writing change. The brain that follows is free
+  (stdlib brainkit).
 - **Never boost to smoke-test.** `--boost` and `explore` fan out into many
   sub-runs and multiply cost by the fan-out. They are for real research, not
   verification.
