@@ -93,7 +93,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs the Codex research slot with live search, `xhigh` effort and a
   rounds contract (sub-questions, search, primary pages, gaps, one
   follow-up round). Other CLIs ignore it. It becomes a preset option only
-  if it wins. `create_and_run_boosted(decompose=False)` keeps the council
+  if it wins. Measured 2026-10-21: rubric tie, claim support down, so it
+  is not promoted (the council pre-pass result was inconclusive and it stays). `create_and_run_boosted(decompose=False)` keeps the council
   pre-pass (improved topic and keywords) but never fans out.
 
 - `researchkit.verify.calibration_report`: the verifier's agreement with
