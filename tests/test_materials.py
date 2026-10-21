@@ -787,3 +787,20 @@ class TestManifestV2:
             sealed["claims_sha256"]
             == hashlib.sha256(project.claims_path.read_bytes()).hexdigest()
         )
+
+
+def test_main_content_survives_concurrent_threads() -> None:
+    """lxml aborted the interpreter under the fetch pool before the lock (4c97478)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    article = " ".join(
+        f"Sentence {i} about grounding claims in archives." for i in range(80)
+    )
+    html = (
+        f"<html><body><nav>Menu</nav><article><p>{article}</p></article></body></html>"
+    )
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        texts = list(
+            pool.map(lambda _: materials.extract_readable_text(html)[1], range(64))
+        )
+    assert all("grounding claims" in t for t in texts)

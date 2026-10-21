@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **trafilatura could abort a run.** Concurrent calls from the archive's
+  fetch pool crashed lxml ("Fatal Python error: Aborted", 1 in 3
+  reproductions), killing a live A/B run mid-archive with no traceback.
+  Extraction is now serialized behind a lock (8/8 clean reproductions);
+  the network fetches stay parallel.
+
 - **Claims were attached to the wrong source** whenever the writer cited
   after the full stop ("…20 October 2026. [14] Next sentence…", 51 of 52
   anchors in a live run). The sentence splitter gave each anchor group to the

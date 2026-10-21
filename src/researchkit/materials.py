@@ -22,6 +22,7 @@ import html as html_lib
 import json
 import logging
 import shutil
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -263,18 +264,27 @@ def extract_readable_text(html: str) -> tuple[str, str]:
 _MAIN_CONTENT_MIN_WORDS = 50
 
 
+# trafilatura (lxml) aborts the interpreter when called from concurrent
+# threads (reproduced: "Fatal Python error: Aborted" in main_extractor under
+# the archive's fetch pool; it killed a live run). Serialized: extraction is
+# milliseconds next to the parallel network fetches.
+# ponytail: global lock; a process pool if extraction ever dominates.
+_TRAFILATURA_LOCK = threading.Lock()
+
+
 def _main_content(html: str) -> str:
     """trafilatura's main-content text, or "" when it finds none or fails."""
     try:
         import trafilatura
 
-        text = trafilatura.extract(
-            html,
-            include_comments=False,
-            include_tables=True,
-            include_links=False,
-            output_format="txt",
-        )
+        with _TRAFILATURA_LOCK:
+            text = trafilatura.extract(
+                html,
+                include_comments=False,
+                include_tables=True,
+                include_links=False,
+                output_format="txt",
+            )
     except Exception:  # an extractor crash must not cost the page
         logger.debug("trafilatura failed; using the stdlib extraction", exc_info=True)
         return ""
