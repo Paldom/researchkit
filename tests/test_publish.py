@@ -385,9 +385,14 @@ def test_meta_talk_is_an_advisory_and_bare_anchors_make_no_claim() -> None:
 def test_a_bold_lead_in_ends_its_own_sentence() -> None:
     from researchkit.citations import _sentences
 
-    text = "**Codex drops results.** Issue 35415 says so [1]. Modes are hidden [2]."
+    text = (
+        "**Codex drops results.** Issue 35415 says so [1]. Modes are hidden [2]. "
+        "**Claude Code.** `WebSearch` returns titles [3]."
+    )
     assert [s for _, s in _sentences(text)] == [
         "Codex drops results.**",
         "Issue 35415 says so [1].",
         "Modes are hidden [2].",
+        "**Claude Code.**",
+        "`WebSearch` returns titles [3].",
     ]

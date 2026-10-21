@@ -52,7 +52,7 @@ _META_TALK = re.compile(
 # (a bold lead-in) used to glue the lead-in and the next sentences into one
 # claim row.
 _SENTENCE = re.compile(
-    r"(?:(?<=[.!?])|(?<=[.!?]\*\*)|(?<=[.!?][*_)\"'`]))\s+(?=[A-Z0-9\"'(\[*])"
+    r"(?:(?<=[.!?])|(?<=[.!?]\*\*)|(?<=[.!?][*_)\"'`]))\s+(?=[A-Z0-9\"'(\[*`])"
 )
 _LEADING_ANCHORS = re.compile(r"^(?:\[\d{1,3}(?:\s*[,;]\s*\d{1,3})*\]\s*)+")
 
