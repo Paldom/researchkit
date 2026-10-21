@@ -33,6 +33,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
@@ -267,6 +268,125 @@ def _host_is_public(host: str) -> bool:
     return all(_ip_is_public(info[4][0]) for info in infos)
 
 
+@dataclass(frozen=True)
+class FetchResult:
+    """What one guarded GET returned, so callers can classify, not just guess.
+
+    ``text`` is the decoded body (None when nothing usable came back);
+    ``body`` the raw bytes (PDF parsing needs them); ``status`` the final
+    HTTP status (0 when no response); ``content_type`` the MIME type without
+    parameters; ``truncated`` True when ``max_bytes`` cut the body; ``error``
+    a short reason when the fetch was refused or failed.
+    """
+
+    url: str
+    final_url: str
+    text: str | None = None
+    body: bytes = b""
+    status: int = 0
+    content_type: str = ""
+    truncated: bool = False
+    error: str = ""
+
+
+def safe_fetch(
+    url: str,
+    *,
+    timeout: float = 8.0,
+    max_bytes: int = 100_000,
+    max_redirects: int = 3,
+    headers: dict[str, str] | None = None,
+) -> FetchResult:
+    """SSRF-guarded GET that reports status, MIME type, truncation and errors.
+
+    Refuses non-http(s) schemes and any host that resolves to a loopback/
+    link-local/private/reserved address, following redirects manually and
+    re-validating each hop. Caps response size and time, and ignores proxy env
+    (``trust_env=False``).
+
+    Residual: a perfectly-timed DNS-rebind (TTL-0 host that resolves public here
+    then private inside requests) is not fully closed by pre-resolution; pinning
+    the socket to the validated IP would break TLS SNI, so for this best-effort
+    fetch of already-cited public URLs we accept that narrow residual.
+    """
+    session = requests.Session()
+    session.trust_env = False
+    current = url
+    try:
+        for _ in range(max_redirects + 1):
+            try:
+                parts = urlsplit(current)
+            except ValueError:
+                return FetchResult(url, url, error="malformed url")
+            if parts.scheme not in ("http", "https") or not parts.hostname:
+                return FetchResult(url, url, error="unsupported scheme")
+            if not _host_is_public(parts.hostname):
+                logger.debug("safe_fetch: refusing non-public host %s", parts.hostname)
+                return FetchResult(url, url, error="non-public host")
+            try:
+                resp = session.get(
+                    current,
+                    timeout=timeout,
+                    allow_redirects=False,
+                    stream=True,
+                    headers=headers or {},
+                )
+            except requests.RequestException as e:
+                return FetchResult(url, current, error=type(e).__name__)
+            try:
+                if resp.status_code in (301, 302, 303, 307, 308):
+                    loc = resp.headers.get("Location")
+                    if not loc:
+                        return FetchResult(
+                            url,
+                            current,
+                            status=resp.status_code,
+                            error="redirect without location",
+                        )
+                    current = urljoin(current, loc)
+                    continue
+                ctype = (
+                    (resp.headers.get("Content-Type") or "")
+                    .split(";")[0]
+                    .strip()
+                    .lower()
+                )
+                if resp.status_code != 200:
+                    return FetchResult(
+                        url,
+                        current,
+                        status=resp.status_code,
+                        content_type=ctype,
+                        error=f"http {resp.status_code}",
+                    )
+                total = 0
+                chunks: list[bytes] = []
+                truncated = False
+                for chunk in resp.iter_content(8192):
+                    if not chunk:
+                        continue
+                    chunks.append(chunk)
+                    total += len(chunk)
+                    if total >= max_bytes:
+                        truncated = True
+                        break
+                raw = b"".join(chunks)[:max_bytes]
+                return FetchResult(
+                    url,
+                    current,
+                    text=raw.decode(resp.encoding or "utf-8", errors="replace"),
+                    body=raw,
+                    status=resp.status_code,
+                    content_type=ctype,
+                    truncated=truncated,
+                )
+            finally:
+                resp.close()
+        return FetchResult(url, url, error="too many redirects")
+    finally:
+        session.close()
+
+
 def safe_fetch_text(
     url: str,
     *,
@@ -277,68 +397,16 @@ def safe_fetch_text(
 ) -> tuple[str | None, str]:
     """Best-effort SSRF-guarded GET. Returns ``(text_or_None, final_url)``.
 
-    Refuses non-http(s) schemes and any host that resolves to a loopback/
-    link-local/private/reserved address, following redirects manually and
-    re-validating each hop. Caps response size and time, and ignores proxy env
-    (``trust_env=False``). Returns ``(None, url)`` on any refusal/failure — callers
-    treat that as "no title".
-
-    Residual: a perfectly-timed DNS-rebind (TTL-0 host that resolves public here
-    then private inside requests) is not fully closed by pre-resolution; pinning
-    the socket to the validated IP would break TLS SNI, so for this best-effort
-    title-fetch of already-cited public URLs we accept that narrow residual.
+    Thin wrapper over :func:`safe_fetch` for callers that only need the text.
     """
-    session = requests.Session()
-    session.trust_env = False
-    current = url
-    try:
-        for _ in range(max_redirects + 1):
-            try:
-                parts = urlsplit(current)
-            except ValueError:
-                return None, url
-            if parts.scheme not in ("http", "https") or not parts.hostname:
-                return None, url
-            if not _host_is_public(parts.hostname):
-                logger.debug(
-                    "safe_fetch_text: refusing non-public host %s", parts.hostname
-                )
-                return None, url
-            try:
-                resp = session.get(
-                    current,
-                    timeout=timeout,
-                    allow_redirects=False,
-                    stream=True,
-                    headers=headers or {},
-                )
-            except requests.RequestException:
-                return None, url
-            try:
-                if resp.status_code in (301, 302, 303, 307, 308):
-                    loc = resp.headers.get("Location")
-                    if not loc:
-                        return None, current
-                    current = urljoin(current, loc)
-                    continue
-                if resp.status_code != 200:
-                    return None, current
-                total = 0
-                chunks: list[bytes] = []
-                for chunk in resp.iter_content(8192):
-                    if not chunk:
-                        continue
-                    chunks.append(chunk)
-                    total += len(chunk)
-                    if total >= max_bytes:
-                        break
-                raw = b"".join(chunks)[:max_bytes]
-                return raw.decode(resp.encoding or "utf-8", errors="replace"), current
-            finally:
-                resp.close()
-        return None, url
-    finally:
-        session.close()
+    result = safe_fetch(
+        url,
+        timeout=timeout,
+        max_bytes=max_bytes,
+        max_redirects=max_redirects,
+        headers=headers,
+    )
+    return result.text, result.final_url
 
 
 # ---------------------------------------------------------------------------

@@ -32,6 +32,7 @@ from urllib.parse import urlsplit
 
 from researchkit.project import Project
 from researchkit.safe_io import atomic_write_text, safe_fetch_text
+from researchkit.urls import canonical_url, strip_tracking
 from researchkit.utils import slugify
 
 logger = logging.getLogger(__name__)
@@ -199,45 +200,14 @@ def extract_readable_text(html: str) -> tuple[str, str]:
     return " ".join(parser.title.split()), parser.text()
 
 
-_TRACKING_PARAMS = ("utm_", "fbclid", "gclid", "ref_src", "share_id")
-
-
-def _strip_tracking(query: str) -> str:
-    """Drop analytics params (utm_source=openai etc.) that defeat dedup."""
-    kept = [
-        pair
-        for pair in query.split("&")
-        if pair and not pair.split("=", 1)[0].lower().startswith(_TRACKING_PARAMS)
-    ]
-    return "&".join(kept)
-
-
 def _clean_citation_url(url: str) -> str:
-    """Canonical form stored in frontmatter: tracking params + fragment dropped.
-
-    This is the URL downstream consumers (brainkit) use as the source's
-    identity, so utm-tagged variants of the same page must collapse to one
-    string across runs. Case is preserved (paths can be case-sensitive).
-    """
-    try:
-        parts = urlsplit(url.strip())
-    except ValueError:
-        return url.strip()
-    query = _strip_tracking(parts.query)
-    rebuilt = f"{parts.scheme.lower()}://{parts.netloc.lower()}{parts.path}"
-    return f"{rebuilt}?{query}" if query else rebuilt
+    """Canonical form stored in frontmatter (see :func:`researchkit.urls.canonical_url`)."""
+    return canonical_url(url)
 
 
 def _normalize_url(url: str) -> str:
-    """Dedup key: scheme+host lowercased, fragment + tracking params dropped."""
-    try:
-        parts = urlsplit(url.strip())
-    except ValueError:
-        return url.strip()
-    netloc = parts.netloc.lower()
-    base = f"{parts.scheme.lower()}://{netloc}{parts.path}"
-    query = _strip_tracking(parts.query)
-    return f"{base}?{query}" if query else base
+    """Dedup key: the same canonical identity (one rule, not two copies)."""
+    return canonical_url(url)
 
 
 def _fetch_url(url: str) -> str:
@@ -253,7 +223,7 @@ def _fetch_url(url: str) -> str:
     host = parts.netloc.lower()
     if host in ("www.reddit.com", "reddit.com"):
         host = "old.reddit.com"
-    query = _strip_tracking(parts.query)
+    query = strip_tracking(parts.query)
     rebuilt = f"{parts.scheme}://{host}{parts.path}"
     return f"{rebuilt}?{query}" if query else rebuilt
 

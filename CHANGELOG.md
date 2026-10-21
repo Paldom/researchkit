@@ -81,6 +81,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- One source identity: `researchkit.urls.canonical_url` replaces the two
+  identical copies in `materials.py`. It keeps the identity earlier runs
+  stored (and brainkit keys on) and only adds default-port stripping.
+  `origin_key` is a looser key for counting independent origins, and
+  `safe_fetch` returns a `FetchResult` (status, MIME type, final URL, raw
+  bytes, truncation, error) instead of text-or-None. `safe_fetch_text`
+  wraps it unchanged.
+
 - Presets can declare run defaults in `models.yaml`: `providers:` and
   `site_research:`. They apply only when the run names none. `harness` and
   `harness-fast` declare their zero-key sets and turn site research off, so

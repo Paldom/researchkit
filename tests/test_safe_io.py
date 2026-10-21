@@ -141,6 +141,70 @@ class TestSafeFetchTextSSRF:
         assert text is None
 
 
+class TestSafeFetchResult:
+    """PLAN 2.2: the fetch reports what happened, not just text-or-None."""
+
+    def _serve(self, monkeypatch: pytest.MonkeyPatch, responses: list[object]) -> None:
+        import researchkit.safe_io as safe_io
+
+        monkeypatch.setattr(safe_io, "_host_is_public", lambda host: True)
+        queue = list(responses)
+
+        class _Resp:
+            def __init__(
+                self, status: int, headers: dict[str, str], body: bytes
+            ) -> None:
+                self.status_code, self.headers, self._body = status, headers, body
+                self.encoding = "utf-8"
+
+            def iter_content(self, n: int) -> object:
+                for i in range(0, len(self._body), n):
+                    yield self._body[i : i + n]
+
+            def close(self) -> None:
+                pass
+
+        class _Session:
+            trust_env = True
+
+            def get(self, url: str, **kw: object) -> _Resp:
+                return _Resp(*queue.pop(0))  # type: ignore[arg-type]
+
+            def close(self) -> None:
+                pass
+
+        monkeypatch.setattr(safe_io.requests, "Session", _Session)
+
+    def test_reports_status_type_and_truncation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from researchkit.safe_io import safe_fetch
+
+        self._serve(
+            monkeypatch,
+            [(200, {"Content-Type": "application/pdf; x=1"}, b"%PDF" + b"x" * 50)],
+        )
+        r = safe_fetch("https://example.com/a.pdf", max_bytes=20)
+        assert r.status == 200 and r.content_type == "application/pdf"
+        assert r.truncated and r.body.startswith(b"%PDF") and len(r.body) == 20
+
+    def test_reports_http_errors_and_redirect_target(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from researchkit.safe_io import safe_fetch
+
+        self._serve(
+            monkeypatch,
+            [
+                (301, {"Location": "/moved"}, b""),
+                (404, {"Content-Type": "text/html"}, b""),
+            ],
+        )
+        r = safe_fetch("https://example.com/a")
+        assert r.text is None and r.status == 404 and r.error == "http 404"
+        assert r.final_url == "https://example.com/moved"
+
+
 class TestRunSubprocess:
     def test_captures_utf8(self) -> None:
         cp = run_subprocess(["python3", "-c", "print('héllo—world 🌍')"], timeout=10)
