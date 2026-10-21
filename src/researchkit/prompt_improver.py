@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
@@ -113,54 +112,6 @@ class PromptImprover:
             provider = "openai"
         return cls(provider=provider, model=model)
 
-    def _get_openai_client(self) -> Any:
-        """Get OpenAI client."""
-        from openai import OpenAI
-
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise RuntimeError("OPENAI_API_KEY not set")
-        return OpenAI(api_key=api_key)
-
-    def _get_gemini_client(self) -> Any:
-        """Get Gemini client."""
-        from google import genai
-
-        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            raise RuntimeError("GEMINI_API_KEY or GOOGLE_API_KEY not set")
-        return genai.Client(api_key=api_key)
-
-    def _get_grok_client(self) -> Any:
-        """Get Grok client (OpenAI-compatible)."""
-        from openai import OpenAI
-
-        api_key = os.getenv("XAI_API_KEY")
-        if not api_key:
-            raise RuntimeError("XAI_API_KEY not set")
-        return OpenAI(api_key=api_key, base_url="https://api.x.ai/v1")
-
-    def _get_perplexity_client(self) -> Any:
-        """Get Perplexity client."""
-        from perplexity import Perplexity
-
-        api_key = os.getenv("PERPLEXITY_API_KEY")
-        if api_key:
-            return Perplexity(api_key=api_key)
-        return Perplexity()
-
-    def _get_glm_client(self) -> Any:
-        """Get GLM client (OpenAI-compatible, z.ai endpoint)."""
-        from researchkit.providers.glm_provider import make_zai_client
-
-        return make_zai_client()
-
-    def _get_kimi_client(self) -> Any:
-        """Get Kimi client (OpenAI-compatible, Moonshot endpoint)."""
-        from researchkit.providers.kimi_provider import make_kimi_client
-
-        return make_kimi_client()
-
     def _parse_json_response(self, text: str, key: str) -> Any:
         """Parse JSON response and extract a key (tolerant of fences/prose).
 
@@ -196,95 +147,6 @@ class PromptImprover:
         logger.warning(f"Failed to parse JSON response: {text[:200]}")
         return text if key == "improved_topic" else []
 
-    def _call_openai(self, system_prompt: str, user_prompt: str) -> str:
-        """Call OpenAI API."""
-        client = self._get_openai_client()
-        response = client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format={"type": "json_object"},
-        )
-        return response.choices[0].message.content or ""
-
-    def _call_gemini(self, system_prompt: str, user_prompt: str) -> str:
-        """Call Gemini API."""
-        from google.genai import types
-
-        client = self._get_gemini_client()
-        full_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
-        response = client.models.generate_content(
-            model=self.model,
-            contents=full_prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.3,
-                response_mime_type="application/json",
-            ),
-        )
-        return response.text or ""
-
-    def _call_grok(self, system_prompt: str, user_prompt: str) -> str:
-        """Call Grok API (OpenAI-compatible)."""
-        client = self._get_grok_client()
-        response = client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.3,
-            response_format={"type": "json_object"},
-        )
-        return response.choices[0].message.content or ""
-
-    def _call_perplexity(self, system_prompt: str, user_prompt: str) -> str:
-        """Call Perplexity API."""
-        client = self._get_perplexity_client()
-        response = client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            stream=False,
-        )
-        return response.choices[0].message.content or ""
-
-    def _call_glm(self, system_prompt: str, user_prompt: str) -> str:
-        """Call GLM API (OpenAI-compatible, z.ai endpoint)."""
-        client = self._get_glm_client()
-        response = client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.3,
-            response_format={"type": "json_object"},
-        )
-        return response.choices[0].message.content or ""
-
-    def _call_kimi(self, system_prompt: str, user_prompt: str) -> str:
-        """Call Kimi API (OpenAI-compatible, Moonshot endpoint).
-
-        No temperature: current Kimi models run with fixed sampling params
-        and reject overrides.
-        """
-        from researchkit.providers.kimi_provider import resolve_kimi_model
-
-        client = self._get_kimi_client()
-        response = client.chat.completions.create(
-            model=resolve_kimi_model(self.model or ""),
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format={"type": "json_object"},
-        )
-        return response.choices[0].message.content or ""
-
     def _call_provider(self, system_prompt: str, user_prompt: str) -> str:
         """Call the configured provider."""
         if self.provider == "cli":
@@ -296,20 +158,19 @@ class PromptImprover:
                 user_prompt,
                 label="improver.cli",
             )
-        if self.provider == "openai":
-            return self._call_openai(system_prompt, user_prompt)
-        elif self.provider == "gemini":
-            return self._call_gemini(system_prompt, user_prompt)
-        elif self.provider == "grok":
-            return self._call_grok(system_prompt, user_prompt)
-        elif self.provider == "perplexity":
-            return self._call_perplexity(system_prompt, user_prompt)
-        elif self.provider == "glm":
-            return self._call_glm(system_prompt, user_prompt)
-        elif self.provider == "kimi":
-            return self._call_kimi(system_prompt, user_prompt)
-        else:
-            raise ValueError(f"Unknown provider: {self.provider}")
+        from researchkit.api_llm import complete
+
+        # JSON replies everywhere but Perplexity (no JSON mode); temperature
+        # applies where the vendor accepts it (see api_llm).
+        return complete(
+            self.model or self.DEFAULT_MODELS[self.provider],
+            system_prompt,
+            user_prompt,
+            label=f"improver.{self.provider}",
+            provider=self.provider,
+            json_mode=self.provider != "perplexity",
+            temperature=0.3,
+        )
 
     def improve_topic(self, topic: str) -> str:
         """

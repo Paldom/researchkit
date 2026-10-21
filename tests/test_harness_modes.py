@@ -327,10 +327,8 @@ class TestSummarizerCliRouting:
         monkeypatch.setattr(council_mod, "complete_via_spec", fake_complete)
         s = Summarizer(model="agy:gemini-3.5-flash")
         assert s._is_cli
-        assert s._get_client() is None  # no API client, no key required
-        out = s._generate(
-            None, "prompt", label="t", temperature=0.2, max_output_tokens=100
-        )
+        assert s._available()  # no API key required
+        out = s._generate("prompt", label="t", temperature=0.2, max_output_tokens=100)
         assert out == "meta summary text"
         assert calls == ["agy:gemini-3.5-flash"]
         assert summarizer_mod  # imported for parity with other tests

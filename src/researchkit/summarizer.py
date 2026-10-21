@@ -3,16 +3,11 @@
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Sequence
-from typing import Any
 
-from researchkit.network_retry import with_network_retry
 from researchkit.prompts import (
     get_meta_summary_system_prompt,
     get_meta_summary_user_prompt,
-    get_single_summary_system_prompt,
-    get_single_summary_user_prompt,
 )
 from researchkit.providers.base import ProviderResult
 
@@ -20,12 +15,9 @@ logger = logging.getLogger(__name__)
 
 
 class Summarizer:
-    """
-    Uses Gemini to synthesize insights from multiple providers into a unified report.
+    """The cross-provider meta-summary, on a harness spec or a vendor API.
 
-    Provides both:
-    - Individual summaries for each provider result (fallback only - providers now self-summarize)
-    - A consolidated meta-summary across all providers
+    Per-provider summaries are each provider's own ``summarize_result``.
     """
 
     DEFAULT_MODEL = "gemini-3.8-flash"
@@ -39,176 +31,52 @@ class Summarizer:
         Initialize the summarizer.
 
         Args:
-            api_key: Gemini API key (defaults to GEMINI_API_KEY env var)
+            api_key: API key for the model's vendor (defaults to its env var)
             model: Model to use for summarization (defaults to gemini-3.8-flash)
         """
-        self.api_key = (
-            api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        )
+        # An explicit key overrides the vendor's env var; None reads the env.
+        self.api_key = api_key
         self.model = model or self.DEFAULT_MODEL
-        # GLM models are served via the z.ai OpenAI-compatible endpoint rather
-        # than the Gemini SDK, so callers can use GLM as the summarizer model.
-        # Deferred: these modules import the OpenAI SDK at load time.
-        from researchkit.providers.glm_provider import is_glm_model
-        from researchkit.providers.kimi_provider import is_kimi_model
-
-        self._is_glm = is_glm_model(self.model)
-        # Kimi models likewise route to the Moonshot OpenAI-compatible endpoint.
-        self._is_kimi = is_kimi_model(self.model)
-        # CLI-backed specs (codex:/agy:/grokcli:/claude*) route through the
-        # logged-in harness instead of any API — the harness (subscription-only)
-        # preset sets the summarizer slot to one of these.
+        # CLI-backed specs (codex:/agy:/grokcli:/kimicli:/claude*) route
+        # through the logged-in harness instead of any API — the harness
+        # (subscription-only) presets set the summarizer slot to one of these.
+        # Plain ids go to whichever vendor serves them (api_llm, PLAN A.8).
         from researchkit.council import is_cli_backed_spec
 
         self._is_cli = is_cli_backed_spec(self.model)
-        self._client: Any = None
 
-    def _get_client(self) -> Any:
-        """Lazy-load the summarization client (Gemini or GLM/z.ai; None for CLI)."""
-        if self._is_cli:
-            return None
-        if self._client is None:
-            if self._is_glm:
-                from researchkit.providers.glm_provider import make_zai_client
+    def _available(self) -> bool:
+        """A harness spec, or an API id whose key is set (no request made)."""
+        from researchkit.api_llm import has_key
 
-                self._client = make_zai_client()
-            elif self._is_kimi:
-                from researchkit.providers.kimi_provider import make_kimi_client
-
-                self._client = make_kimi_client()
-            else:
-                try:
-                    from google import genai
-                except ImportError as e:
-                    raise RuntimeError(
-                        "google-genai package not installed. Run: pip install google-genai"
-                    ) from e
-                if not self.api_key:
-                    raise RuntimeError("GEMINI_API_KEY or GOOGLE_API_KEY not set")
-                self._client = genai.Client(api_key=self.api_key)
-        return self._client
+        return self._is_cli or bool(self.api_key) or has_key(self.model)
 
     def _generate(
         self,
-        client: Any,
         prompt: str,
         *,
         label: str,
         temperature: float,
         max_output_tokens: int,
     ) -> str:
-        """Run one completion against the configured backend (Gemini, GLM, or CLI)."""
+        """Run one completion on the configured backend (CLI or vendor API)."""
         if self._is_cli:
             from researchkit.council import complete_via_spec
 
             # CLI harnesses take no temperature/token knobs; the prompt and the
             # harness's own defaults govern the output.
             return complete_via_spec(self.model, "", prompt, label=label)
-        if self._is_glm:
-            response = with_network_retry(
-                client.chat.completions.create,
-                label=label,
-                provider="summarizer",
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature,
-                max_tokens=max_output_tokens,
-            )
-            return response.choices[0].message.content or ""
-        if self._is_kimi:
-            from researchkit.providers.kimi_provider import resolve_kimi_model
+        from researchkit.api_llm import complete
 
-            # No temperature/max_tokens: Kimi models run fixed sampling params
-            # (overrides rejected) and spend thinking tokens from the same
-            # output budget, so a small cap truncates the summary.
-            response = with_network_retry(
-                client.chat.completions.create,
-                label=label,
-                provider="summarizer",
-                model=resolve_kimi_model(self.model),
-                messages=[{"role": "user", "content": prompt}],
-            )
-            return response.choices[0].message.content or ""
-
-        from google.genai import types
-
-        response = with_network_retry(
-            client.models.generate_content,
+        return complete(
+            self.model,
+            "",
+            prompt,
             label=label,
-            provider="summarizer",
-            model=self.model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=temperature,
-                max_output_tokens=max_output_tokens,
-            ),
+            temperature=temperature,
+            max_tokens=max_output_tokens,
+            api_key=self.api_key,
         )
-        return response.text or ""
-
-    def summarize_single(self, result: ProviderResult) -> str:
-        """
-        Summarize a single provider's result into concise bullet points.
-
-        Note: This is now primarily a fallback. Providers should self-summarize
-        using their own summarize_result() method.
-
-        Args:
-            result: The provider result to summarize
-
-        Returns:
-            A summarized version of the result (5-8 bullet points)
-        """
-        logger.debug(
-            f"Summarizing single result from {result.provider}",
-            extra={"stage": "summarize_single_start", "provider": result.provider},
-        )
-
-        if result.error or not result.raw_text:
-            logger.warning(
-                f"Skipping summarization for {result.provider}: error or empty",
-                extra={"stage": "summarize_single_skip", "provider": result.provider},
-            )
-            return f"*Error from {result.provider}: {result.error or 'No content'}*"
-
-        try:
-            client = self._get_client()
-        except RuntimeError:
-            logger.warning(
-                "Gemini client unavailable, returning truncated content",
-                extra={
-                    "stage": "summarize_single_fallback",
-                    "provider": result.provider,
-                },
-            )
-            return (
-                result.raw_text[:500] + "..."
-                if len(result.raw_text) > 500
-                else result.raw_text
-            )
-
-        system_prompt = get_single_summary_system_prompt()
-        user_prompt = get_single_summary_user_prompt(result.raw_text)
-
-        try:
-            prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
-            summary = self._generate(
-                client,
-                prompt,
-                label="summarizer.generate_content:single",
-                temperature=0.3,
-                max_output_tokens=1000,
-            )
-            logger.debug(
-                f"Single summary complete for {result.provider}: {len(summary)} chars",
-                extra={"stage": "summarize_single_done", "provider": result.provider},
-            )
-            return summary
-        except Exception as e:
-            logger.exception(
-                f"Single summarization failed for {result.provider}",
-                extra={"stage": "summarize_single_error", "provider": result.provider},
-            )
-            return f"*Summarization failed: {e}*\n\n{result.raw_text[:500]}..."
 
     def create_meta_summary(
         self,
@@ -256,11 +124,10 @@ class Summarizer:
             errors = "\n".join(f"- {r.provider}: {r.error}" for r in failed_results)
             return f"*All providers failed:*\n{errors}"
 
-        try:
-            client = self._get_client()
-        except RuntimeError:
+        if not self._available():
             logger.warning(
-                "Gemini client unavailable, returning concatenated fallback",
+                f"No API key for summarizer model {self.model}, returning "
+                "concatenated fallback",
                 extra={"stage": "meta_summary_fallback"},
             )
             # Fallback: just concatenate summaries
@@ -300,7 +167,6 @@ class Summarizer:
         try:
             prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
             summary = self._generate(
-                client,
                 prompt,
                 label="summarizer.generate_content:meta",
                 temperature=0.4,

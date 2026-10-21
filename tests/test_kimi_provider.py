@@ -528,9 +528,10 @@ class TestKimiRouting:
         assert imp.model == "kimi-k2.6"
 
     def test_summarizer_uses_kimi_client(self) -> None:
+        from researchkit.api_llm import provider_for
         from researchkit.summarizer import Summarizer
 
         s = Summarizer(model="kimi-k2.6", api_key="unused")
-        assert s._is_kimi and not s._is_cli
+        assert provider_for(s.model) == "kimi" and not s._is_cli
         s_cli = Summarizer(model="kimicli:kimi-code/k3")
-        assert s_cli._is_cli and not s_cli._is_kimi
+        assert s_cli._is_cli

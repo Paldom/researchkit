@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keyword synthesis for site research always used the OpenAI client, so a
+  GLM or Kimi improver model failed. A summarizer set to a non-Gemini API id
+  failed in the Gemini SDK. The topic improver had no retry policy. All
+  three now go through the shared dispatcher.
+
 - The HTTP API ignored `materials: false` and `materials_limit` for the
   in-run archive, and a boosted `--no-materials` / `--materials-limit` run
   never passed either flag to its sub-projects. Both now reach every run.
@@ -190,6 +195,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `github: codex:gpt-6.1-sol`.
 
 ### Changed
+
+- **One dispatcher for plain-API completions** (PLAN A.8):
+  `researchkit.api_llm.complete`. The improver (six client branches), the
+  summarizer (Gemini, GLM, Kimi), the keyword synthesizer and
+  `complete_via_spec` with a plain model id all route through it, so client
+  setup, vendor routing and the retry policy live in one place. Each vendor
+  keeps its existing knobs, and the commands behave as before. Deleted as
+  dead: `Summarizer.summarize_single` and its two single-summary prompts
+  (no caller in core or the plugins).
 
 - `default` preset: Grok slot `grok-4.3` → `grok-4.7`, the current flagship
   (PLAN A.5). The OpenAI API pins are unchanged: the gpt-6.x ids are only

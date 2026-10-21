@@ -343,7 +343,7 @@ def _complete_via_spec(
         return agy._run_cli(combined, label=label)
     if is_grokcli_model(spec):
         # Must precede the plain-id fallback: "grokcli:*" starts with
-        # "grok", which _guess_api_provider would route to the xAI API.
+        # "grok", which api_llm.provider_for would route to the xAI API.
         grokcli = GrokCliProvider(
             model=grokcli_underlying_model(spec), reasoning_effort=effort
         )
@@ -444,29 +444,24 @@ def _run_claude_cli(
     return proc.stdout.strip()
 
 
-def _guess_api_provider(model: str) -> str:
-    """Map a plain model id to a PromptImprover provider name."""
-    m = model.lower()
-    if m.startswith(("gemini", "models/gemini")):
-        return "gemini"
-    if m.startswith("grok"):
-        return "grok"
-    if m.startswith("sonar"):
-        return "perplexity"
-    if m.startswith("glm"):
-        return "glm"
-    if m.startswith(("kimi", "moonshot")):
-        return "kimi"
-    return "openai"
-
-
 def _run_api(model: str, system_prompt: str, user_prompt: str) -> str:
-    """Run a completion through PromptImprover's API backends for plain ids."""
-    from researchkit.prompt_improver import PromptImprover
+    """Plain API ids: the shared dispatcher, in the improver's JSON mode.
 
-    provider = _guess_api_provider(model)
-    improver = PromptImprover(provider=provider, model=model)
-    return improver._call_provider(system_prompt, user_prompt)
+    JSON mode is kept for every vendor but Perplexity, as before: council
+    members and plugin summarizers all ask for JSON.
+    """
+    from researchkit.api_llm import complete, provider_for
+
+    provider = provider_for(model)
+    return complete(
+        model,
+        system_prompt,
+        user_prompt,
+        label=f"council.{provider}",
+        provider=provider,
+        json_mode=provider != "perplexity",
+        temperature=0.3,
+    )
 
 
 class LLMCouncil:

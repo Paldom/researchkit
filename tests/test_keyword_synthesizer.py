@@ -241,7 +241,7 @@ class TestSynthesize:
 
     def test_returns_empty_on_llm_failure(self) -> None:
         synth = KeywordSynthesizer(model="gpt-test")
-        with patch.object(synth, "_call_openai", side_effect=RuntimeError("api down")):
+        with patch.object(synth, "_complete", side_effect=RuntimeError("api down")):
             result = synth.synthesize(
                 topic="claude",
                 days=7,
@@ -262,7 +262,7 @@ class TestSynthesize:
                 ]
             }
         )
-        with patch.object(synth, "_call_openai", return_value=canned):
+        with patch.object(synth, "_complete", return_value=canned):
             result = synth.synthesize(
                 topic="claude",
                 days=7,
@@ -309,7 +309,7 @@ class TestSynthesizeFromProviderKeywords:
                 ]
             }
         )
-        with patch.object(synth, "_call_openai", return_value=canned) as mock:
+        with patch.object(synth, "_complete", return_value=canned) as mock:
             result = synth.synthesize_from_provider_keywords(
                 "claude", 7, provider_keywords, count=10
             )
@@ -332,7 +332,7 @@ class TestSynthesizeFromProviderKeywords:
             "openai": ["claude opus review", "anthropic agent sdk"],
             "gemini": ["claude code tutorial", "gemini flash update"],
         }
-        with patch.object(synth, "_call_openai", side_effect=RuntimeError("api down")):
+        with patch.object(synth, "_complete", side_effect=RuntimeError("api down")):
             result = synth.synthesize_from_provider_keywords(
                 "claude", 7, provider_keywords
             )
@@ -347,7 +347,7 @@ class TestSynthesizeFromProviderKeywords:
             "openai": ["claude opus review", "anthropic agent sdk"],
         }
         # Return invalid JSON so parse_keyword_json returns []
-        with patch.object(synth, "_call_openai", return_value="garbage"):
+        with patch.object(synth, "_complete", return_value="garbage"):
             result = synth.synthesize_from_provider_keywords(
                 "claude", 7, provider_keywords
             )

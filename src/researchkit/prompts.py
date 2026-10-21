@@ -224,41 +224,6 @@ tangential subjects; if you must reference one, label it as context.""" + _run_c
 # Summarizer prompts
 
 
-def get_single_summary_system_prompt() -> str:
-    """Generate system prompt for summarizing a single provider result."""
-    return """Distill one research report into the points a reader of the final topic report needs.
-
-Rules:
-- At most 8 bullets; fewer when the report is thin
-- Keep the specific facts, numbers, names, quotes, steps and tradeoffs, with
-  the source URLs attached to the claims they support
-- Summarize only what is in the report — never add claims, figures, or
-  URLs that do not appear there
-- Describe the topic, never the report or how it was gathered. Attribute to
-  the publications, docs, papers or people named in the report, never to a
-  search backend or model"""
-
-
-# Legacy constant for backward compatibility
-SINGLE_SUMMARY_SYSTEM_PROMPT = get_single_summary_system_prompt()
-
-
-def get_single_summary_user_prompt(raw_text: str) -> str:
-    """Generate user prompt for summarizing a single provider result.
-
-    Deliberately unaware of which provider or model wrote the report: naming
-    them here stamped pipeline identity into every later stage, and "social
-    insight report" primed a sentiment frame onto how-to questions.
-    """
-    return f"""Summarize this report into up to 8 bullets:
-
----
-{raw_text}
----
-
-Markdown bullets only. Start each with a short bold label describing the content (e.g. **Cost:**, **Limitation:**, **Step 1:**), not the source. No sentiment or "conversation" labels unless the report is about public discussion."""
-
-
 def get_meta_summary_system_prompt() -> str:
     """Generate system prompt for meta-summary."""
     return """Synthesize several independent research reports into one analysis of the topic. Write about the topic, not about how it was gathered.

@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING
 
-from researchkit.network_retry import with_network_retry
 from researchkit.utils import extract_json_object
 
 if TYPE_CHECKING:
@@ -68,7 +66,7 @@ class KeywordSynthesizer:
 
     Supports two modes:
 
-    1. **Single-LLM synthesis** (``synthesize``):  Uses one OpenAI call
+    1. **Single-LLM synthesis** (``synthesize``):  Uses one improver-model call
        to generate keywords grounded in provider results.  This is the
        legacy/fallback path.
     2. **Multi-provider synthesis** (``synthesize_from_provider_keywords``):
@@ -82,8 +80,8 @@ class KeywordSynthesizer:
     def __init__(self, model: str | None = None) -> None:
         """
         Args:
-            model: Model name (defaults to DEFAULT_MODEL). Synthesis
-                uses the OpenAI API; the improver preset is OpenAI.
+            model: Model name (defaults to DEFAULT_MODEL): a harness spec
+                runs on that CLI, a plain id on its vendor's API.
         """
         self.model = model or self.DEFAULT_MODEL
 
@@ -135,7 +133,7 @@ class KeywordSynthesizer:
             return []
 
         try:
-            response = self._call_openai(
+            response = self._complete(
                 system_prompt=self._system_prompt(),
                 user_prompt=self._user_prompt(topic, days, context, count),
             )
@@ -195,7 +193,7 @@ class KeywordSynthesizer:
         keyword_context = "\n\n".join(context_parts)
 
         try:
-            response = self._call_openai(
+            response = self._complete(
                 system_prompt=self._synthesis_system_prompt(),
                 user_prompt=self._synthesis_user_prompt(
                     topic, days, keyword_context, count
@@ -327,7 +325,7 @@ class KeywordSynthesizer:
     # Internals — LLM call & parsing
     # ------------------------------------------------------------------
 
-    def _call_openai(self, system_prompt: str, user_prompt: str) -> str:
+    def _complete(self, system_prompt: str, user_prompt: str) -> str:
         from researchkit.council import is_cli_backed_spec
 
         if is_cli_backed_spec(self.model):
@@ -341,28 +339,17 @@ class KeywordSynthesizer:
                 f"{user_prompt}\n\nRespond ONLY with the JSON object.",
                 label="keyword_synthesizer.cli",
             )
-        from openai import OpenAI
+        from researchkit.api_llm import complete, provider_for
 
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise RuntimeError("OPENAI_API_KEY not set")
-
-        client = OpenAI(api_key=api_key)
-        # Route through the project's unified retry wrapper (backoff + structured
-        # logging), consistent with the summarizer. (Review: keyword_synthesizer
-        # retry-policy inconsistency.)
-        response = with_network_retry(
-            client.chat.completions.create,
-            label="keyword_synthesizer.chat.completions",
-            provider="improver",
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format={"type": "json_object"},
+        # Any API vendor the improver slot names (it used to be OpenAI only,
+        # so a GLM or Kimi improver broke keyword synthesis).
+        return complete(
+            self.model,
+            system_prompt,
+            user_prompt,
+            label="keyword_synthesizer",
+            json_mode=provider_for(self.model) != "perplexity",
         )
-        return response.choices[0].message.content or ""
 
     def _parse_keywords(self, response: str, count: int) -> list[str]:
         """Delegate to the module-level parse_keyword_json utility."""
