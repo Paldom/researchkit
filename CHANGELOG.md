@@ -178,6 +178,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `default` preset: Grok slot `grok-4.3` → `grok-4.7`, the current flagship
+  (PLAN A.5). The OpenAI API pins are unchanged: the gpt-6.x ids are only
+  confirmed for Codex, and the API side is unverified without a paid probe
+  (`researchkit doctor --probe-api`).
+
 - **One archive and one brain per run, built by the service** (PLAN 3.5).
   The CLI, the HTTP server and the MCP server each re-ran the materials
   download and the brain build after a run that had already archived its

@@ -49,7 +49,7 @@ presets:
     models:
       openai: gpt-5.4-mini # latest mini tier (5.5/5.6/6 ship no mini)
       gemini: gemini-3.8-flash
-      grok: grok-4.3
+      grok: grok-4.7 # current xAI flagship (grok models, 2026-10-21)
       perplexity: sonar
       tavily: tavily-search # display name only (search API)
       claude: claude:claude-sonnet-5-5 # plain two-query mode; `deep:<model>` opt-in (see header)
