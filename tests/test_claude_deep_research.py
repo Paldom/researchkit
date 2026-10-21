@@ -160,6 +160,7 @@ class TestFetchDeepResearch:
             cmd[cmd.index("--disallowed-tools") + 1] == "Write,Edit,NotebookEdit,Bash"
         )
         assert "--no-session-persistence" in cmd
+        assert "--strict-mcp-config" in cmd  # no operator MCP servers
         assert "--system-prompt" not in cmd
         assert "--allowed-tools" not in cmd
         assert run.call_args.kwargs["timeout"] == 2400

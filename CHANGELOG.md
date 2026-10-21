@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Security: the Kimi Code CLI could run shell commands from web content.**
+  Headless `kimi -p` auto-approves every tool: a planted instruction ran
+  `touch` on the host (verified live). Research calls now pass an
+  `--agent-file` allowlist (`WebSearch`, `FetchURL`), keyword/summary calls
+  get no tools at all, and `advise-session` starts Kimi as a read-only advisor
+  (`Read`, `Grep`, `Glob` and web; no shell, no writes). Resumed sessions keep
+  their profile (verified). Profiles ship in `researchkit/harness_profiles/`.
+- Antigravity research and sessions run with `--sandbox` (terminal
+  restrictions) under their auto-approve mode. Claude Code's opt-in `deep:`
+  path adds `--strict-mcp-config`, so the operator's MCP servers stay out of
+  a run that reads untrusted pages under `bypassPermissions`.
+- The `npx` fallback for user links is pinned (`@steipete/summarize@0.25.1`)
+  instead of `@latest`, which ran whatever the registry served that day.
+- `tests/test_containment.py` pins every research harness's argv (tool lists,
+  sandboxes, strict MCP), so loosening containment fails CI.
+
 - Harness-mode Grok CLI calls no longer die on Docker Desktop. `grok
 --sandbox read-only` refuses to start when a runtime socket such as
   `/var/run/docker.sock` is a symlink (`socket deny resolution failed`).

@@ -19,15 +19,14 @@ This targets Moonshot's **Kimi Code CLI** (``MoonshotAI/kimi-code``, the
 TypeScript rewrite; ``brew install kimi-code``), not the wound-down Python
 ``kimi-cli``. Headless notes:
 
-- ``-p`` implies auto-permission and the CLI has no sandbox/tool-deny flags,
-  so runs get the agy treatment: scrubbed env (no other providers' keys to
-  exfiltrate) and a neutral temp cwd (host project instructions stay out of
-  prompts; file edits land in temp). ``run_subprocess`` kills the process
-  group on timeout, which also bounds the CLI's unbounded print-mode
-  background tasks.
-- Web search/fetch are built-in tools injected by the subscription auth;
-  there is no CLI flag to disable them, so ``web_search=False`` calls rely on
-  the prompt simply not needing a search.
+- ``-p`` auto-approves every tool, shell included: a planted instruction
+  ran ``touch`` on the host (verified 2026-10-21). Every call therefore
+  passes ``--agent-file`` with a tool allowlist from
+  :mod:`researchkit.harness_profiles`: research gets ``WebSearch`` and
+  ``FetchURL`` only, keyword and summary calls get no tools at all. On top of
+  that: a scrubbed env (no other providers' keys to exfiltrate) and a neutral
+  temp cwd. ``run_subprocess`` kills the process group on timeout, which also
+  bounds the CLI's unbounded print-mode background tasks.
 - Reasoning effort has no CLI flag (config.toml ``[thinking]`` governs); the
   constructor accepts ``reasoning_effort`` for parity and ignores it.
 
@@ -124,11 +123,15 @@ class KimiCliProvider(CodexProvider):
     def _build_cmd(self, web_search: bool) -> list[str]:
         """Assemble the headless ``kimi`` command (prompt appended by _exec).
 
-        ``web_search`` is unused: the CLI's search tools can't be toggled per
-        run (see module docstring).
+        ``web_search`` picks the tool allowlist: web tools for research, none
+        for keyword/summary calls (see module docstring).
         """
+        from researchkit.harness_profiles import profile_path
+
         cmd = [
             self.codex_bin,
+            "--agent-file",
+            profile_path("kimi-researcher.md" if web_search else "kimi-no-tools.md"),
             "--output-format",
             "stream-json",
         ]

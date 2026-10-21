@@ -485,6 +485,9 @@ class ClaudeProvider(BaseProvider):
                 "json",
                 "--no-session-persistence",
                 *CLAUDE_HEADLESS_ARGS,
+                # The operator's MCP servers stay out of a run that reads
+                # untrusted pages under bypassPermissions (built-ins only).
+                "--strict-mcp-config",
                 "--max-budget-usd",
                 str(self.max_budget),
             ]

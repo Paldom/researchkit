@@ -206,7 +206,10 @@ class AntigravityProvider(BaseProvider):
         empty stdout. No floor: a floor above the budget would invert exactly
         the invariant this exists to hold.
         """
-        cmd = [self.agy_bin, "--dangerously-skip-permissions"]
+        # Headless print mode needs auto-approval; --sandbox ("terminal
+        # restrictions") bounds it so a planted instruction in a fetched page
+        # can't drive arbitrary shell commands. Web tools are unaffected.
+        cmd = [self.agy_bin, "--sandbox", "--dangerously-skip-permissions"]
         if self.model_name:
             cmd += ["--model", self.model_name]
         print_timeout = f"{max(int(timeout - _AGY_PRINT_MARGIN), 1)}s"

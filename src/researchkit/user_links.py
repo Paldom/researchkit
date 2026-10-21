@@ -48,7 +48,10 @@ _YOUTUBE_HOSTS = frozenset(
 # per-file budget for user documents.
 _MAX_CHARS = 200_000
 
-_SUMMARIZE_PACKAGE = "@steipete/summarize@latest"
+# Pinned, never @latest: `npx -y` executes whatever the registry serves, so an
+# unpinned spec runs new third-party code on every call. 0.25.1 (2026-10-04)
+# clears the repo's two-week cooldown; bump deliberately, like any dependency.
+_SUMMARIZE_PACKAGE = "@steipete/summarize@0.25.1"
 
 
 @dataclass

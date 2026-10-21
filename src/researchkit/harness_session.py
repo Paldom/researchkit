@@ -259,9 +259,16 @@ def _run_kimicli(
     model = _underlying(spec)
     cmd = ["kimi", "--output-format", "stream-json"]
     if session_id:
+        # A resumed session keeps the profile it was created with (verified);
+        # the CLI refuses --agent-file together with -r anyway.
         cmd += ["-r", session_id]
-    elif model:
-        cmd += ["-m", model]
+    else:
+        from researchkit.harness_profiles import profile_path
+
+        # Read-only advisor: project files + web, no shell, no writes.
+        cmd += ["--agent-file", profile_path("kimi-advisor.md")]
+        if model:
+            cmd += ["-m", model]
     full = prompt if session_id else f"{system_prompt}\n\n{prompt}"
     proc = _spawn(
         [*cmd, "-p", full], cwd=cwd, input_text=None, keep=frozenset({"KIMI_API_KEY"})
@@ -286,6 +293,7 @@ def _run_agy(
     timeout = cli_harness_timeout()
     cmd = [
         "agy",
+        "--sandbox",  # terminal restrictions: no arbitrary shell
         "--dangerously-skip-permissions",
         "--output-format",
         "json",
