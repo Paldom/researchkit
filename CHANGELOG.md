@@ -81,6 +81,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Materials follow a fetch policy by host class:
+  - X, LinkedIn, Medium, YouTube, Instagram, Facebook and TikTok links stay
+    cited but link-only (`tos-blocked`). Their terms forbid scraping, and a
+    plain fetch only burned its timeout to archive a logged-out husk.
+    Connector-supplied transcripts and articles are still archived first.
+  - archive.today mirrors are `rejected`.
+  - A bare `github.com/<owner>/<repo>` link archives the raw README instead
+    of the HTML page.
+  - PDFs are recorded as `pdf_unparsed` (they used to be dropped as
+    `binary`).
+  - A page carrying schema.org `isAccessibleForFree: false` with a
+    teaser-length body is `paywall` instead of being archived as the source.
+  - Entries record `http_status`.
+
+  brainkit ingests only `fetched` rows, so the new statuses are additive.
+
 - One source identity: `researchkit.urls.canonical_url` replaces the two
   identical copies in `materials.py`. It keeps the identity earlier runs
   stored (and brainkit keys on) and only adds default-port stripping.

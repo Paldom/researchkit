@@ -19,6 +19,18 @@ from researchkit.materials import (
 from researchkit.project import Project, ProjectConfig
 
 
+def _as_fetch(fake):  # type: ignore[no-untyped-def]
+    """Adapt an old-style ``safe_fetch_text`` fake ((text, final_url)) to
+    ``safe_fetch`` (FetchResult): materials now reads status/MIME too."""
+    from researchkit.safe_io import FetchResult
+
+    def _fetch(url, **kw):  # type: ignore[no-untyped-def]
+        text, final = fake(url, **kw)
+        return FetchResult(url, final, text=text, status=200 if text is not None else 0)
+
+    return _fetch
+
+
 def _result_payload() -> dict[str, Any]:
     return {
         "topic": "test topic",
@@ -126,7 +138,7 @@ class TestDownloadMaterials:
     def test_happy_path_writes_files_and_manifest(self, tmp_path: Path) -> None:
         project = _make_project(tmp_path, _result_payload())
         with patch.object(
-            materials, "safe_fetch_text", side_effect=self._fetch_ok
+            materials, "safe_fetch", side_effect=_as_fetch(self._fetch_ok)
         ) as fetch:
             manifest = download_materials(project, delay=0)
 
@@ -173,12 +185,12 @@ class TestDownloadMaterials:
                 return None, url  # safe_fetch_text refusal path
             return "%PDF-1.7 binarybytes", url
 
-        with patch.object(materials, "safe_fetch_text", side_effect=fetch):
+        with patch.object(materials, "safe_fetch", side_effect=_as_fetch(fetch)):
             manifest = download_materials(project, delay=0)
 
         statuses = {e["url"]: e["status"] for e in manifest["entries"]}
         assert statuses["https://dead.test/x"] == "failed"
-        assert statuses["https://pdf.test/y"] == "binary"
+        assert statuses["https://pdf.test/y"] == "pdf_unparsed"  # cited, link-only
         assert statuses["http://127.0.0.1/secret"] == "failed"
         assert manifest["fetched"] == 0
         assert not list((project.path / "materials").glob("*.md"))
@@ -197,7 +209,9 @@ class TestDownloadMaterials:
             ],
         }
         project = _make_project(tmp_path, payload)
-        with patch.object(materials, "safe_fetch_text", side_effect=self._fetch_ok):
+        with patch.object(
+            materials, "safe_fetch", side_effect=_as_fetch(self._fetch_ok)
+        ):
             manifest = download_materials(project, limit=2, delay=0)
         counts: dict[str, int] = {}
         for e in manifest["entries"]:
@@ -207,18 +221,18 @@ class TestDownloadMaterials:
     def test_rerun_is_idempotent_without_refresh(self, tmp_path: Path) -> None:
         project = _make_project(tmp_path, _result_payload())
         with patch.object(
-            materials, "safe_fetch_text", side_effect=self._fetch_ok
+            materials, "safe_fetch", side_effect=_as_fetch(self._fetch_ok)
         ) as f1:
             download_materials(project, delay=0)
         assert f1.call_count == 3
         with patch.object(
-            materials, "safe_fetch_text", side_effect=self._fetch_ok
+            materials, "safe_fetch", side_effect=_as_fetch(self._fetch_ok)
         ) as f2:
             manifest = download_materials(project, delay=0)
         assert f2.call_count == 0  # existing files reused
         assert manifest["fetched"] == 3
         with patch.object(
-            materials, "safe_fetch_text", side_effect=self._fetch_ok
+            materials, "safe_fetch", side_effect=_as_fetch(self._fetch_ok)
         ) as f3:
             download_materials(project, delay=0, refresh=True)
         assert f3.call_count == 3
@@ -241,7 +255,9 @@ class TestDownloadMaterials:
             ],
         }
         project = _make_project(tmp_path, payload)
-        with patch.object(materials, "safe_fetch_text", side_effect=self._fetch_ok):
+        with patch.object(
+            materials, "safe_fetch", side_effect=_as_fetch(self._fetch_ok)
+        ):
             manifest = download_materials(project, delay=0)
         name = manifest["entries"][0]["file"]
         assert name.endswith(".md") and " " not in name and "é" not in name
@@ -293,7 +309,7 @@ class TestUrlHygiene:
         def fetch(url: str, **kwargs: Any) -> tuple[str | None, str]:
             return "<html><body><div>Loading…</div></body></html>", url
 
-        with patch.object(materials, "safe_fetch_text", side_effect=fetch):
+        with patch.object(materials, "safe_fetch", side_effect=_as_fetch(fetch)):
             manifest = download_materials(project, delay=0)
         assert manifest["entries"][0]["status"] == "empty"
         assert manifest["fetched"] == 0
@@ -317,7 +333,7 @@ def test_negative_limit_means_unlimited(tmp_path: Path) -> None:
     def fetch(url: str, **kwargs: Any) -> tuple[str | None, str]:
         return f"<html><body><p>{filler}</p></body></html>", url
 
-    with patch.object(materials, "safe_fetch_text", side_effect=fetch):
+    with patch.object(materials, "safe_fetch", side_effect=_as_fetch(fetch)):
         manifest = download_materials(project, limit=-5, delay=0)
     assert manifest["fetched"] == 3
 
@@ -357,7 +373,7 @@ def test_limit_bounds_attempts_not_successes(tmp_path: Path) -> None:
     }
     project = _make_project(tmp_path, payload)
     with patch.object(
-        materials, "safe_fetch_text", side_effect=lambda url, **kw: (None, url)
+        materials, "safe_fetch", side_effect=_as_fetch(lambda url, **kw: (None, url))
     ) as fetch:
         manifest = download_materials(project, limit=2, delay=0)
     assert fetch.call_count == 2
@@ -382,7 +398,7 @@ def test_stale_file_with_wrong_url_is_refetched(tmp_path: Path) -> None:
     def fetch(url: str, **kwargs: Any) -> tuple[str | None, str]:
         return f"<html><body><p>{filler}</p></body></html>", url
 
-    with patch.object(materials, "safe_fetch_text", side_effect=fetch):
+    with patch.object(materials, "safe_fetch", side_effect=_as_fetch(fetch)):
         first = download_materials(project, delay=0)
     filename = first["entries"][0]["file"]
     stale = project.path / "materials" / filename
@@ -390,7 +406,7 @@ def test_stale_file_with_wrong_url_is_refetched(tmp_path: Path) -> None:
         "---\nurl: https://other.test/z\n---\n\nstale body\n", encoding="utf-8"
     )
 
-    with patch.object(materials, "safe_fetch_text", side_effect=fetch) as refetch:
+    with patch.object(materials, "safe_fetch", side_effect=_as_fetch(fetch)) as refetch:
         download_materials(project, delay=0)
     assert refetch.call_count == 1  # reuse rejected, content rewritten
     assert "url: https://real.test/a" in stale.read_text(encoding="utf-8")
@@ -417,7 +433,7 @@ def test_junk_titles_replaced_with_url_derived(tmp_path: Path) -> None:
     body = f"<html><head><title>Just a moment...</title></head><body><p>{filler}</p></body></html>"
 
     with patch.object(
-        materials, "safe_fetch_text", side_effect=lambda url, **kw: (body, url)
+        materials, "safe_fetch", side_effect=_as_fetch(lambda url, **kw: (body, url))
     ):
         manifest = download_materials(project, delay=0)
 
@@ -454,7 +470,7 @@ def test_connector_content_is_archived_without_fetch(tmp_path: Path) -> None:
         },
     }
     project = _make_project(tmp_path, payload)
-    with patch.object(materials, "safe_fetch_text") as fetch:
+    with patch.object(materials, "safe_fetch") as fetch:
         manifest = download_materials(project, delay=0)
 
     assert fetch.call_count == 0  # never re-queried
@@ -507,7 +523,7 @@ def test_summary_fallback_when_fetch_fails_or_empty(tmp_path: Path) -> None:
             return None, url
         return "<html><body><div>Loading…</div></body></html>", url
 
-    with patch.object(materials, "safe_fetch_text", side_effect=fetch):
+    with patch.object(materials, "safe_fetch", side_effect=_as_fetch(fetch)):
         manifest = download_materials(project, delay=0)
 
     rows = {e["url"]: e for e in manifest["entries"]}
@@ -538,10 +554,10 @@ def test_http_and_cached_origins_recorded(tmp_path: Path) -> None:
     def fetch(url: str, **kwargs: Any) -> tuple[str | None, str]:
         return f"<html><body><p>{filler}</p></body></html>", url
 
-    with patch.object(materials, "safe_fetch_text", side_effect=fetch):
+    with patch.object(materials, "safe_fetch", side_effect=_as_fetch(fetch)):
         first = download_materials(project, delay=0)
     assert first["entries"][0]["origin"] == "http"
-    with patch.object(materials, "safe_fetch_text", side_effect=fetch):
+    with patch.object(materials, "safe_fetch", side_effect=_as_fetch(fetch)):
         second = download_materials(project, delay=0)
     assert second["entries"][0]["origin"] == "cached"
 
@@ -577,3 +593,71 @@ def test_material_frontmatter_carries_content_digest(tmp_path: Path) -> None:
     assert digest_of(p1) == digest_of(p2)
     assert digest_of(p1) != digest_of(p3)
     assert len(digest_of(p1)) == 16
+
+
+class TestFetchPolicy:
+    """PLAN 2.3: classify the host before fetching."""
+
+    def test_link_only_and_rejected_hosts(self) -> None:
+        from researchkit.materials import fetch_policy
+
+        assert fetch_policy("https://x.com/a/status/1") == "tos-blocked"
+        assert fetch_policy("https://www.linkedin.com/posts/x") == "tos-blocked"
+        assert fetch_policy("https://someone.medium.com/post") == "tos-blocked"
+        assert fetch_policy("https://youtu.be/abc") == "tos-blocked"
+        assert fetch_policy("https://archive.ph/abc") == "rejected"
+        assert fetch_policy("https://example.com/a") is None
+        assert fetch_policy("https://notx.com/a") is None  # suffix, not substring
+
+    def test_github_repo_reads_the_readme(self) -> None:
+        from researchkit.materials import _github_readme_url
+
+        assert (
+            _github_readme_url("https://github.com/openclaw/acpx")
+            == "https://raw.githubusercontent.com/openclaw/acpx/HEAD/README.md"
+        )
+        assert _github_readme_url("https://github.com/openclaw/acpx/issues/1") is None
+        assert _github_readme_url("https://gitlab.com/a/b") is None
+
+    def test_paywalled_teaser_is_not_archived(self, tmp_path: Path) -> None:
+        from researchkit.safe_io import FetchResult
+
+        payload = {
+            "topic": "t",
+            "provider_results": [
+                {
+                    "provider": "grok",
+                    "sources": [
+                        {
+                            "url": "https://hbr.example/teaser",
+                            "title": "T",
+                            "source_type": "web",
+                        },
+                        {
+                            "url": "https://x.com/a/1",
+                            "title": "X",
+                            "source_type": "social",
+                        },
+                    ],
+                }
+            ],
+        }
+        project = _make_project(tmp_path, payload)
+        teaser = (
+            '<html><script type="application/ld+json">{"isAccessibleForFree": false}'
+            "</script><body><article>"
+            + "Teaser words here. " * 30
+            + "</article></body></html>"
+        )
+
+        def fetch(url: str, **kw: object) -> FetchResult:
+            return FetchResult(
+                url, url, text=teaser, status=200, content_type="text/html"
+            )
+
+        with patch.object(materials, "safe_fetch", side_effect=fetch) as called:
+            manifest = download_materials(project, delay=0)
+        statuses = {e["url"]: e["status"] for e in manifest["entries"]}
+        assert statuses["https://hbr.example/teaser"] == "paywall"
+        assert statuses["https://x.com/a/1"] == "tos-blocked"
+        assert called.call_count == 1  # x.com never fetched

@@ -31,8 +31,8 @@ from typing import Any, ClassVar
 from urllib.parse import urlsplit
 
 from researchkit.project import Project
-from researchkit.safe_io import atomic_write_text, safe_fetch_text
-from researchkit.urls import canonical_url, strip_tracking
+from researchkit.safe_io import atomic_write_text, safe_fetch
+from researchkit.urls import canonical_url, host_of, strip_tracking
 from researchkit.utils import slugify
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,10 @@ class MaterialEntry:
     """Manifest row for one cited URL."""
 
     url: str
-    status: str  # fetched | failed | binary | empty | skipped_scheme | skipped_limit
+    # fetched | failed | binary | empty | skipped_scheme | skipped_limit |
+    # tos-blocked | rejected | paywall | pdf_unparsed (brainkit ingests only
+    # "fetched"; the rest record why a cited source has no archived text)
+    status: str
     origin: str = ""  # http | connector:<kind> | summary (set on fetched rows)
     file: str | None = None
     final_url: str | None = None
@@ -94,6 +97,7 @@ class MaterialEntry:
     source_type: str = ""
     providers: list[str] = field(default_factory=list)
     chars: int = 0
+    http_status: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -208,6 +212,63 @@ def _clean_citation_url(url: str) -> str:
 def _normalize_url(url: str) -> str:
     """Dedup key: the same canonical identity (one rule, not two copies)."""
     return canonical_url(url)
+
+
+# Fetch policy by host class (PLAN 2.3, digest 13). These platforms forbid
+# scraping or serve logged-out stubs, so a plain fetch burns its timeout and
+# archives a husk; they stay cited, link-only. Connector-provided content
+# (transcripts, articles from plugins) is archived before this check applies.
+_TOS_BLOCKED_HOSTS = (
+    "x.com",
+    "twitter.com",
+    "linkedin.com",
+    "medium.com",
+    "youtube.com",
+    "youtu.be",
+    "instagram.com",
+    "facebook.com",
+    "tiktok.com",
+)
+# Snapshot mirrors are not sources of their own and are commonly blocked.
+_REJECTED_HOSTS = ("archive.today", "archive.ph", "archive.is", "archive.li")
+# schema.org paywall marker publishers emit on teaser pages that return 200.
+_PAYWALL_MARKERS = (
+    '"isaccessibleforfree":false',
+    '"isaccessibleforfree": false',
+    '"isaccessibleforfree":"false"',
+    '"isaccessibleforfree": "false"',
+)
+_PAYWALL_MAX_CHARS = 4000  # a full free article is longer than a teaser
+
+
+def _host_matches(host: str, domains: tuple[str, ...]) -> bool:
+    return any(host == d or host.endswith(f".{d}") for d in domains)
+
+
+def fetch_policy(url: str) -> str | None:
+    """Status to record *without fetching*, or None to fetch normally."""
+    host = host_of(url)
+    if _host_matches(host, _REJECTED_HOSTS):
+        return "rejected"
+    if _host_matches(host, _TOS_BLOCKED_HOSTS):
+        return "tos-blocked"
+    return None
+
+
+def _github_readme_url(url: str) -> str | None:
+    """Raw README for a bare ``github.com/<owner>/<repo>`` link (the HTML page
+    is mostly chrome); None for any other GitHub path."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return None
+    if parts.netloc.lower() not in ("github.com", "www.github.com"):
+        return None
+    segs = [s for s in parts.path.split("/") if s]
+    if len(segs) != 2:
+        return None
+    owner, repo = segs[0], segs[1].removesuffix(".git")
+    return f"https://raw.githubusercontent.com/{owner}/{repo}/HEAD/README.md"
 
 
 def _fetch_url(url: str) -> str:
@@ -558,28 +619,54 @@ def download_materials(
             entry.chars = len(ref.content)
             continue
 
+        if policy := fetch_policy(ref.url):
+            if not _write_summary_fallback(path, ref, result, entry, filename):
+                entry.status = policy
+            continue
+
         pending.append((ref, entry, path, filename))
 
     def _fetch_one(job: tuple[SourceRef, MaterialEntry, Path, str]) -> None:
         ref, entry, path, filename = job
         if delay:
             time.sleep(delay)
-        body, final_url = safe_fetch_text(
-            _fetch_url(ref.url),
+        readme = _github_readme_url(ref.url)
+        fetched = safe_fetch(
+            readme or _fetch_url(ref.url),
             timeout=timeout,
             max_bytes=max_bytes,
             headers=_FETCH_HEADERS,
         )
+        if readme and fetched.text is None:  # repo without README.md: the page
+            fetched = safe_fetch(
+                _fetch_url(ref.url),
+                timeout=timeout,
+                max_bytes=max_bytes,
+                headers=_FETCH_HEADERS,
+            )
+        body, final_url = fetched.text, fetched.final_url
+        entry.http_status = fetched.status
         if body is None:
             if _write_summary_fallback(path, ref, result, entry, filename):
                 return
             entry.status = "failed"
-            logger.info("materials: fetch failed/blocked for %s", ref.url)
+            logger.info(
+                "materials: fetch failed/blocked for %s (%s)", ref.url, fetched.error
+            )
+            return
+        if fetched.content_type == "application/pdf" or body.lstrip().startswith(
+            "%PDF"
+        ):
+            # Kept as a citation; PDF text extraction needs a parser (PLAN 2.13).
+            entry.status = "pdf_unparsed"
+            logger.info("materials: PDF recorded link-only for %s", ref.url)
             return
         if body.lstrip().startswith(_BINARY_MARKERS):
             entry.status = "binary"
             logger.info("materials: binary payload skipped for %s", ref.url)
             return
+        lowered = body[:200_000].lower()
+        paywalled = any(m in lowered for m in _PAYWALL_MARKERS)
 
         page_title, text = extract_readable_text(body)
         if len(text) < MIN_EXTRACT_CHARS:
@@ -589,6 +676,14 @@ def download_materials(
             # record the citation but don't pollute the archive with husks.
             entry.status = "empty"
             logger.info("materials: no extractable text for %s", ref.url)
+            return
+        if paywalled and len(text) < _PAYWALL_MAX_CHARS:
+            # A teaser that returns 200 is not the source: keep it cited, not
+            # archived (an 88-word HBR teaser passed the old length check).
+            if _write_summary_fallback(path, ref, result, entry, filename):
+                return
+            entry.status = "paywall"
+            logger.info("materials: paywalled teaser for %s", ref.url)
             return
         title = _pick_title(ref.title, page_title, ref.url)
         _write_material(path, ref, result, body=text, final_url=final_url, title=title)
@@ -603,7 +698,7 @@ def download_materials(
     # the manifest below reads the entries only after every job has finished.
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         for _ in pool.map(_fetch_one, pending):
-            pass  # re-raises a worker's exception (none expected past safe_fetch_text)
+            pass  # re-raises a worker's exception (none expected past safe_fetch)
 
     fetched = sum(1 for e in entries if e.status == "fetched")
     attempts = len(pending)  # network attempts — the limit bounds these, not successes
