@@ -25,6 +25,7 @@ from researchkit.providers.base import (
     Source,
     SourceType,
 )
+from researchkit.queries import keyword_query
 
 SE_SEARCH_URL = "https://api.stackexchange.com/2.3/search/advanced"
 
@@ -56,7 +57,7 @@ class StackExchangeProvider(BaseProvider):
         params: dict[str, Any] = {
             "order": "desc",
             "sort": "votes",
-            "q": topic[:200],
+            "q": keyword_query(topic),
             "site": self.site,
             "pagesize": _MAX_RESULTS,
             "fromdate": int(since.timestamp()),

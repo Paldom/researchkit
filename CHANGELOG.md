@@ -77,6 +77,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The keyless providers query with a few key terms instead of the raw topic
+  sentence (`researchkit.queries`: deterministic, no model call). Names and
+  identifiers rank first; dates, numbers and research filler are dropped;
+  `?`/`*` are stripped (OpenAlex returned HTTP 400 on them); arXiv gets an
+  AND of terms instead of one exact phrase. A live backtest on 30 past topics
+  moved runs-with-sources from 24% → 80% (OpenAlex), 1% → 20% (Hacker News),
+  3% → 13% (arXiv) and 0% → 3% (Stack Exchange).
+
 - Each CLI research slot runs its social and web queries **concurrently**
   (Claude, Codex, Antigravity, Grok, Kimi). They're the same two queries on
   the same model and effort, so only the wait changes: Claude's two serial

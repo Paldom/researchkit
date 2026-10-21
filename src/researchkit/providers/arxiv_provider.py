@@ -29,6 +29,7 @@ from researchkit.providers.base import (
     Source,
     SourceType,
 )
+from researchkit.queries import arxiv_query
 
 ARXIV_API_URL = "https://export.arxiv.org/api/query"
 _ATOM = "{http://www.w3.org/2005/Atom}"
@@ -59,7 +60,7 @@ class ArxivProvider(BaseProvider):
 
     def _search(self, topic: str, days: int) -> list[dict[str, Any]]:
         """Newest-first preprints matching the topic, filtered to the window."""
-        query = quote(f'all:"{topic[:200]}"')
+        query = quote(arxiv_query(topic), safe=":")
         url = (
             f"{ARXIV_API_URL}?search_query={query}"
             f"&sortBy=submittedDate&sortOrder=descending"

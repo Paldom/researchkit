@@ -27,6 +27,7 @@ from researchkit.providers.base import (
     Source,
     SourceType,
 )
+from researchkit.queries import keyword_query
 
 HN_SEARCH_URL = "https://hn.algolia.com/api/v1/search"
 HN_ITEM_URL = "https://news.ycombinator.com/item?id="
@@ -65,7 +66,7 @@ class HackerNewsProvider(BaseProvider):
         """Query the Algolia HN index for stories inside the window."""
         since = dt.datetime.now(dt.UTC) - dt.timedelta(days=max(days, 1))
         params: dict[str, Any] = {
-            "query": topic[:300],
+            "query": keyword_query(topic),
             "tags": "story",
             "numericFilters": f"created_at_i>{int(since.timestamp())}",
             "hitsPerPage": _MAX_RESULTS,

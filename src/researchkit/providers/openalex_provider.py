@@ -28,6 +28,7 @@ from researchkit.providers.base import (
     Source,
     SourceType,
 )
+from researchkit.queries import keyword_query
 
 OPENALEX_API_URL = "https://api.openalex.org/works"
 
@@ -71,7 +72,7 @@ class OpenAlexProvider(BaseProvider):
         window = max(days, _MIN_WINDOW_DAYS)
         since = (dt.date.today() - dt.timedelta(days=window)).isoformat()
         params: dict[str, Any] = {
-            "search": topic[:300],
+            "search": keyword_query(topic),
             "filter": f"from_publication_date:{since}",
             "sort": "relevance_score:desc",
             "per-page": _MAX_RESULTS,
