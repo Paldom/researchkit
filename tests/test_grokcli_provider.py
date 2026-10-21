@@ -173,6 +173,85 @@ class TestFetchInsights:
         assert len(raised_inside) == 1
 
 
+_SYMLINK_SANDBOX_STDERR = (
+    "warning: sandbox could not be applied: socket deny resolution failed: "
+    "could not resolve runtime-socket deny path /var/run/docker.sock: "
+    "endpoint is a symlink\n"
+    "error: could not apply the 'read-only' sandbox profile; see the warning "
+    "above for the cause. Refusing to start with its protections missing.\n"
+)
+
+
+def _sandbox_of(cmd: list[str]) -> str:
+    return cmd[cmd.index("--sandbox") + 1]
+
+
+class TestSandboxFallback:
+    def test_socket_symlink_retries_once_with_workspace(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        calls: list[str] = []
+
+        def run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+            sandbox = _sandbox_of(cmd)
+            calls.append(sandbox)
+            assert Path(cmd[cmd.index("--prompt-file") + 1]).read_text(encoding="utf-8")
+            if sandbox == "read-only":
+                return subprocess.CompletedProcess(
+                    cmd, 1, stdout="", stderr=_SYMLINK_SANDBOX_STDERR
+                )
+            return subprocess.CompletedProcess(
+                cmd,
+                0,
+                stdout=json.dumps({"text": "ok", "stopReason": "EndTurn"}),
+                stderr="",
+            )
+
+        monkeypatch.setattr(grokcli_mod, "run_subprocess", run)
+        provider = GrokCliProvider()
+        with caplog.at_level("WARNING"):
+            text, urls = provider._exec("prompt", web_search=False, label="t")
+        assert text == "ok"
+        assert urls == []
+        assert calls == ["read-only", "workspace"]
+        assert "workspace profile" in caplog.text
+
+        # Remembered: a later call on this provider does not retry read-only.
+        text, _urls = provider._exec("prompt", web_search=False, label="t")
+        assert text == "ok"
+        assert calls == ["read-only", "workspace", "workspace"]
+
+    def test_other_failure_stays_on_read_only(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[str] = []
+
+        def run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+            calls.append(_sandbox_of(cmd))
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="auth failed")
+
+        monkeypatch.setattr(grokcli_mod, "run_subprocess", run)
+        with pytest.raises(RuntimeError, match="auth failed"):
+            GrokCliProvider()._exec("prompt", web_search=False, label="t")
+        assert calls == ["read-only"]
+
+    def test_workspace_refusal_does_not_loop(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[str] = []
+
+        def run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+            calls.append(_sandbox_of(cmd))
+            return subprocess.CompletedProcess(
+                cmd, 1, stdout="", stderr=_SYMLINK_SANDBOX_STDERR
+            )
+
+        monkeypatch.setattr(grokcli_mod, "run_subprocess", run)
+        with pytest.raises(RuntimeError, match="endpoint is a symlink"):
+            GrokCliProvider()._exec("prompt", web_search=False, label="t")
+        assert calls == ["read-only", "workspace"]
+
+
 class TestCodexErrorDetail:
     def test_stdout_jsonl_error_surfaced_when_stderr_empty(self) -> None:
         # Codex reports usage-limit/auth errors as JSONL events on STDOUT

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Harness-mode Grok CLI calls no longer die on Docker Desktop. `grok
+--sandbox read-only` refuses to start when a runtime socket such as
+  `/var/run/docker.sock` is a symlink (`socket deny resolution failed`).
+  The provider retries that one refusal with the `workspace` profile and
+  keeps it for the rest of the run. The temp directory is already the
+  working directory, so that profile's extra write root is the temp dir.
+  Any other sandbox failure still aborts.
+
 ### Added
 
 - `advise-session` — `advise` with a memory. Each harness answers inside a

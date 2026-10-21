@@ -28,12 +28,16 @@ backfilled — the same recovery path CodexProvider uses.
 from __future__ import annotations
 
 import json
+import logging
+import subprocess
 import tempfile
 
 from researchkit.network_retry import with_network_retry
 from researchkit.providers.base import cli_harness_timeout
 from researchkit.providers.codex_provider import CodexProvider
 from researchkit.safe_io import run_subprocess, scrubbed_env
+
+logger = logging.getLogger(__name__)
 
 
 def is_grokcli_model(model: str | None) -> bool:
@@ -63,6 +67,29 @@ def grokcli_underlying_model(model: str | None) -> str | None:
 # Web research needs several search/fetch rounds; a cap keeps a wedged agent
 # from looping on the subscription.
 _MAX_TURNS = "15"
+
+# Preferred kernel profile, then the one used when grok refuses to apply it.
+# read-only and strict deny runtime sockets (/var/run/docker.sock and the
+# podman/containerd equivalents). Docker Desktop publishes that path as a
+# symlink, and grok then exits 1 with "socket deny resolution failed …
+# endpoint is a symlink" rather than starting. workspace is the strictest
+# built-in profile that still applies in that layout: it does not deny those
+# sockets. Research runs set cwd to the temp dir, so workspace's extra write
+# root is that temp dir. Child-process network stays open (read-only blocks
+# it on Linux); the shell tool is denied separately.
+_SANDBOX_READ_ONLY = "read-only"
+_SANDBOX_WORKSPACE = "workspace"
+_SOCKET_SYMLINK_MARKERS = (
+    "socket deny resolution failed",
+    "endpoint is a symlink",
+)
+
+
+def _socket_symlink_refusal(stderr: str, stdout: str) -> bool:
+    """True when grok refused to start because a socket-deny path is a symlink."""
+    text = f"{stderr}\n{stdout}"
+    return all(marker in text for marker in _SOCKET_SYMLINK_MARKERS)
+
 
 # The Grok CLI is a full coding agent; research runs deny the side-effect
 # tools (shell, edits, subagents) AND the read-class tools — the kernel
@@ -112,6 +139,9 @@ class GrokCliProvider(CodexProvider):
             codex_bin=grok_bin,  # inherited which()-availability checks use this
             provider_name=provider_name,
         )
+        # Remembered after a symlink refusal so the next call in this run
+        # (social + web, retries) does not pay for another doomed start.
+        self._sandbox_profile = _SANDBOX_READ_ONLY
 
     @property
     def _model_label(self) -> str:
@@ -127,11 +157,11 @@ class GrokCliProvider(CodexProvider):
             "--verbatim",
             "--permission-mode",
             "bypassPermissions",
-            # bypassPermissions is bounded by the layers below: kernel-enforced
-            # read-only sandbox (writes only to ~/.grok session state + temp,
-            # mirroring codex's `-s read-only`) + side-effect tools denied.
+            # bypassPermissions is bounded by the layers below: the kernel
+            # sandbox (read-only, or workspace after a symlink refusal) plus
+            # the side-effect tools denied further down.
             "--sandbox",
-            "read-only",
+            self._sandbox_profile,
             "--max-turns",
             _MAX_TURNS,
             "--disallowed-tools",
@@ -171,6 +201,16 @@ class GrokCliProvider(CodexProvider):
             return str(data.get("text") or ""), []
         return stdout.strip(), []
 
+    def _run(
+        self, web_search: bool, prompt_path: str, timeout: float
+    ) -> subprocess.CompletedProcess[str]:
+        """Run one ``grok`` command against the prompt file."""
+        return run_subprocess(
+            [*self._build_cmd(web_search), "--prompt-file", prompt_path],
+            timeout=timeout,
+            env=scrubbed_env(keep=frozenset({"XAI_API_KEY"})),
+        )
+
     def _exec(
         self, prompt: str, *, web_search: bool, label: str
     ) -> tuple[str, list[str]]:
@@ -190,11 +230,19 @@ class GrokCliProvider(CodexProvider):
                 # scrubbed env so untrusted web content can't exfiltrate other
                 # providers' API keys — the CLI auths via `grok login`
                 # (XAI_API_KEY kept as its documented fallback).
-                proc = run_subprocess(
-                    [*self._build_cmd(web_search), "--prompt-file", prompt_file.name],
-                    timeout=timeout,
-                    env=scrubbed_env(keep=frozenset({"XAI_API_KEY"})),
-                )
+                proc = self._run(web_search, prompt_file.name, timeout)
+                if (
+                    proc.returncode != 0
+                    and self._sandbox_profile == _SANDBOX_READ_ONLY
+                    and _socket_symlink_refusal(proc.stderr or "", proc.stdout or "")
+                ):
+                    logger.warning(
+                        "grok read-only sandbox refused to start because a "
+                        "runtime socket path is a symlink; retrying once "
+                        "with the workspace profile"
+                    )
+                    self._sandbox_profile = _SANDBOX_WORKSPACE
+                    proc = self._run(web_search, prompt_file.name, timeout)
             if proc.returncode != 0:
                 raise RuntimeError(
                     f"grok CLI failed (exit {proc.returncode}): {proc.stderr[-500:]}"
