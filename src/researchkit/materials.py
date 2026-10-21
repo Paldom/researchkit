@@ -39,6 +39,10 @@ logger = logging.getLogger(__name__)
 
 MATERIALS_DIRNAME = "materials"
 MANIFEST_FILENAME = "index.json"
+# Manifest v2 (PLAN 2.12): schema_version, a full sha256 per archived file,
+# the claims digest and ``complete``. brainkit checks the version before it
+# writes anything and refuses an incomplete pack.
+MANIFEST_SCHEMA_VERSION = 2
 
 # 0 = fetch every cited source. The archive IS the knowledge base a run
 # hands to brainkit/skillskit, so a truncated one silently drops evidence
@@ -184,6 +188,50 @@ class _TextExtractor(HTMLParser):
                 if blank <= 1:
                     out.append("")
         return "\n".join(out).strip()
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _seal(manifest: dict[str, Any], project_dir: Path) -> None:
+    """Hash every archived file, record the claims digest, write the manifest.
+
+    ``complete`` means the pack is finished: result.json exists, or the
+    claims table was just written after the report. Archive-first writes the
+    manifest before the writers run, so a mid-run manifest says ``false``
+    until :func:`finalize_manifest` seals it after the claims.
+    """
+    materials_dir = project_dir / "materials"
+    for entry in manifest.get("entries") or []:
+        name = entry.get("file")
+        if entry.get("status") == "fetched" and name:
+            path = materials_dir / str(name)
+            if path.is_file():
+                entry["sha256"] = _sha256(path)
+    claims = project_dir / "claims.jsonl"
+    manifest["claims_sha256"] = _sha256(claims) if claims.is_file() else None
+    manifest["complete"] = (
+        bool(manifest.get("complete")) or (project_dir / "result.json").is_file()
+    )
+    atomic_write_text(
+        materials_dir / MANIFEST_FILENAME,
+        json.dumps(manifest, indent=2, ensure_ascii=False),
+    )
+
+
+def finalize_manifest(project_dir: Path) -> None:
+    """Seal an existing manifest as complete once the claims are on disk."""
+    index = project_dir / "materials" / MANIFEST_FILENAME
+    if not index.is_file():
+        return
+    try:
+        manifest = json.loads(index.read_text(encoding="utf-8"))
+    except ValueError:
+        return  # a corrupt manifest stays corrupt; brainkit fails it closed
+    manifest["schema_version"] = MANIFEST_SCHEMA_VERSION
+    manifest["complete"] = True
+    _seal(manifest, project_dir)
 
 
 def extract_readable_text(html: str) -> tuple[str, str]:
@@ -796,6 +844,7 @@ def download_materials(
     repo_entries = _repo_extract_entries(project, result)
 
     manifest = {
+        "schema_version": MANIFEST_SCHEMA_VERSION,
         "topic": result.get("topic", ""),
         "generated_at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
         "total_cited": len(refs),
@@ -804,10 +853,7 @@ def download_materials(
         "repo_extracts": len(repo_entries),
         "entries": [e.to_dict() for e in entries] + repo_entries,
     }
-    atomic_write_text(
-        materials_dir / MANIFEST_FILENAME,
-        json.dumps(manifest, indent=2, ensure_ascii=False),
-    )
+    _seal(manifest, project.path)
     logger.info(
         "materials: %d/%d sources archived for %s",
         fetched,

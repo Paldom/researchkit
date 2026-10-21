@@ -511,7 +511,8 @@ class Project:
     ) -> None:
         """Write the report's appendices and claims table (PLAN 2.8, 2.9).
 
-        Stale ones from an earlier run are removed when this run made none.
+        Stale ones from an earlier run are removed when this run made none,
+        and the materials manifest is sealed against the new claims (2.12).
         """
         for path, text in (
             (self.evidence_path, evidence_markdown),
@@ -528,6 +529,12 @@ class Project:
             )
         else:
             self.claims_path.unlink(missing_ok=True)
+        # The claims exist now, so the archive manifest can be sealed (v2:
+        # hashes, claims digest, complete). Before result.json, which stays
+        # the run-complete marker written last.
+        from researchkit.materials import finalize_manifest
+
+        finalize_manifest(self.path)
 
     def save_results(self, result_json: dict[str, Any], report_markdown: str) -> None:
         """Save the report, then result.json LAST.

@@ -83,6 +83,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Research-pack manifest v2** (PLAN 2.12, brainkit contract change
+  approved 2026-10-21). `materials/index.json` carries `schema_version: 2`,
+  a full `sha256` per fetched file, `claims_sha256` and `complete`. The
+  archive-first manifest says `complete: false` until
+  `Project.save_publication` seals it after the claims, before
+  `result.json`. `docs/research-pack.md` is now contract v2. brainkit
+  checks the version, completeness and hashes before it writes anything.
+
 - **Main-content extraction and PDF text in the archive** (PLAN 4.7, 2.13;
   new dependencies `trafilatura` and `pypdf`, approved 2026-10-21).
   Archived pages are now trafilatura's main content. A bake-off on 36

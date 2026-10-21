@@ -752,3 +752,38 @@ class TestPdfAndMainContent:
             "<html><body><p>Tiny page.</p></body></html>"
         )
         assert text == "Tiny page."
+
+
+class TestManifestV2:
+    """PLAN 2.12: versioned, hashed manifest, sealed once the claims exist."""
+
+    def test_mid_run_manifest_is_incomplete_until_the_claims_are_written(
+        self, tmp_path: Path
+    ) -> None:
+        import hashlib
+
+        project = _make_project(tmp_path, _result_payload())
+        (project.path / "result.json").unlink(missing_ok=True)  # archive-first: mid-run
+        with patch.object(
+            materials,
+            "safe_fetch",
+            side_effect=_as_fetch(TestDownloadMaterials()._fetch_ok),
+        ):
+            download_materials(project, result=_result_payload(), delay=0)
+        index = project.path / "materials" / "index.json"
+        manifest = json.loads(index.read_text(encoding="utf-8"))
+        assert manifest["schema_version"] == 2 and manifest["complete"] is False
+        fetched = [e for e in manifest["entries"] if e["status"] == "fetched"]
+        for e in fetched:
+            data = (project.path / "materials" / e["file"]).read_bytes()
+            assert e["sha256"] == hashlib.sha256(data).hexdigest()
+
+        project.save_publication(
+            evidence_markdown="e", providers_markdown="p", claims=[{"id": "c"}]
+        )
+        sealed = json.loads(index.read_text(encoding="utf-8"))
+        assert sealed["complete"] is True
+        assert (
+            sealed["claims_sha256"]
+            == hashlib.sha256(project.claims_path.read_bytes()).hexdigest()
+        )

@@ -1,4 +1,4 @@
-# The research pack — interchange contract (v1)
+# The research pack — interchange contract (v2)
 
 A finished researchkit run directory IS the interchange format the kit trio
 shares: brainkit ingests it, skillskit's `/skill-from-research` skillifies
@@ -38,6 +38,14 @@ projects/<timestamp>_<slug>/
    body — content lineage across re-downloads).
 3. **`materials/index.json`** is authoritative: consumers ingest only files
    it lists as `status: "fetched"`; a corrupt manifest fails closed.
+   **Manifest v2** adds `schema_version: 2`, a full `sha256` on every
+   fetched entry, `claims_sha256` (the digest of `claims.jsonl`, or null),
+   and `complete`. The manifest is written before the writers run
+   (archive-first) with `complete: false`, then sealed with `complete: true`
+   once the claims exist, before `result.json`. Consumers must refuse an
+   unknown `schema_version`, an incomplete pack, or a file whose hash does
+   not match, and must refuse it before writing anything. A manifest
+   without `schema_version` is v1.
 4. **`report.md` `## ` headings are chunk boundaries** (fence-aware).
    researchkit demotes provider-emitted `## ` headings inside embedded raw
    text so only real sections chunk.
