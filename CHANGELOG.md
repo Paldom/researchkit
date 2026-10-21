@@ -83,6 +83,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `researchkit.verify.calibration_report`: the verifier's agreement with
+  human labels (overall agreement, Cohen's kappa, confusion counts). This is
+  the check the verifier must pass before it may ever block a run (PLAN 4.2).
+
 - **Research-pack manifest v2** (PLAN 2.12, brainkit contract change
   approved 2026-10-21). `materials/index.json` carries `schema_version: 2`,
   a full `sha256` per fetched file, `claims_sha256` and `complete`. The

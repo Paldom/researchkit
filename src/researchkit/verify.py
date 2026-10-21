@@ -161,3 +161,30 @@ def verify_claims(
             )
     counts = Counter(labels[row["id"]][0] for row in rows)
     return {"model": model, "total": len(rows), **{k: counts.get(k, 0) for k in LABELS}}
+
+
+def calibration_report(
+    human: dict[str, str], machine: dict[str, str]
+) -> dict[str, Any]:
+    """Agreement of verifier labels with human labels (PLAN 4.2/4.3).
+
+    ``human`` / ``machine`` map claim id -> label. The verifier becomes a
+    blocking gate only if this shows it can be trusted; the report gives
+    overall agreement, Cohen's kappa, and the confusion counts.
+    """
+    ids = sorted(set(human) & set(machine))
+    pairs = [(human[i], machine[i]) for i in ids]
+    n = len(pairs)
+    if not n:
+        return {"n": 0, "agreement": None, "kappa": None, "confusion": {}}
+    agree = sum(1 for h, m in pairs if h == m) / n
+    hc, mc = Counter(h for h, _ in pairs), Counter(m for _, m in pairs)
+    expected = sum(hc[label] * mc[label] for label in LABELS) / (n * n)
+    kappa = (agree - expected) / (1 - expected) if expected < 1 else 1.0
+    confusion = Counter(f"{h}->{m}" for h, m in pairs)
+    return {
+        "n": n,
+        "agreement": round(agree, 3),
+        "kappa": round(kappa, 3),
+        "confusion": dict(sorted(confusion.items())),
+    }

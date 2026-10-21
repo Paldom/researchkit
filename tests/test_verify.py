@@ -88,3 +88,20 @@ def test_sources_are_packed_into_bounded_calls() -> None:
     assert [len(b) for b in verify._batches(groups, texts)] == [1, 1, 1]
     small = {f"s{i}.md": "w " * 100 for i in range(5)}
     assert verify._batches({n: [] for n in small}, small) == [list(small)]
+
+
+def test_calibration_report() -> None:
+    human = {
+        "a": "supported",
+        "b": "unsupported",
+        "c": "supported",
+        "d": "contradicted",
+    }
+    machine = {"a": "supported", "b": "supported", "c": "supported", "x": "supported"}
+    report = verify.calibration_report(human, machine)
+    assert report["n"] == 3 and report["agreement"] == round(2 / 3, 3)
+    assert report["confusion"] == {
+        "supported->supported": 2,
+        "unsupported->supported": 1,
+    }
+    assert verify.calibration_report({}, {})["kappa"] is None
