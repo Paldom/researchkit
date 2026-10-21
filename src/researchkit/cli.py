@@ -350,6 +350,13 @@ Site Research (optional):
     )
     skill_parser.add_argument("name", help="Project name or path")
 
+    # --- score command ---
+    score_parser = subparsers.add_parser(
+        "score",
+        help="Grade a finished report against the rubric (one judge call)",
+    )
+    score_parser.add_argument("name", help="Project name or path")
+
     # --- council command ---
     council_parser = subparsers.add_parser(
         "council",
@@ -1576,6 +1583,28 @@ def cmd_skill(args, service: SocialResearchService) -> int:
     return 0
 
 
+def cmd_score(args, service: SocialResearchService) -> int:
+    """Handle 'score': grade report.md against the rubric, write rubric.json."""
+    project = find_project(args.name, args.projects_dir)
+    if not project:
+        print(f"Error: Project not found: {args.name}", file=sys.stderr)
+        return 1
+    try:
+        result = service.score(project)
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    for rid, verdict in result["items"].items():
+        mark = "pass" if verdict["pass"] else "FAIL"
+        print(f"{mark}  {rid}: {verdict['why']}")
+    print(
+        f"rubric v{result['rubric_version']} ({result['model']}): "
+        f"{result['passed']}/{result['total']}",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def cmd_brain(args) -> int:
     """Handle 'brain': create, list, or feed shared brains."""
     from researchkit.brains import (
@@ -2137,6 +2166,7 @@ SUBCOMMANDS = frozenset(
         "doctor",
         "republish",
         "skill",
+        "score",
         "brain",
         "explore",
         "links",
@@ -2306,6 +2336,8 @@ def main() -> int:
         return cmd_republish(args, service)
     elif args.command == "skill":
         return cmd_skill(args, service)
+    elif args.command == "score":
+        return cmd_score(args, service)
     elif args.command == "brain":
         return cmd_brain(args)
     elif args.command == "advise":

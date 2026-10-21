@@ -68,6 +68,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Rubric contract and `researchkit score`** (PLAN 4.4). `researchkit.rubric`
+  holds one versioned list of binary checks (v1, nine items: facts cited,
+  numbers dated, both readings on conflict, qualified single-source claims,
+  primary sources, open questions, on-topic, specifics first, no filler).
+  The same list goes into the writer prompts as a pre-answer self-check and
+  to a Claude Code judge as its score sheet. `researchkit score <project>`
+  grades a frozen `report.md` and writes `rubric.json` (version, judge
+  model, verdict and reason per item). A missing verdict counts as a fail.
+
 - **Origin folding** (PLAN 4.6). Archived sources whose text is the same
   (5-word shingle Jaccard of 0.6 or more: syndication, mirrors, scraped
   copies) share one origin. The writer's source list marks the copy

@@ -1002,6 +1002,29 @@ class SocialResearchService:
             claims=publication.claims,
         )
 
+    def score(self, project: Project) -> dict[str, Any]:
+        """Grade a finished report against the rubric; writes ``rubric.json``.
+
+        On request only (one Claude Code judge call on the subscription).
+        The judge model is the preset's writer model, recorded with the
+        rubric version so scores stay comparable (PLAN 4.4).
+        """
+        from researchkit.publish import _writers
+        from researchkit.rubric import score_report
+
+        if not project.report_path.is_file():
+            raise FileNotFoundError(f"{project.name} has no report.md")
+        model, budget = _writers(self.get_effective_models(project.config.preset_name))
+        result = score_report(
+            project.report_path.read_text(encoding="utf-8"),
+            model=model,
+            max_budget=budget,
+        )
+        (project.path / "rubric.json").write_text(
+            json.dumps(result, indent=2) + "\n", encoding="utf-8"
+        )
+        return result
+
     def make_skill(self, project: Project) -> str | None:
         """Write skill/SKILL.md on request from a finished project (PLAN 2.14).
 
