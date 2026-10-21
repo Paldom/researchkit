@@ -83,16 +83,22 @@ def judge_system_prompt() -> str:
     )
 
 
-def parse_verdicts(text: str) -> dict[str, dict[str, Any]]:
-    """The judge's JSON, keyed by rubric id; a missing or malformed item fails."""
+def first_json_object(text: str) -> dict[str, Any]:
+    """The outermost ``{…}`` in a judge's answer, or ``{}`` (fail closed)."""
     match = re.search(r"\{.*\}", text or "", flags=re.S)
     try:
         raw = json.loads(match.group(0)) if match else {}
     except ValueError:
-        raw = {}
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def parse_verdicts(text: str) -> dict[str, dict[str, Any]]:
+    """The judge's JSON, keyed by rubric id; a missing or malformed item fails."""
+    raw = first_json_object(text)
     out: dict[str, dict[str, Any]] = {}
     for rid, _ in RUBRIC:
-        item = raw.get(rid) if isinstance(raw, dict) else None
+        item = raw.get(rid)
         if isinstance(item, dict) and isinstance(item.get("pass"), bool):
             out[rid] = {"pass": item["pass"], "why": str(item.get("why") or "")}
         else:

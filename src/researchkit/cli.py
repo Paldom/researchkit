@@ -357,6 +357,13 @@ Site Research (optional):
     )
     score_parser.add_argument("name", help="Project name or path")
 
+    # --- verify command ---
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="Label each cited claim against its archived source (judge calls)",
+    )
+    verify_parser.add_argument("name", help="Project name or path")
+
     # --- council command ---
     council_parser = subparsers.add_parser(
         "council",
@@ -1605,6 +1612,27 @@ def cmd_score(args, service: SocialResearchService) -> int:
     return 0
 
 
+def cmd_verify(args, service: SocialResearchService) -> int:
+    """Handle 'verify': write claims.labels.jsonl for a finished project."""
+    project = find_project(args.name, args.projects_dir)
+    if not project:
+        print(f"Error: Project not found: {args.name}", file=sys.stderr)
+        return 1
+    try:
+        counts = service.verify(project)
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    print(
+        f"{counts['total']} claims ({counts['model']}): "
+        f"{counts['supported']} supported, {counts['unsupported']} unsupported, "
+        f"{counts['contradicted']} contradicted, {counts['unavailable']} unavailable",
+        file=sys.stderr,
+    )
+    print(f"wrote: {project.path / 'claims.labels.jsonl'}", file=sys.stderr)
+    return 0
+
+
 def cmd_brain(args) -> int:
     """Handle 'brain': create, list, or feed shared brains."""
     from researchkit.brains import (
@@ -2167,6 +2195,7 @@ SUBCOMMANDS = frozenset(
         "republish",
         "skill",
         "score",
+        "verify",
         "brain",
         "explore",
         "links",
@@ -2338,6 +2367,8 @@ def main() -> int:
         return cmd_skill(args, service)
     elif args.command == "score":
         return cmd_score(args, service)
+    elif args.command == "verify":
+        return cmd_verify(args, service)
     elif args.command == "brain":
         return cmd_brain(args)
     elif args.command == "advise":

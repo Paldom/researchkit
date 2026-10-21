@@ -68,6 +68,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Claim verifier v1: `researchkit verify <project>`** (PLAN 4.3). A
+  Claude Code judge labels each `claims.jsonl` row from its archived source
+  text alone: `supported`, `unsupported`, `contradicted`, or `unavailable`
+  (no archive, or no verdict; never counted as support). Sources are packed
+  into a few bounded calls, sentences are judged whole, and there is no
+  search step because the pages are already on disk. The labels go to
+  `claims.labels.jsonl` (verifier version and judge model on every row).
+  Advisory only until the labels are calibrated against human judgments.
+
 - **Rubric contract and `researchkit score`** (PLAN 4.4). `researchkit.rubric`
   holds one versioned list of binary checks (v1, nine items: facts cited,
   numbers dated, both readings on conflict, qualified single-source claims,

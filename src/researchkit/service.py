@@ -1025,6 +1025,18 @@ class SocialResearchService:
         )
         return result
 
+    def verify(self, project: Project) -> dict[str, Any]:
+        """Label each claims row against its archived source (PLAN 4.3).
+
+        On request; one Claude Code judge call per packed batch of sources.
+        Writes ``claims.labels.jsonl``, never rewrites the report or claims.
+        """
+        from researchkit.publish import _writers
+        from researchkit.verify import verify_claims
+
+        model, budget = _writers(self.get_effective_models(project.config.preset_name))
+        return verify_claims(project.path, model=model, max_budget=budget)
+
     def make_skill(self, project: Project) -> str | None:
         """Write skill/SKILL.md on request from a finished project (PLAN 2.14).
 
