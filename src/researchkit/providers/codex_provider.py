@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 from typing import Any
@@ -58,6 +59,13 @@ logger = logging.getLogger(__name__)
 # list — the headless CLIs return no citation array, and without the nudge
 # they often cite few or zero URLs (the agy/kimi providers ship the same
 # instruction; citation yield is the product).
+_DEEP_CONTRACT = (
+    "\n\nWork in rounds before answering: list the sub-questions this topic "
+    "needs answered; search for each; open and read the primary pages (docs, "
+    "papers, repos, the original post) rather than coverage of them; note what "
+    "is still unanswered or contradicted; then run one more search-and-read "
+    "round on exactly those gaps. Report what each round established."
+)
 _SOURCES_INSTRUCTION = (
     "\n\nAt the very end, add a '## Sources' section listing EVERY web source "
     "you used, one per line as a markdown link: - [title](url)."
@@ -137,6 +145,15 @@ class CodexProvider(BaseProvider):
         self.model_name = model or ""
         self.reasoning_effort = reasoning_effort
         self.codex_bin = codex_bin
+        # ponytail: experiment knob for the PLAN 3.8 deep A/B, Codex only (the
+        # CLI subclasses build their own commands). Promote to a preset option
+        # only if it wins the rubric without a support drop.
+        self._deep = (
+            os.getenv("RESEARCHKIT_DEPTH", "").lower() == "deep"
+            and type(self) is CodexProvider
+        )
+        if self._deep:
+            self.reasoning_effort = "xhigh"
 
     @property
     def _model_label(self) -> str:
@@ -156,6 +173,8 @@ class CodexProvider(BaseProvider):
         ]
         if web_search:
             cmd += ["-c", "tools.web_search=true"]
+            if self._deep:  # fresh pages, not the search cache
+                cmd += ["-c", 'web_search="live"']
         if self.model_name:
             cmd += ["-m", self.model_name]
         if self.reasoning_effort:
@@ -289,8 +308,9 @@ class CodexProvider(BaseProvider):
         self, system_prompt: str, user_prompt: str, label: str
     ) -> tuple[str, list[str]]:
         """Run one web-search query (Codex has no system role, so prompts join)."""
+        contract = _DEEP_CONTRACT if self._deep else ""
         return self._exec(
-            f"{system_prompt}\n\n{user_prompt}{_SOURCES_INSTRUCTION}",
+            f"{system_prompt}\n\n{user_prompt}{contract}{_SOURCES_INSTRUCTION}",
             web_search=True,
             label=label,
         )

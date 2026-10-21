@@ -1198,8 +1198,12 @@ class SocialResearchService:
         log_level: str = "DEBUG",
         materials: bool = True,
         materials_limit: int = 0,
+        decompose: bool = True,
     ) -> BoostedArtifacts:
         """Run an LLM council to improve the topic, then optionally fan out.
+
+        ``decompose=False`` keeps the council pre-pass (improved topic and
+        keywords) but never fans out: one run, the ablation arm of PLAN 5.4.
 
         The council always refines the topic and generates keywords. When boost is
         enabled in the active preset AND the council judges the topic worth
@@ -1243,7 +1247,8 @@ class SocialResearchService:
 
         subqueries = council_result.subqueries[: effective_models.boost_max_subprojects]
         should_boost = (
-            (effective_models.boost_enabled or force_boost)
+            decompose
+            and (effective_models.boost_enabled or force_boost)
             and council_result.decompose
             and len(subqueries) >= 2
         )

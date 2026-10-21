@@ -136,3 +136,23 @@ def test_claude_depth_from_the_json_envelope() -> None:
     }
     _, meta = ClaudeProvider()._parse_cli_json(json.dumps(envelope))
     assert meta["depth"] == {"turns": 7, "searches": 4, "stop_reason": "success"}
+
+
+def test_deep_knob_is_codex_only_and_adds_live_search_and_the_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PLAN 3.8 experiment arm: RESEARCHKIT_DEPTH=deep."""
+    import researchkit.providers.codex_provider as mod
+    from researchkit.providers.kimicli_provider import KimiCliProvider
+
+    monkeypatch.setenv("RESEARCHKIT_DEPTH", "deep")
+    deep = mod.CodexProvider(model="gpt-6.1-sol", reasoning_effort="high")
+    assert deep.reasoning_effort == "xhigh"
+    assert 'web_search="live"' in deep._build_cmd(web_search=True)
+    prompts: list[str] = []
+    monkeypatch.setattr(deep, "_exec", lambda p, **k: prompts.append(p) or ("", []))
+    deep._run_query("sys", "user", "l")
+    assert "one more search-and-read round" in prompts[0]
+    assert not KimiCliProvider(model="kimi-code/k3")._deep
+    monkeypatch.delenv("RESEARCHKIT_DEPTH")
+    assert not mod.CodexProvider(model="m")._deep

@@ -374,3 +374,39 @@ class TestOwnBrain:
     ) -> None:
         assert self._run(monkeypatch, tmp_path, own_brain=False) == []
         assert self._run(monkeypatch, tmp_path, materials=False) == []
+
+
+def test_council_pre_pass_without_fan_out(monkeypatch, tmp_path: Path) -> None:
+    """PLAN 5.4 ablation arm: decompose=False keeps the council, runs once."""
+    import researchkit.council as council_module
+    from researchkit.council import CouncilResult
+
+    class FakeCouncil:
+        @classmethod
+        def from_effective_models(cls, em: object) -> FakeCouncil:
+            return cls()
+
+        def deliberate(self, topic: str, count: int = 10) -> CouncilResult:
+            return CouncilResult(
+                improved_topic="better topic",
+                keywords=["k"],
+                decompose=True,
+                subqueries=["a sub-question", "another sub-question"],
+            )
+
+    monkeypatch.setattr(council_module, "LLMCouncil", FakeCouncil)
+    svc = SocialResearchService(projects_dir=tmp_path)
+    monkeypatch.setattr(
+        svc, "get_effective_models", lambda preset_name=None: _make_effective_models()
+    )
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        svc,
+        "create_and_run_project",
+        lambda **kw: (calls.append(kw), (object(), object()))[1],
+    )
+    result = svc.create_and_run_boosted(
+        "topic", providers=["hackernews"], force_boost=True, decompose=False
+    )
+    assert result.decomposed is False
+    assert [c["topic"] for c in calls] == ["better topic"]

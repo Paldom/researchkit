@@ -83,6 +83,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Experiment arms for the PLAN 3.8 and 5.4 A/Bs.** `RESEARCHKIT_DEPTH=deep`
+  runs the Codex research slot with live search, `xhigh` effort and a
+  rounds contract (sub-questions, search, primary pages, gaps, one
+  follow-up round). Other CLIs ignore it. It becomes a preset option only
+  if it wins. `create_and_run_boosted(decompose=False)` keeps the council
+  pre-pass (improved topic and keywords) but never fans out.
+
 - `researchkit.verify.calibration_report`: the verifier's agreement with
   human labels (overall agreement, Cohen's kappa, confusion counts). This is
   the check the verifier must pass before it may ever block a run (PLAN 4.2).
