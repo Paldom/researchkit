@@ -77,6 +77,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- skills.sh hits are marked as procedures (`meta.evidence = "procedures"`).
+  The meta-summary is told, through the pipeline-verified channel, never to
+  cite them as support or count them toward corroboration, and `result.json`
+  lists them as `skill_candidates` for skillskit.
+
 - The keyless providers query with a few key terms instead of the raw topic
   sentence (`researchkit.queries`: deterministic, no model call). Names and
   identifiers rank first; dates, numbers and research filler are dropped;

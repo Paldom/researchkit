@@ -276,6 +276,9 @@ class SkillsShProvider(BaseProvider):
                 raw_text=text,
                 sources=sources,
                 meta={
+                    # Installable procedures, not evidence: kept out of
+                    # corroboration and listed as skill_candidates.
+                    "evidence": "procedures",
                     "skills_found": len(hits),
                     "relevant": True,
                     "top_installs": int(hits[0].get("installs") or 0),

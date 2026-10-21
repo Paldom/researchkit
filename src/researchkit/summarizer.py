@@ -277,7 +277,11 @@ class Summarizer:
         providers_data = [
             {"provider": r.provider, "content": r.raw_text} for r in successful_results
         ]
-        uncited_providers = [r.provider for r in successful_results if not r.sources]
+        uncited_providers = [
+            r.provider
+            for r in successful_results
+            if not r.sources and r.meta.get("evidence") != "procedures"
+        ]
 
         system_prompt = get_meta_summary_system_prompt()
         user_prompt = get_meta_summary_user_prompt(
@@ -285,6 +289,12 @@ class Summarizer:
             days=days,
             providers_data=providers_data,
             uncited_providers=uncited_providers or None,
+            procedure_providers=[
+                r.provider
+                for r in successful_results
+                if r.meta.get("evidence") == "procedures"
+            ]
+            or None,
         )
 
         try:

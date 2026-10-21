@@ -239,3 +239,22 @@ class TestIntegrity:
         (d / "b.md").write_text("---\nurl: https://y\n---\nbody")
         assert _cached_origin(d / "a.md") == "summary"
         assert _cached_origin(d / "b.md") == "cached"
+
+
+def test_skill_listings_are_procedures_not_evidence() -> None:
+    """PLAN 1.12: skills.sh hits are installable procedures; the meta-summary
+    gets that as a trusted-channel instruction, not an in-band note."""
+    from researchkit.prompts import get_meta_summary_user_prompt
+
+    prompt = get_meta_summary_user_prompt(
+        topic="t",
+        days=7,
+        providers_data=[{"provider": "skillsh", "content": "x"}],
+        procedure_providers=["skillsh"],
+    )
+    assert "procedures, not evidence" in prompt
+    assert "corroboration" in prompt
+    plain = get_meta_summary_user_prompt(
+        topic="t", days=7, providers_data=[{"provider": "grok", "content": "x"}]
+    )
+    assert "Procedure listings" not in plain

@@ -656,6 +656,13 @@ class SocialResearchService:
             )
             report_json = bundle.to_dict()
             report_json["run_status"] = status
+            # skills.sh-style hits go to skillskit as candidates, not evidence.
+            report_json["skill_candidates"] = [
+                s.url
+                for r in bundle.provider_results
+                if r.meta.get("evidence") == "procedures"
+                for s in r.sources
+            ]
 
             return ResearchArtifacts(
                 run_id=run_id,
