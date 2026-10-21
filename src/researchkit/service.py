@@ -1321,6 +1321,8 @@ class SocialResearchService:
             }
         )
 
+        from researchkit.safe_io import carry_context
+
         def run_one(sub: Project) -> ResearchArtifacts:
             def sub_progress(evt: ProgressEvent) -> None:
                 if progress:
@@ -1339,7 +1341,9 @@ class SocialResearchService:
 
         sub_artifacts: list[ResearchArtifacts] = []
         with ThreadPoolExecutor(max_workers=len(sub_projects)) as executor:
-            future_to_sub = {executor.submit(run_one, s): s for s in sub_projects}
+            future_to_sub = {
+                executor.submit(carry_context(run_one), s): s for s in sub_projects
+            }
             for future in as_completed(future_to_sub):
                 sub = future_to_sub[future]
                 try:

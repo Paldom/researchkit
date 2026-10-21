@@ -35,7 +35,11 @@ from researchkit.prompts import (
     get_council_member_system_prompt,
     get_council_member_user_prompt,
 )
-from researchkit.safe_io import claude_subscription_env, run_subprocess
+from researchkit.safe_io import (
+    carry_context,
+    claude_subscription_env,
+    run_subprocess,
+)
 from researchkit.utils import extract_json_object
 
 if TYPE_CHECKING:
@@ -549,7 +553,8 @@ class LLMCouncil:
 
         with ThreadPoolExecutor(max_workers=max(1, len(self.members))) as pool:
             futures = [
-                pool.submit(run_member, i, m) for i, m in enumerate(self.members)
+                pool.submit(carry_context(run_member), i, m)
+                for i, m in enumerate(self.members)
             ]
             return [f.result() for f in futures]
 
@@ -739,7 +744,7 @@ class LLMCouncil:
             return entry
 
         with ThreadPoolExecutor(max_workers=max(1, len(self.members))) as pool:
-            return list(pool.map(run_member, self.members))
+            return list(pool.map(carry_context(run_member), self.members))
 
     def _gather_consult_answers(self, question: str) -> list[ConsultAnswer]:
         """Stage 1 of consult: every member answers independently, in parallel."""
@@ -775,7 +780,8 @@ class LLMCouncil:
 
         with ThreadPoolExecutor(max_workers=max(1, len(self.members))) as pool:
             futures = [
-                pool.submit(run_member, i, m) for i, m in enumerate(self.members)
+                pool.submit(carry_context(run_member), i, m)
+                for i, m in enumerate(self.members)
             ]
             return [f.result() for f in futures]
 

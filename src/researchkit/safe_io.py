@@ -24,6 +24,7 @@ across the codebase:
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import ipaddress
 import logging
 import os
@@ -33,8 +34,11 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, TypeVar
 from urllib.parse import urljoin, urlsplit
 
 import requests
@@ -45,6 +49,54 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Subprocess: own process group, kill-the-group on timeout, UTF-8 decoding
 # ---------------------------------------------------------------------------
+
+
+# --- Cancellation scopes ------------------------------------------------------
+# A background run (an MCP explore) sets a scope; every CLI it starts, on any
+# thread that carries its context, registers under it. cancel_scope() kills
+# those process groups and refuses new ones, so a cancelled run stops
+# spending instead of finishing its remaining 30-minute calls.
+
+_scope: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "cancel_scope", default=None
+)
+_scope_lock = threading.Lock()
+_live: dict[str, set[subprocess.Popen[str]]] = {}
+_cancelled: set[str] = set()
+_T = TypeVar("_T")
+
+
+class RunCancelled(RuntimeError):
+    """The run this call belongs to was cancelled; no CLI was started."""
+
+
+def set_cancel_scope(scope: str | None) -> None:
+    """Tag subprocesses started from this context (and its children)."""
+    _scope.set(scope)
+
+
+def cancel_scope(scope: str) -> int:
+    """Kill every live CLI under ``scope`` and refuse new ones; returns the kill count."""
+    with _scope_lock:
+        _cancelled.add(scope)
+        procs = list(_live.pop(scope, ()))
+    for proc in procs:
+        _kill_process_group(proc)
+    return len(procs)
+
+
+def carry_context(fn: Callable[..., _T]) -> Callable[..., _T]:
+    """``fn`` bound to the caller's contextvars, for pool workers.
+
+    ``ThreadPoolExecutor`` workers start with an empty context; without this
+    a pooled CLI call loses the run's cancel scope (and its run id).
+    """
+    parent = contextvars.copy_context()
+
+    def run(*args: Any, **kwargs: Any) -> _T:
+        return parent.copy().run(fn, *args, **kwargs)
+
+    return run
 
 
 def _kill_process_group(proc: subprocess.Popen) -> None:
@@ -101,7 +153,13 @@ def run_subprocess(
     else:
         popen_kwargs["start_new_session"] = True
 
-    proc = subprocess.Popen(cmd, **popen_kwargs)  # type: ignore[call-overload]
+    scope = _scope.get()
+    with _scope_lock:
+        if scope is not None and scope in _cancelled:
+            raise RunCancelled(f"run {scope} was cancelled")
+        proc = subprocess.Popen(cmd, **popen_kwargs)  # type: ignore[call-overload]
+        if scope is not None:
+            _live.setdefault(scope, set()).add(proc)
     try:
         out, err = proc.communicate(input=input, timeout=timeout)
     except subprocess.TimeoutExpired as e:
@@ -115,6 +173,12 @@ def run_subprocess(
     except BaseException:
         _kill_process_group(proc)
         raise
+    finally:
+        if scope is not None:
+            with _scope_lock:
+                _live.get(scope, set()).discard(proc)
+    if scope is not None and scope in _cancelled:
+        raise RunCancelled(f"run {scope} was cancelled")
     return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
 
 

@@ -168,7 +168,7 @@ class _ExploreRun:
 
     run_id: str
     topic: str
-    status: str = "running"  # running | done | error
+    status: str = "running"  # running | done | error | cancelled
     stage: str = "queued"
     project: str | None = None
     error: str | None = None
@@ -223,6 +223,11 @@ def explore_start(topic: str, days: int = 7, materials: bool = True) -> dict[str
         state.stage = str(event.get("stage") or state.stage)
 
     def work() -> None:
+        from researchkit.safe_io import RunCancelled, set_cancel_scope
+
+        # Every CLI this explore starts registers under its run id, so
+        # cancel_run can stop the spend (PLAN 5.2).
+        set_cancel_scope(run_id)
         try:
             result = _get_service().create_and_run_boosted(
                 topic=state.topic,
@@ -235,15 +240,43 @@ def explore_start(topic: str, days: int = 7, materials: bool = True) -> dict[str
                 materials=materials,
             )
             state.project = result.project.name
-            state.status = "done"
-            state.stage = "done"
+            if state.status != "cancelled":
+                state.status = "done"
+                state.stage = "done"
+        except RunCancelled:
+            state.status = "cancelled"
         except Exception as e:  # surfaced through explore_status, never raised here
+            if state.status == "cancelled":
+                return
             logger.exception("Explore run failed")
             state.status = "error"
             state.error = str(e)[:500]
 
     threading.Thread(target=work, name=f"explore-{run_id}", daemon=True).start()
     return state.to_dict()
+
+
+@mcp.tool()
+def cancel_run(run_id: str) -> dict[str, Any]:
+    """Stop a running explore: kill its harness CLIs and refuse new ones.
+
+    What already finished (archived materials, partial provider results)
+    stays on disk; the run ends with status "cancelled".
+
+    Args:
+        run_id: The id returned by explore_start.
+    """
+    from researchkit.safe_io import cancel_scope
+
+    with _explore_lock:
+        state = _explore_runs.get(run_id)
+    if state is None:
+        raise ValueError(f"Unknown run id {run_id!r}")
+    if state.status != "running":
+        return state.to_dict()
+    state.status = "cancelled"
+    killed = cancel_scope(run_id)
+    return {**state.to_dict(), "killed_processes": killed}
 
 
 @mcp.tool()
@@ -326,10 +359,13 @@ def get_research_artifact(project_name: str, artifact: str, note: str = "") -> s
 
     Args:
         project_name: Exact project folder name from list_research_projects.
-        artifact: "article" (article.md), "skill" (skill/SKILL.md) or "brain".
-        note: For "brain" only — a brain-relative markdown path such as
+        artifact: "article" (article.md), "skill" (skill/SKILL.md), "brain",
+            "claims" (claims.jsonl, plus claims.labels.jsonl when verified) or
+            "materials" (the archive manifest, or one archived source).
+        note: For "brain" — a brain-relative markdown path such as
             "notes/topics/<slug>.md" (the index is returned when empty; every
-            note's path is listed there and in the index of each level).
+            note's path is listed there and in the index of each level). For
+            "materials" — a material file name from the manifest.
 
     Returns:
         The artifact's markdown. list_research_projects reports has_article,
@@ -345,9 +381,29 @@ def get_research_artifact(project_name: str, artifact: str, note: str = "") -> s
                 f"Project {project_name!r} has no brain note {note or 'index.md'!r}"
             )
         return text
+    if artifact == "materials":
+        from researchkit.safe_io import safe_join_within
+
+        mats = project.path / "materials"
+        target = safe_join_within(mats, note) if note else mats / "index.json"
+        if not target.is_file():
+            raise ValueError(
+                f"Project {project_name!r} has no material {note or 'index'!r}"
+            )
+        return target.read_text(encoding="utf-8")
+    if artifact == "claims":
+        labels = project.path / "claims.labels.jsonl"
+        if not project.claims_path.is_file():
+            raise ValueError(f"Project {project_name!r} has no claims.jsonl")
+        text = project.claims_path.read_text(encoding="utf-8")
+        if labels.is_file():
+            text += "\n# claims.labels.jsonl\n" + labels.read_text(encoding="utf-8")
+        return text
     paths = {"article": project.article_path, "skill": project.skill_path}
     if artifact not in paths:
-        raise ValueError("artifact must be one of: article, skill, brain")
+        raise ValueError(
+            "artifact must be one of: article, skill, brain, claims, materials"
+        )
     if not paths[artifact].is_file():
         raise ValueError(
             f"Project {project_name!r} has no {artifact} — the writer skipped it "

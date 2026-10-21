@@ -109,6 +109,7 @@ def verify_claims(
 ) -> dict[str, Any]:
     """Label every claims row; write ``claims.labels.jsonl``; return the counts."""
     from researchkit.publish import _Writer
+    from researchkit.safe_io import carry_context
 
     claims = project_dir / "claims.jsonl"
     if not claims.is_file():
@@ -138,7 +139,7 @@ def verify_claims(
         return _parse(writer.write(prompt) or "", keys)
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        for result in pool.map(judge, _batches(groups, texts)):
+        for result in pool.map(carry_context(judge), _batches(groups, texts)):
             labels.update(result)
 
     out = project_dir / "claims.labels.jsonl"

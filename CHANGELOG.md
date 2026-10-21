@@ -73,6 +73,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **MCP: `cancel_run` and the pack's claims and materials** (PLAN 5.2).
+  `cancel_run(run_id)` stops a running explore. Every harness CLI the run
+  started is registered under its run id (cancel scopes in `safe_io`, and
+  pool workers now carry the run's context). Its process groups are
+  killed, new CLI calls refuse to start, and what already landed stays on
+  disk. `get_research_artifact` also serves `claims` (with the verifier's
+  labels when present) and `materials` (the manifest, or one archived file
+  by name, with path traversal refused). The connector-boundary prototype
+  is deferred: no second consumer yet, so no new plugin type.
+
 - **Provider-native citations reach the claims table** (PLAN A.2, A.9). The
   API providers now keep their structured claim→source locators when they
   read the response: OpenAI `url_citation` offsets (Responses or Chat

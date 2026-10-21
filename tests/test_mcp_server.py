@@ -38,6 +38,7 @@ def test_tools_are_registered() -> None:
         "explore_start",
         "explore_status",
         "explore_report",
+        "cancel_run",
         "list_brains",
         "brain_context",
     }
@@ -231,6 +232,40 @@ class TestExploreOverMcp:
         assert "perplexity" not in seen["providers"]
 
 
+class TestCancelRun:
+    def test_cancel_stops_a_running_explore(self, monkeypatch: Any) -> None:
+        import threading
+
+        from researchkit.safe_io import run_subprocess
+
+        release = threading.Event()
+
+        class SlowService:
+            def create_and_run_boosted(self, **kwargs: Any) -> Any:
+                release.set()
+                # A harness CLI that would run for half a minute.
+                run_subprocess(
+                    ["python3", "-c", "import time; time.sleep(30)"], timeout=60
+                )
+                raise AssertionError("cancel did not stop the CLI")
+
+        monkeypatch.setattr(mcp_module, "_get_service", lambda: SlowService())
+        started = mcp_module.explore_start("cancel me")
+        assert release.wait(5)
+        time.sleep(0.3)
+        out = mcp_module.cancel_run(started["run_id"])
+        assert out["status"] == "cancelled" and out["killed_processes"] == 1
+        for _ in range(100):
+            if mcp_module.explore_status(started["run_id"])["status"] == "cancelled":
+                break
+            time.sleep(0.05)
+        assert mcp_module.explore_status(started["run_id"])["status"] == "cancelled"
+
+    def test_unknown_run(self) -> None:
+        with pytest.raises(ValueError, match="Unknown run id"):
+            mcp_module.cancel_run("nope")
+
+
 class TestHttpTransportConfig:
     def test_loopback_default_allows_local_hosts(self) -> None:
         mcp_module._configure_http("127.0.0.1", 8765, [])
@@ -274,3 +309,20 @@ def test_brain_tools_refuse_paths() -> None:
         _named_brain("/etc")
     with pytest.raises(ValueError):
         _named_brain("../x")
+
+
+def test_materials_and_claims_artifacts(monkeypatch: Any, tmp_path: Path) -> None:
+    project = _make_project(tmp_path, "20261021_mats")
+    mats = project.path / "materials"
+    mats.mkdir()
+    (mats / "index.json").write_text('{"entries": []}', encoding="utf-8")
+    (mats / "001-a.md").write_text("archived page", encoding="utf-8")
+    project.claims_path.write_text('{"id": "c1"}\n', encoding="utf-8")
+    monkeypatch.setattr(mcp_module, "_find_project", lambda name: project)
+
+    get = mcp_module.get_research_artifact
+    assert get("p", "materials") == '{"entries": []}'
+    assert get("p", "materials", "001-a.md") == "archived page"
+    with pytest.raises(ValueError, match="unsafe"):
+        get("p", "materials", "../config.json")
+    assert get("p", "claims") == '{"id": "c1"}\n'

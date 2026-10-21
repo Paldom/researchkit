@@ -172,14 +172,15 @@ curl -s -X POST http://<host>:8765/mcp \
 
 ### The tools
 
-| Tool                                                     | What it does                                                           |
-| -------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `explore_start(topic, days, materials)`                  | Starts a boosted subscription-only run, returns a `run_id` immediately |
-| `explore_status(run_id)`                                 | status / stage / elapsed — poll this                                   |
-| `explore_report(run_id)`                                 | the super-summary once it's done                                       |
-| `research(topic, days, providers, preset)`               | One plain run, blocking (1–5 min)                                      |
-| `list_research_projects()` / `get_research_report(name)` | Read the archive on that machine                                       |
-| `get_research_artifact(name, artifact, note)`            | `article`, `skill`, or `brain` (the index, or one note by path)        |
+| Tool                                                     | What it does                                                                                |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `explore_start(topic, days, materials)`                  | Starts a boosted subscription-only run, returns a `run_id` immediately                      |
+| `explore_status(run_id)`                                 | status / stage / elapsed — poll this                                                        |
+| `cancel_run(run_id)`                                     | stop a running explore: kills its harness CLIs, keeps what landed                           |
+| `explore_report(run_id)`                                 | the super-summary once it's done                                                            |
+| `research(topic, days, providers, preset)`               | One plain run, blocking (1–5 min)                                                           |
+| `list_research_projects()` / `get_research_report(name)` | Read the archive on that machine                                                            |
+| `get_research_artifact(name, artifact, note)`            | `article`, `skill`, `brain` (index or a note), `claims`, `materials` (manifest or one file) |
 
 Explore is start/poll/read rather than one call because a run takes 15–40
 minutes — far longer than any MCP client holds a tool call open. Run ids live

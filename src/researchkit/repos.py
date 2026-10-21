@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from researchkit.safe_io import run_subprocess
+from researchkit.safe_io import carry_context, run_subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -535,7 +535,7 @@ def extract_repos_for_run(
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
         for url in urls:
-            executor.submit(one, url)
+            executor.submit(carry_context(one), url)
 
     with done_lock:
         finished = list(done)

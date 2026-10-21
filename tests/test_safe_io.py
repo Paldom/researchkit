@@ -318,3 +318,41 @@ class TestGuardNoNestedRun:
         monkeypatch.setenv(NESTED_ENV_VAR, str(os.getpid() + 1))
         monkeypatch.setattr("sys.argv", ["researchkit", "explore", "some topic"])
         assert main() == 2
+
+
+class TestCancelScope:
+    """PLAN 5.2: cancelling a run kills its CLIs and refuses new ones."""
+
+    def test_cancel_kills_live_cli_and_refuses_new(self) -> None:
+        import threading
+
+        from researchkit.safe_io import (
+            RunCancelled,
+            cancel_scope,
+            carry_context,
+            set_cancel_scope,
+        )
+
+        set_cancel_scope("run-x")
+        errors: list[BaseException] = []
+
+        def long_cli() -> None:
+            try:
+                run_subprocess(
+                    ["python3", "-c", "import time; time.sleep(30)"], timeout=60
+                )
+            except BaseException as e:
+                errors.append(e)
+
+        worker = threading.Thread(target=carry_context(long_cli))
+        started = time.monotonic()
+        worker.start()
+        time.sleep(0.5)
+        assert cancel_scope("run-x") == 1  # the pooled call carried the scope
+        worker.join(10)
+        assert time.monotonic() - started < 10
+        assert errors and isinstance(errors[0], RunCancelled)
+        with pytest.raises(RunCancelled):
+            run_subprocess(["python3", "-c", "print(1)"], timeout=10)
+        set_cancel_scope(None)
+        assert run_subprocess(["python3", "-c", "print(1)"], timeout=10).stdout == "1\n"
