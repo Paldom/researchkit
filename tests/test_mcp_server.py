@@ -143,7 +143,6 @@ class TestExploreOverMcp:
                 return TestExploreOverMcp._fake_result(project)
 
         monkeypatch.setattr(mcp_module, "_get_service", lambda: FakeService())
-        monkeypatch.setattr(mcp_module, "_archive_materials", lambda result: None)
 
         started = mcp_module.explore_start("remote topic", days=3)
         # The call must not block on the run itself.
@@ -174,7 +173,6 @@ class TestExploreOverMcp:
                 )
 
         monkeypatch.setattr(mcp_module, "_get_service", lambda: FakeService())
-        monkeypatch.setattr(mcp_module, "_archive_materials", lambda result: None)
 
         started = mcp_module.explore_start("slow topic")
         with pytest.raises(ValueError, match="still running"):
@@ -221,7 +219,6 @@ class TestExploreOverMcp:
                 )
 
         monkeypatch.setattr(mcp_module, "_get_service", lambda: FakeService())
-        monkeypatch.setattr(mcp_module, "_archive_materials", lambda result: None)
         started = mcp_module.explore_start("preset check")
         for _ in range(100):
             if mcp_module.explore_status(started["run_id"])["status"] != "running":

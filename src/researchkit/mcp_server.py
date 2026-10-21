@@ -232,10 +232,9 @@ def explore_start(topic: str, days: int = 7, materials: bool = True) -> dict[str
                 site_research_enabled=False,
                 force_boost=True,
                 progress=progress,
+                materials=materials,
             )
             state.project = result.project.name
-            if materials:
-                _archive_materials(result)
             state.status = "done"
             state.stage = "done"
         except Exception as e:  # surfaced through explore_status, never raised here
@@ -245,23 +244,6 @@ def explore_start(topic: str, days: int = 7, materials: bool = True) -> dict[str
 
     threading.Thread(target=work, name=f"explore-{run_id}", daemon=True).start()
     return state.to_dict()
-
-
-def _archive_materials(result: Any) -> None:
-    """Download cited sources for a finished explore; never fatal.
-
-    A boosted parent cites its sub-reports rather than the web, so the sources
-    live in the sub-projects — archive there. The report already exists by this
-    point, so a failed archive degrades the pack, it does not fail the run.
-    """
-    from researchkit.materials import download_materials
-
-    targets = result.sub_projects or [result.project]
-    for target in targets:
-        try:
-            download_materials(target)
-        except Exception as e:
-            logger.warning("Materials archive failed for %s: %s", target.name, e)
 
 
 @mcp.tool()

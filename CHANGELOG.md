@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The HTTP API ignored `materials: false` and `materials_limit` for the
+  in-run archive, and a boosted `--no-materials` / `--materials-limit` run
+  never passed either flag to its sub-projects. Both now reach every run.
+
 - `--providers` defaulted to `openai gemini grok perplexity` on the command
   line, so `--preset harness-fast` silently ran a Codex research slot and the
   Perplexity API instead of its declared set (found by a live validation
@@ -132,6 +136,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `github: codex:gpt-6.1-sol`.
 
 ### Changed
+
+- **One archive and one brain per run, built by the service** (PLAN 3.5).
+  The CLI, the HTTP server and the MCP server each re-ran the materials
+  download and the brain build after a run that had already archived its
+  sources in-run, and a boosted run did that once per sub-project. Now
+  `run_project` builds the pack's `brain/` right after `result.json`, and a
+  boosted run builds only the parent's, which covers every sub-project.
+  `researchkit materials <run>` still re-downloads on request.
 
 - **Repo harvest runs beside the archive download** (PLAN 3.4), so the
   writers wait for the slower of the two rather than both in turn. Every

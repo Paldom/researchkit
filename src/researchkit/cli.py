@@ -958,6 +958,22 @@ def _download_materials_for(
     return 0
 
 
+def _print_pack(project) -> None:
+    """Report the archive and brain a run built in-service (no second fetch)."""
+    import json
+
+    index = project.path / "materials" / "index.json"
+    if index.is_file():
+        manifest = json.loads(index.read_text(encoding="utf-8"))
+        print(
+            f"Materials: {manifest.get('fetched', 0)}/{manifest.get('total_cited', 0)} "
+            f"sources archived in {index.parent.resolve()}",
+            file=sys.stderr,
+        )
+    if (project.brain_dir / "index.md").is_file():
+        print(f"Brain: {project.brain_dir.resolve()}", file=sys.stderr)
+
+
 def _brain_target(args) -> Path | None:
     """The shared brain a run feeds: ``--brain`` (name or path) or ``--ingest`` (path)."""
     if getattr(args, "brain", None):
@@ -1150,10 +1166,8 @@ def cmd_run(args, service: SocialResearchService) -> int:
     # nothing cited to archive, and a hollow topic note would pollute a brain.
     handoff_rc = 0
     if not all_failed:
-        if getattr(args, "materials", True):
-            _download_materials_for(
-                project, limit=getattr(args, "materials_limit", DEFAULT_LIMIT)
-            )
+        # Archived and brained inside the run (archive-first); just report.
+        _print_pack(project)
         # Repos were harvested inside the run (and fed to the analysis); a
         # second pass here would re-clone what was already extracted.
         # The service already ingested into the shared brain (if any) right
@@ -1938,6 +1952,8 @@ def _cmd_instant_boosted(args, service: SocialResearchService, topic: str) -> in
             force_boost=True,
             progress=progress,
             log_level=args.log_level,
+            materials=getattr(args, "materials", True),
+            materials_limit=getattr(args, "materials_limit", 0) or 0,
         )
     except KeyboardInterrupt:
         print("\nInterrupted by user", file=sys.stderr)
@@ -1956,11 +1972,7 @@ def _cmd_instant_boosted(args, service: SocialResearchService, topic: str) -> in
         artifacts = result.single_artifacts
         handoff_rc = 0
         if artifacts:
-            if getattr(args, "materials", True):
-                _download_materials_for(
-                    result.project,
-                    limit=getattr(args, "materials_limit", DEFAULT_LIMIT),
-                )
+            _print_pack(result.project)
             if getattr(args, "ingest", None):
                 handoff_rc = _ingest_into_brain(result.project, args.ingest)
             if getattr(args, "brain", None):
@@ -1984,22 +1996,10 @@ def _cmd_instant_boosted(args, service: SocialResearchService, topic: str) -> in
     for sp in result.sub_projects:
         print(f"  - {sp.config.topic}  [{sp.path}]", file=sys.stderr)
 
-    # Each completed sub-project cites real URLs — archive them there. The
-    # parent's report cites the sub-reports, not the web, so it has no
-    # materials of its own (brainkit ingests subprojects/ recursively).
+    # Each sub-project archived its citations in-run; the parent's one brain
+    # spans the whole study (brainkit recurses into subprojects/).
     handoff_rc = 0
-    if getattr(args, "materials", True):
-        for sp in result.sub_projects:
-            if sp.has_results:
-                _download_materials_for(
-                    sp, limit=getattr(args, "materials_limit", DEFAULT_LIMIT)
-                )
-        # The parent's brain spans the whole study (brainkit recurses into
-        # subprojects/), so it is built once the sub-packs are archived.
-        from researchkit.brain import build_brain
-
-        if build_brain(result.project):
-            print(f"Brain: {result.project.brain_dir.resolve()}", file=sys.stderr)
+    _print_pack(result.project)
     if getattr(args, "ingest", None):
         handoff_rc = _ingest_into_brain(result.project, args.ingest)
     if getattr(args, "brain", None):
@@ -2068,10 +2068,8 @@ def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
     # nothing cited to archive, and a hollow topic note would pollute a brain.
     handoff_rc = 0
     if not all_failed:
-        if getattr(args, "materials", True):
-            _download_materials_for(
-                project, limit=getattr(args, "materials_limit", DEFAULT_LIMIT)
-            )
+        # Archived and brained inside the run (archive-first); just report.
+        _print_pack(project)
         # Repos were harvested inside the run (and fed to the analysis); a
         # second pass here would re-clone what was already extracted.
         # The service already ingested into the shared brain (if any) right

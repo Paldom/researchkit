@@ -342,3 +342,35 @@ class TestArchiveFirst:
         st = run_status([r], "article", {"fetched": 0, "total_cited": 5})
         assert st["status"] == "failed"
         assert "no cited source could be archived" in st["reasons"]
+
+
+class TestOwnBrain:
+    """PLAN 3.5: the service builds the pack's brain once, in one place."""
+
+    def _run(self, monkeypatch, tmp_path: Path, **kwargs: object) -> list[str]:
+        import researchkit.brain as brain_module
+        import researchkit.service as service_module
+
+        built: list[str] = []
+        monkeypatch.setattr(service_module, "InsightAggregator", FakeAggregator)
+        monkeypatch.setattr(
+            brain_module, "build_brain", lambda project: built.append(project.name)
+        )
+        monkeypatch.setattr(
+            service_module,
+            "run_status",
+            lambda *a: {"status": "ok", "reasons": [], "slots": {}, "with_sources": 1},
+        )
+        svc = SocialResearchService(projects_dir=tmp_path)
+        project = svc.create_project(topic="brain", providers=["openai"])
+        svc.run_project(project, **kwargs)
+        return built
+
+    def test_run_builds_its_own_brain(self, monkeypatch, tmp_path: Path) -> None:
+        assert len(self._run(monkeypatch, tmp_path)) == 1
+
+    def test_sub_projects_and_no_materials_skip_it(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        assert self._run(monkeypatch, tmp_path, own_brain=False) == []
+        assert self._run(monkeypatch, tmp_path, materials=False) == []

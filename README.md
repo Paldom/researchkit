@@ -309,7 +309,7 @@ The run prints which providers it is reusing. `partial/` is deleted once `result
 
 ## Build a brain from your research
 
-Every run already carries its own brain: once the materials are archived, `projects/<run>/brain/` is built with [brainkit](https://github.com/Paldom/brainkit) when it is installed in the environment (`uv pip install -e ../brainkit --python .venv/bin/python`) — a topic note, one note per archived source, the report's sections, and an `index.md` to descend from. The web UI's Brain tab browses it; `brainkit --brain projects/<run>/brain search "question"` queries it. Boosted runs get one per sub-project and one over the whole study on the parent. `researchkit materials <run> --refresh` rebuilds it.
+Every run already carries its own brain: once the materials are archived, `projects/<run>/brain/` is built with [brainkit](https://github.com/Paldom/brainkit) when it is installed in the environment (`uv pip install -e ../brainkit --python .venv/bin/python`) — a topic note, one note per archived source, the report's sections, and an `index.md` to descend from. The web UI's Brain tab browses it; `brainkit --brain projects/<run>/brain search "question"` queries it. A boosted run gets one, on the parent, over the whole study (brainkit recurses into `subprojects/`); each sub-project archives its own citations during its run. `researchkit materials <run> --refresh` rebuilds it.
 
 **Shared brains** let many runs feed one brain. Create it in advance, point runs at it, attach earlier runs later; a run with `--brain` also starts from what the brain already knows (matching source notes join the evidence as citable "(earlier research)" sources, the web search still runs):
 

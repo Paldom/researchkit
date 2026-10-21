@@ -254,66 +254,6 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Unknown run id")
         return state
 
-    def _archive_materials(run_svc: Any, state: _RunState, params: ResearchIn) -> None:
-        """Download the sources the finished run cited into materials/.
-
-        Best-effort by design: the report already exists, so a failed archive
-        must degrade the pack, never fail the run. Boosted runs archive per
-        sub-project, since the parent cites the sub-reports rather than the web.
-        """
-        if not params.materials or not state.project:
-            return
-        from researchkit.materials import download_materials
-        from researchkit.project import find_project
-
-        try:
-            projects_dir = getattr(run_svc, "projects_dir", None) or PROJECTS_DIR
-            project = find_project(state.project, Path(projects_dir))
-            targets = project.list_subprojects() or [project] if project else []
-        except Exception as e:  # locating the pack must not fail the run either
-            logger.warning("Materials archive skipped (%s)", e)
-            return
-        for target in targets:
-            try:
-                state.events.put(
-                    {
-                        "stage": "materials_start",
-                        "message": f"Archiving sources for {target.name}",
-                    }
-                )
-                manifest = download_materials(target, limit=params.materials_limit)
-                state.events.put(
-                    {
-                        "stage": "materials_done",
-                        "message": (
-                            f"Archived {manifest['fetched']}/"
-                            f"{manifest['total_cited']} sources for {target.name}"
-                        ),
-                    }
-                )
-            except Exception as e:
-                logger.warning("Materials archive failed for %s: %s", target.name, e)
-                state.events.put(
-                    {"stage": "materials_error", "message": f"Archive failed: {e}"}
-                )
-        # The pack's brain is derived from the archive: one per target, and
-        # one over the whole study on a boosted parent (brainkit recurses).
-        from researchkit.brain import build_brain
-
-        for target in [*targets, *([project] if project and len(targets) > 1 else [])]:
-            state.events.put(
-                {"stage": "brain_start", "message": f"Building brain for {target.name}"}
-            )
-            built = build_brain(target)
-            state.events.put(
-                {
-                    "stage": "brain_done" if built else "brain_skipped",
-                    "message": f"Brain built for {target.name}"
-                    if built
-                    else f"Brain skipped for {target.name}",
-                }
-            )
-
     def _execute(state: _RunState, params: ResearchIn) -> None:
         try:
             # Fresh service per run unless one was injected (tests): isolates
@@ -335,6 +275,8 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
                     site_research_sites=params.site_research_sites,
                     force_boost=True,
                     progress=state.events.put,
+                    materials=params.materials,
+                    materials_limit=params.materials_limit,
                 )
                 state.project = boosted.project.name
             elif params.user_urls or params.user_files or params.user_texts:
@@ -355,7 +297,13 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
                     except Exception:
                         logger.warning("Skipping invalid user URL %r", url)
                 _attach_document_sources(run_svc, project, params)
-                run_svc.run_project(project, progress=state.events.put, brain=brain)
+                run_svc.run_project(
+                    project,
+                    progress=state.events.put,
+                    brain=brain,
+                    materials=params.materials,
+                    materials_limit=params.materials_limit,
+                )
                 state.project = project.name
             else:
                 project, _artifacts = run_svc.create_and_run_project(
@@ -370,9 +318,10 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
                     site_research_sites=params.site_research_sites,
                     progress=state.events.put,
                     brain=brain,
+                    materials=params.materials,
+                    materials_limit=params.materials_limit,
                 )
                 state.project = project.name
-            _archive_materials(run_svc, state, params)
             if params.boost and brain is not None and state.project:
                 # Boosted: one ingest of the parent (brainkit recurses).
                 from researchkit.brains import ingest_into

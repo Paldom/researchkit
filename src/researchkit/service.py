@@ -770,6 +770,7 @@ class SocialResearchService:
         materials: bool = True,
         materials_limit: int = 0,
         brain: Path | None = None,
+        own_brain: bool = True,
     ) -> ResearchArtifacts:
         """
         Run research for an existing project and save results to the project folder.
@@ -787,6 +788,13 @@ class SocialResearchService:
             repos_enabled: Harvest the GitHub repos this run cites into
                 ``repos/`` and feed compact cards to the final analysis.
             repo_keep_clones: Keep the cloned source trees on disk.
+            materials: Archive the cited sources before the writers (and build
+                the pack's own ``brain/`` from them after ``result.json``).
+            materials_limit: Cap on archived sources (0 = every cited one).
+            brain: A shared brain to ingest the finished run into.
+            own_brain: Build ``<project>/brain/``. A boosted run passes False
+                for its sub-projects and builds one brain on the parent,
+                which ingests ``subprojects/`` recursively (PLAN 3.5).
 
         Returns:
             ResearchArtifacts with results saved to project folder
@@ -874,6 +882,8 @@ class SocialResearchService:
                 outcome = {"brain": str(brain), "error": str(e)[:300]}
             artifacts.report_json["brain"] = outcome
             project.save_results(artifacts.report_json, artifacts.report_markdown)
+        if materials and own_brain and artifacts.status != "failed":
+            self._build_own_brain(project, progress)
         # result.json now supersedes the per-provider partials.
         project.clear_partials()
 
@@ -887,6 +897,20 @@ class SocialResearchService:
         return dataclasses.replace(
             artifacts, report_path=project.report_path, log_path=project.log_path
         )
+
+    @staticmethod
+    def _build_own_brain(project: Project, progress: ProgressCallback | None) -> None:
+        """The pack's ``brain/``, derived from its archive. Never raises."""
+        from researchkit.brain import build_brain
+
+        built = build_brain(project)
+        if progress:
+            progress(
+                {
+                    "stage": "brain_done" if built else "brain_skipped",
+                    "message": f"Brain: {built}" if built else "Brain skipped",
+                }
+            )
 
     def republish(
         self,
@@ -1131,6 +1155,8 @@ class SocialResearchService:
         force_boost: bool = False,
         progress: ProgressCallback | None = None,
         log_level: str = "DEBUG",
+        materials: bool = True,
+        materials_limit: int = 0,
     ) -> BoostedArtifacts:
         """Run an LLM council to improve the topic, then optionally fan out.
 
@@ -1205,6 +1231,8 @@ class SocialResearchService:
                 site_research_sites=site_research_sites,
                 progress=progress,
                 log_level=log_level,
+                materials=materials,
+                materials_limit=materials_limit,
             )
             return BoostedArtifacts(
                 project=project,
@@ -1257,7 +1285,16 @@ class SocialResearchService:
                 if progress:
                     progress({**evt, "subproject": sub.config.topic})
 
-            return self.run_project(sub, progress=sub_progress, log_level=log_level)
+            # Each sub archives its own citations in-run; only the parent
+            # gets a brain, over the whole study (PLAN 3.5).
+            return self.run_project(
+                sub,
+                progress=sub_progress,
+                log_level=log_level,
+                materials=materials,
+                materials_limit=materials_limit,
+                own_brain=False,
+            )
 
         sub_artifacts: list[ResearchArtifacts] = []
         with ThreadPoolExecutor(max_workers=len(sub_projects)) as executor:
@@ -1327,6 +1364,8 @@ class SocialResearchService:
                 else "Super-summary skipped",
             }
         )
+        if materials and sub_artifacts:
+            self._build_own_brain(parent, progress)
 
         return BoostedArtifacts(
             project=parent,

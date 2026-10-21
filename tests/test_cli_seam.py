@@ -50,7 +50,7 @@ class FakeBoostService:
 
 
 class TestBoostMaterials:
-    def test_materials_downloaded_per_subproject(
+    def test_boosted_run_archives_in_service_not_again_per_subproject(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         parent = _project(tmp_path, "parent")
@@ -75,12 +75,14 @@ class TestBoostMaterials:
             lambda p, limit=25, refresh=False: downloaded.append((p.name, limit)) or 0,
         )
         args = _boost_args(materials=True, materials_limit=7)
-        assert cli._cmd_instant_boosted(args, FakeBoostService(result), "t") == 0
-        # one download per RUN sub-project, honoring --materials-limit;
-        # the un-run sub and the parent (no web citations) are skipped
-        assert downloaded == [("sub_1", 7), ("sub_2", 7)]
+        svc = FakeBoostService(result)
+        assert cli._cmd_instant_boosted(args, svc, "t") == 0
+        # PLAN 3.5: each sub archived in-run and the parent built the one
+        # brain; the CLI only forwards the flags and never downloads again.
+        assert downloaded == []
+        assert svc.kwargs["materials"] is True and svc.kwargs["materials_limit"] == 7
 
-    def test_non_decomposed_run_downloads_materials(
+    def test_non_decomposed_run_does_not_download_twice(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         project = _project(tmp_path, "single")
@@ -99,7 +101,7 @@ class TestBoostMaterials:
         monkeypatch.setattr(cli, "_print_article_prompt_hint", lambda p: None)
         args = _boost_args(materials=True)
         assert cli._cmd_instant_boosted(args, FakeBoostService(result), "t") == 0
-        assert downloaded == ["single"]
+        assert downloaded == []
 
 
 class TestBoostHeartbeat:
