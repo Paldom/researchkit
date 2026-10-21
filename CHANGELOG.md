@@ -83,6 +83,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Main-content extraction and PDF text in the archive** (PLAN 4.7, 2.13;
+  new dependencies `trafilatura` and `pypdf`, approved 2026-10-21).
+  Archived pages are now trafilatura's main content. A bake-off on 36
+  recorded pages cut boilerplate from 1.37 to 0 markers per 1k words and
+  nav-like lines from 56% to 16%. The stdlib extractor stays as the
+  fallback when trafilatura returns under 50 words. PDFs are archived from
+  their text layer (first 60 pages, re-fetched once with a 20 MB cap when
+  the page cap truncated them). Scanned, encrypted or cut-off PDFs stay
+  `pdf_unparsed`, cited but link-only.
+
 - **MCP: `cancel_run` and the pack's claims and materials** (PLAN 5.2).
   `cancel_run(run_id)` stops a running explore. Every harness CLI the run
   started is registered under its run id (cancel scopes in `safe_io`, and

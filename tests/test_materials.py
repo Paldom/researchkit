@@ -661,3 +661,94 @@ class TestFetchPolicy:
         assert statuses["https://hbr.example/teaser"] == "paywall"
         assert statuses["https://x.com/a/1"] == "tos-blocked"
         assert called.call_count == 1  # x.com never fetched
+
+
+def _text_pdf(text: str) -> bytes:
+    """A minimal one-page PDF with a real text layer (no binary fixtures)."""
+    stream = f"BT /F1 10 Tf 20 700 Td ({text}) Tj ET".encode()
+    objs = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+        b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for i, body in enumerate(objs, start=1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % i + body + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+    out += b"".join(b"%010d 00000 n \n" % o for o in offsets)
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (
+        len(objs) + 1,
+        xref,
+    )
+    return bytes(out)
+
+
+class TestPdfAndMainContent:
+    """PLAN 2.13 (pypdf) and 4.7 (trafilatura first, stdlib fallback)."""
+
+    def test_pdf_text_is_archived(self, tmp_path: Path) -> None:
+        from researchkit.safe_io import FetchResult
+
+        sentence = "Grounded citation verification needs archived page text. " * 6
+        pdf = _text_pdf(sentence)
+        payload = {
+            "topic": "t",
+            "provider_results": [
+                {
+                    "provider": "openai",
+                    "sources": [{"url": "https://pdf.test/paper.pdf"}],
+                }
+            ],
+        }
+        project = _make_project(tmp_path, payload)
+
+        def fetch(url: str, **kw: Any) -> FetchResult:
+            return FetchResult(
+                url,
+                url,
+                text=pdf.decode("latin-1"),
+                body=pdf,
+                status=200,
+                content_type="application/pdf",
+            )
+
+        with patch.object(materials, "safe_fetch", side_effect=fetch):
+            manifest = download_materials(project, delay=0)
+        [entry] = manifest["entries"]
+        assert entry["status"] == "fetched" and entry["origin"] == "http:pdf"
+        body = (project.path / "materials" / entry["file"]).read_text(encoding="utf-8")
+        assert "Grounded citation verification needs archived page text." in body
+
+    def test_unreadable_pdf_stays_link_only(self) -> None:
+        assert materials.extract_pdf_text(b"%PDF-1.7 not really") == ("", "")
+
+    def test_main_content_drops_navigation(self) -> None:
+        article = " ".join(
+            f"Paragraph {i} explains how archived pages ground every cited claim."
+            for i in range(12)
+        )
+        html = (
+            "<html><head><title>Grounding</title></head><body>"
+            "<nav><a href='/'>Home</a> <a href='/login'>Sign in</a> Subscribe</nav>"
+            f"<article><h1>Grounding</h1><p>{article}</p></article>"
+            "<footer>Accept all cookies. Privacy policy.</footer></body></html>"
+        )
+        title, text = materials.extract_readable_text(html)
+        assert title == "Grounding"
+        assert "archived pages ground every cited claim" in text
+        assert "Sign in" not in text and "Accept all cookies" not in text
+
+    def test_short_pages_fall_back_to_the_stdlib_walk(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(materials, "_main_content", lambda html: "")
+        _, text = materials.extract_readable_text(
+            "<html><body><p>Tiny page.</p></body></html>"
+        )
+        assert text == "Tiny page."

@@ -110,7 +110,7 @@ The skills wrap the CLI commands above and inherit the same guarantee: logged-in
 
 Reports cite dozens of URLs; `--materials` (or the `materials` subcommand) downloads the pages themselves — SSRF-guarded, deduplicated, politely paced — into `projects/<run>/materials/` as frontmattered markdown plus an `index.json` manifest:
 
-Materials are archived **by default**, and by default **every** cited source is fetched — the pack is what brainkit ingests and skillskit skillifies, and a truncated archive silently drops evidence the report cites. Opt out with `--no-materials`; cap a run with `--materials-limit N`.
+Materials are archived **by default**, and by default **every** cited source is fetched — the pack is what brainkit ingests and skillskit skillifies, and a truncated archive silently drops evidence the report cites. Opt out with `--no-materials`; cap a run with `--materials-limit N`. Pages are reduced to their main content (trafilatura, with a stdlib fallback for pages it can't read), and PDFs are archived from their text layer (pypdf; scanned or encrypted PDFs stay cited but link-only, as `pdf_unparsed`).
 
 ```bash
 uv run researchkit "your topic"                           # research + archive every source (default)

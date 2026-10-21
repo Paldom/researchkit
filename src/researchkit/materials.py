@@ -201,7 +201,63 @@ def extract_readable_text(html: str) -> tuple[str, str]:
         parser.close()
     except Exception:  # malformed markup: fall back to what was parsed
         logger.debug("HTML parse error; using partial extraction", exc_info=True)
-    return " ".join(parser.title.split()), parser.text()
+    title = " ".join(parser.title.split())
+    # trafilatura drops the nav, footer and cookie text the stdlib walk keeps
+    # (bake-off on 36 recorded pages: boilerplate 1.37 -> 0 per 1k words,
+    # nav-like lines 56% -> 16%), but returned nothing on 1 of 36 pages, so
+    # the stdlib extraction stays the fallback (PLAN 4.7).
+    main = _main_content(html)
+    if len(main.split()) >= _MAIN_CONTENT_MIN_WORDS:
+        return title, main
+    return title, parser.text()
+
+
+_MAIN_CONTENT_MIN_WORDS = 50
+
+
+def _main_content(html: str) -> str:
+    """trafilatura's main-content text, or "" when it finds none or fails."""
+    try:
+        import trafilatura
+
+        text = trafilatura.extract(
+            html,
+            include_comments=False,
+            include_tables=True,
+            include_links=False,
+            output_format="txt",
+        )
+    except Exception:  # an extractor crash must not cost the page
+        logger.debug("trafilatura failed; using the stdlib extraction", exc_info=True)
+        return ""
+    return (text or "").strip()
+
+
+_PDF_MAX_PAGES = 60
+_PDF_MAX_BYTES = 20_000_000
+
+
+def extract_pdf_text(data: bytes) -> tuple[str, str]:
+    """``(title, text)`` of a PDF's text layer; ``("", "")`` when unreadable.
+
+    Scanned PDFs (no text layer), encrypted and truncated files come back
+    empty and stay link-only (``pdf_unparsed``). At most the first 60 pages:
+    papers fit, and a 900-page manual should not flood the archive.
+    """
+    import io
+
+    try:
+        from pypdf import PdfReader
+
+        reader = PdfReader(io.BytesIO(data))
+        pages = [page.extract_text() or "" for page in reader.pages[:_PDF_MAX_PAGES]]
+        meta = reader.metadata
+        title = str(meta.get("/Title") or "") if meta else ""
+    except Exception:
+        logger.debug("PDF text extraction failed", exc_info=True)
+        return "", ""
+    text = "\n\n".join(p.strip() for p in pages if p.strip())
+    return " ".join(title.split()), text
 
 
 def _clean_citation_url(url: str) -> str:
@@ -662,9 +718,34 @@ def download_materials(
         if fetched.content_type == "application/pdf" or body.lstrip().startswith(
             "%PDF"
         ):
-            # Kept as a citation; PDF text extraction needs a parser (PLAN 2.13).
-            entry.status = "pdf_unparsed"
-            logger.info("materials: PDF recorded link-only for %s", ref.url)
+            if fetched.truncated:  # papers run 1-5 MB; the page cap is 500 KB
+                fetched = safe_fetch(
+                    final_url or _fetch_url(ref.url),
+                    timeout=timeout,
+                    max_bytes=_PDF_MAX_BYTES,
+                    headers=_FETCH_HEADERS,
+                )
+            pdf_title, pdf_text = (
+                extract_pdf_text(fetched.body)
+                if fetched.body and not fetched.truncated
+                else ("", "")
+            )
+            if len(pdf_text) < MIN_EXTRACT_CHARS:
+                # Scanned, encrypted or cut off at max_bytes: kept as a
+                # citation, not archived (PLAN 2.13).
+                entry.status = "pdf_unparsed"
+                logger.info("materials: PDF recorded link-only for %s", ref.url)
+                return
+            title = _pick_title(ref.title, pdf_title, ref.url)
+            _write_material(
+                path, ref, result, body=pdf_text, final_url=final_url, title=title
+            )
+            entry.status = "fetched"
+            entry.origin = "http:pdf"
+            entry.file = filename
+            entry.final_url = final_url
+            entry.title = title
+            entry.chars = len(pdf_text)
             return
         if body.lstrip().startswith(_BINARY_MARKERS):
             entry.status = "binary"
