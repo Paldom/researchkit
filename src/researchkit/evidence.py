@@ -54,7 +54,8 @@ class EvidenceSource:
 
     @property
     def archived(self) -> bool:
-        return self.status == "fetched" and bool(self.file)
+        # "brain": a source note an earlier run already archived (PLAN B.4).
+        return (self.status == "fetched" and bool(self.file)) or self.status == "brain"
 
 
 @dataclass
@@ -134,7 +135,11 @@ def _split_passages(n: int, body: str) -> list[Passage]:
     ]
 
 
-def load_evidence(project_dir: Path | None, payload: dict[str, Any]) -> Evidence:
+def load_evidence(
+    project_dir: Path | None,
+    payload: dict[str, Any],
+    prior: list[tuple[str, str, str]] | None = None,
+) -> Evidence:
     """Number every cited source and load passages from the archive.
 
     Numbering follows the manifest (provider citation order). Without a
@@ -192,6 +197,22 @@ def load_evidence(project_dir: Path | None, payload: dict[str, Any]) -> Evidence
         body, digest = _body_and_hash(path)
         source.content_hash = digest
         evidence.passages.extend(_split_passages(source.n, body))
+    # Prior knowledge from a shared brain: (url, title, text) of source notes
+    # earlier runs archived. Numbered after this run's own sources, citable,
+    # and marked so the writer can tell what was already known.
+    for url, title, text in prior or []:
+        canon = canonical_url(url)
+        if not canon or canon in seen:
+            continue
+        seen.add(canon)
+        n = len(evidence.sources) + 1
+        evidence.sources.append(
+            EvidenceSource(
+                n=n, url=canon, title=f"{title} (earlier research)", status="brain"
+            )
+        )
+        if text.strip():
+            evidence.passages.append(Passage(id=f"s{n}.p1", n=n, text=text.strip()))
     return evidence
 
 

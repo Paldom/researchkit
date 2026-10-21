@@ -185,6 +185,15 @@ Site Research (optional):
             "path (requires brainkit installed in the same environment)"
         ),
     )
+    run_parser.add_argument(
+        "--brain",
+        metavar="NAME_OR_PATH",
+        default=None,
+        help=(
+            "Feed this run into a shared brainkit brain: a name from "
+            "`researchkit brain list` or a path (created if missing)"
+        ),
+    )
 
     # --- advise command ---
     advise_parser = subparsers.add_parser(
@@ -317,6 +326,23 @@ Site Research (optional):
     )
     republish_parser.add_argument("name", help="Project name or path")
 
+    # --- brain command (shared brains, PLAN §4b) ---
+    brain_parser = subparsers.add_parser(
+        "brain",
+        help="Shared brainkit brains: create one in advance, list them, add runs",
+    )
+    brain_sub = brain_parser.add_subparsers(dest="brain_command", required=True)
+    bc = brain_sub.add_parser("create", help="Create an empty named brain (or a path)")
+    bc.add_argument("name", help="Brain name or path")
+    brain_sub.add_parser(
+        "list", help="List named brains with their run and note counts"
+    )
+    ba = brain_sub.add_parser(
+        "add", help="Ingest finished projects into a brain (re-adding is a no-op)"
+    )
+    ba.add_argument("name", help="Brain name or path")
+    ba.add_argument("projects", nargs="+", help="Project names or paths")
+
     # --- skill command ---
     skill_parser = subparsers.add_parser(
         "skill",
@@ -382,6 +408,15 @@ Site Research (optional):
         metavar="BRAIN_DIR",
         default=None,
         help="Ingest the finished project into a brainkit brain at this path",
+    )
+    explore_parser.add_argument(
+        "--brain",
+        metavar="NAME_OR_PATH",
+        default=None,
+        help=(
+            "Feed this run into a shared brainkit brain: a name from "
+            "`researchkit brain list` or a path (created if missing)"
+        ),
     )
     explore_parser.add_argument(
         "--no-raw",
@@ -678,6 +713,15 @@ def _add_research_args(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--brain",
+        metavar="NAME_OR_PATH",
+        default=None,
+        help=(
+            "Feed this run into a shared brainkit brain: a name from "
+            "`researchkit brain list` or a path (created if missing)"
+        ),
+    )
+    parser.add_argument(
         "--providers",
         "-p",
         nargs="+",
@@ -911,37 +955,44 @@ def _download_materials_for(
     return 0
 
 
-def _ingest_into_brain(project, brain_dir: str) -> int:
+def _brain_target(args) -> Path | None:
+    """The shared brain a run feeds: ``--brain`` (name or path) or ``--ingest`` (path)."""
+    if getattr(args, "brain", None):
+        from researchkit.brains import resolve_brain
+
+        return resolve_brain(args.brain)
+    if getattr(args, "ingest", None):
+        return Path(args.ingest).expanduser()
+    return None
+
+
+def _ingest_into_brain(project, brain_dir: str, *, named: bool = False) -> int:
     """One-shot research→brain handoff: ingest the finished project.
 
-    brainkit is a soft dependency — only needed when --ingest is passed.
-    A boosted parent's subprojects/ are ingested recursively by brainkit.
+    ``--ingest PATH`` is always a path (unchanged); ``--brain`` takes a name
+    from the registry or a path (PLAN §4b). Ingest is serialized per brain and
+    retried when another process holds brainkit's writer lock, so concurrent
+    runs can feed one brain. A boosted parent's subprojects come along.
     """
+    from researchkit.brains import BrainkitMissingError, ingest_into, resolve_brain
+
+    target = resolve_brain(brain_dir) if named else Path(brain_dir).expanduser()
     try:
-        from brainkit.brain import ingest_research_project
-    except ImportError:
+        report = ingest_into(target, project.path)
+    except BrainkitMissingError as e:
         print(
-            "Error: --ingest requires brainkit in this environment "
-            "(e.g. `uv pip install -e ../brainkit`). The run itself succeeded; "
-            f'ingest manually: brainkit ingest "{project.path.resolve()}"',
+            f"Error: {e}. The run itself succeeded; ingest later with "
+            f'`researchkit brain add {brain_dir} "{project.path.resolve()}"`',
             file=sys.stderr,
         )
         return 1
-    try:
-        report = ingest_research_project(
-            project.path.resolve(), Path(brain_dir).expanduser()
-        )
     except Exception as e:
-        # Never let a brain problem (read-only dir, OSError, …) crash the CLI
+        # Never let a brain problem (read-only dir, busy lock…) crash the CLI
         # after a completed paid run — the report must still reach stdout.
         print(f"Error: ingest failed: {e}", file=sys.stderr)
         return 1
-    # getattr: tolerate an older installed brainkit without sub-report support
-    subs = getattr(report, "sub_reports", [])
-    total_sources = len(report.source_notes) + sum(len(r.source_notes) for r in subs)
     print(
-        f"Ingested into brain {Path(brain_dir).expanduser().resolve()}: "
-        f"{1 + len(subs)} topic notes, {total_sources} source notes",
+        f"Ingested into brain {target.resolve()}: {report['sources']} source notes",
         file=sys.stderr,
     )
     return 0
@@ -1078,6 +1129,7 @@ def cmd_run(args, service: SocialResearchService) -> int:
             repo_keep_clones=getattr(args, "keep_clones", False),
             materials=getattr(args, "materials", True),
             materials_limit=getattr(args, "materials_limit", 0) or 0,
+            brain=_brain_target(args),
         )
     except KeyboardInterrupt:
         print("\nInterrupted by user", file=sys.stderr)
@@ -1101,8 +1153,18 @@ def cmd_run(args, service: SocialResearchService) -> int:
             )
         # Repos were harvested inside the run (and fed to the analysis); a
         # second pass here would re-clone what was already extracted.
-        if getattr(args, "ingest", None):
-            handoff_rc = _ingest_into_brain(project, args.ingest)
+        # The service already ingested into the shared brain (if any) right
+        # after result.json; a failed ingest is reported, never fatal to the run.
+        brain_outcome = artifacts.report_json.get("brain") or {}
+        if brain_outcome.get("error"):
+            print(f"Error: ingest failed: {brain_outcome['error']}", file=sys.stderr)
+            handoff_rc = 1
+        elif brain_outcome:
+            print(
+                f"Ingested into brain {brain_outcome.get('brain')}: "
+                f"{brain_outcome.get('sources', 0)} source notes",
+                file=sys.stderr,
+            )
 
     # Output report
     print(artifacts.report_markdown)
@@ -1497,6 +1559,51 @@ def cmd_skill(args, service: SocialResearchService) -> int:
     return 0
 
 
+def cmd_brain(args) -> int:
+    """Handle 'brain': create, list, or feed shared brains."""
+    from researchkit.brains import (
+        BrainkitMissingError,
+        brains_root,
+        create_brain,
+        ingest_into,
+        list_brains,
+        resolve_brain,
+    )
+
+    try:
+        if args.brain_command == "create":
+            path = create_brain(args.name)
+            print(f"Brain ready: {path}", file=sys.stderr)
+            print(f'Feed it: researchkit "topic" --brain {args.name}', file=sys.stderr)
+            return 0
+        if args.brain_command == "list":
+            infos = list_brains()
+            if not infos:
+                print(
+                    f"No brains under {brains_root()} — create one: researchkit brain create NAME"
+                )
+                return 0
+            for info in infos:
+                print(
+                    f"{info.name:24} {info.runs:4} runs {info.notes:6} notes  {info.path}"
+                )
+            return 0
+        target = resolve_brain(args.name)
+        rc = 0
+        for ref in args.projects:
+            project = find_project(ref, args.projects_dir)
+            if not project or not project.has_results:
+                print(f"Skipping {ref}: no finished project found", file=sys.stderr)
+                rc = 1
+                continue
+            report = ingest_into(target, project.path)
+            print(f"{project.name}: {report['sources']} source notes", file=sys.stderr)
+        return rc
+    except (BrainkitMissingError, ValueError, OSError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def cmd_doctor(args) -> int:
     """Handle 'doctor': preflight the preset's slots, harnesses, and keys."""
     from researchkit.doctor import format_report, run_doctor
@@ -1853,6 +1960,11 @@ def _cmd_instant_boosted(args, service: SocialResearchService, topic: str) -> in
                 )
             if getattr(args, "ingest", None):
                 handoff_rc = _ingest_into_brain(result.project, args.ingest)
+            if getattr(args, "brain", None):
+                handoff_rc = (
+                    _ingest_into_brain(result.project, args.brain, named=True)
+                    or handoff_rc
+                )
             print(artifacts.report_markdown)
             print(f"wrote: {result.project.path.resolve()}", file=sys.stderr)
             _print_next_steps(result.project.path.resolve())
@@ -1887,6 +1999,10 @@ def _cmd_instant_boosted(args, service: SocialResearchService, topic: str) -> in
             print(f"Brain: {result.project.brain_dir.resolve()}", file=sys.stderr)
     if getattr(args, "ingest", None):
         handoff_rc = _ingest_into_brain(result.project, args.ingest)
+    if getattr(args, "brain", None):
+        handoff_rc = (
+            _ingest_into_brain(result.project, args.brain, named=True) or handoff_rc
+        )
 
     if result.super_summary_markdown:
         print(result.super_summary_markdown)
@@ -1931,6 +2047,7 @@ def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
             log_level=args.log_level,
             materials=getattr(args, "materials", True),
             materials_limit=getattr(args, "materials_limit", 0) or 0,
+            brain=_brain_target(args),
         )
     except KeyboardInterrupt:
         print("\nInterrupted by user", file=sys.stderr)
@@ -1954,8 +2071,18 @@ def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
             )
         # Repos were harvested inside the run (and fed to the analysis); a
         # second pass here would re-clone what was already extracted.
-        if getattr(args, "ingest", None):
-            handoff_rc = _ingest_into_brain(project, args.ingest)
+        # The service already ingested into the shared brain (if any) right
+        # after result.json; a failed ingest is reported, never fatal to the run.
+        brain_outcome = artifacts.report_json.get("brain") or {}
+        if brain_outcome.get("error"):
+            print(f"Error: ingest failed: {brain_outcome['error']}", file=sys.stderr)
+            handoff_rc = 1
+        elif brain_outcome:
+            print(
+                f"Ingested into brain {brain_outcome.get('brain')}: "
+                f"{brain_outcome.get('sources', 0)} source notes",
+                file=sys.stderr,
+            )
 
     # Output report
     print(artifacts.report_markdown)
@@ -2009,6 +2136,7 @@ SUBCOMMANDS = frozenset(
         "doctor",
         "republish",
         "skill",
+        "brain",
         "explore",
         "links",
         "improve-topic",
@@ -2036,7 +2164,13 @@ def main() -> int:
     # global flags and their values. This stops "--projects-dir X list" from
     # being read as an instant run on the topic "X" (a paid job). (Review M9.)
     subcommands = SUBCOMMANDS
-    value_flags = {"--projects-dir", "--log-level", "--ingest", "--materials-limit"}
+    value_flags = {
+        "--projects-dir",
+        "--log-level",
+        "--ingest",
+        "--brain",
+        "--materials-limit",
+    }
 
     def _first_positional(tokens: list[str]) -> str | None:
         skip_next = False
@@ -2171,6 +2305,8 @@ def main() -> int:
         return cmd_republish(args, service)
     elif args.command == "skill":
         return cmd_skill(args, service)
+    elif args.command == "brain":
+        return cmd_brain(args)
     elif args.command == "advise":
         return cmd_advise(args)
     elif args.command == "advise-session":

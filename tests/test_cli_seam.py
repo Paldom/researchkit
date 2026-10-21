@@ -206,7 +206,7 @@ class TestIngestHandoff:
         project = _project(tmp_path, "runme")
         assert cli._ingest_into_brain(project, "brain") == 1
         err = capsys.readouterr().err
-        assert "brainkit ingest" in err
+        assert "researchkit brain add" in err  # the shared-brain command (PLAN §4b)
         assert str(project.path.resolve()) in err
 
 

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Two runs whose long topics truncate to the same slug in the same second
+  (batch runs sharing a preamble) got the same project name. A shared brain
+  keys runs by name, so the second ingest pruned the first run's sources.
+  Truncated slugs now carry a short hash of the full topic; short topics
+  keep their exact names.
+
 - `run_project` dropped the run status when it rebuilt the artifacts, so
   the CLI exit code on the project path always read "ok".
 
@@ -48,6 +54,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Any other sandbox failure still aborts.
 
 ### Added
+
+- **Shared brains** (`researchkit.brains`): one brainkit brain fed by many
+  runs.
+  - `researchkit brain create NAME` makes an empty brain in advance.
+  - `researchkit "topic" --brain NAME` feeds a run into it (a name from
+    `brain list` or a path; `--ingest PATH` keeps its old meaning).
+  - `researchkit brain add NAME <projects…>` attaches earlier runs
+    (re-adding is a no-op), and `researchkit brain list` shows run and note
+    counts.
+  - With `--brain`, a run starts from what the brain already knows: matching
+    source notes join the evidence as numbered, citable "(earlier research)"
+    sources, and the writer says when a finding was already known. Only raw
+    source notes are used, never summaries, and the web search still runs.
+  - Ingest happens in the service right after `result.json` (so every
+    entrypoint gets it). It is serialized per brain, retried while another
+    process holds brainkit's writer lock, and recorded in `result.json`
+    `brain`.
 
 - `result.json` carries `timings`: every progress event (provider start/done,
   summaries, writers, formatting) with seconds since run start on a monotonic

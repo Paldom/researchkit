@@ -69,6 +69,8 @@ class ResearchRequest:
     include_raw: bool = True
     preset_name: str | None = None  # Model preset to use (None = active preset)
     site_research_enabled: bool = True  # Enable keyword-based site research
+    # Shared brain this run feeds and starts from (PLAN §4b); None = none.
+    brain: Path | None = None
     site_research_sites: tuple[str, ...] = ()  # empty = all active connectors
     # User-curated sources, included in final report/article only (never in research).
     user_url_sources: tuple[UserUrlSource, ...] = ()
@@ -601,6 +603,18 @@ class SocialResearchService:
             written: dict[str, str | None] = {}
             publication: Publication | None = None
             any_success = any(r.is_success for r in bundle.provider_results)
+            prior: list[tuple[str, str, str]] = []
+            if req.brain is not None and any_success:
+                from researchkit.brains import prior_knowledge
+
+                hits = prior_knowledge(req.brain, req.topic)
+                prior = [(h.url, h.title, h.snippet) for h in hits]
+                emit(
+                    {
+                        "stage": "brain_context",
+                        "message": f"Brain {req.brain.name}: {len(prior)} related sources already known",
+                    }
+                )
             if any_success:
                 publication = publish(
                     topic=req.topic,
@@ -611,6 +625,7 @@ class SocialResearchService:
                     run_id=run_id,
                     emit=emit,
                     repo_cards=repo_cards,
+                    prior=prior,
                 )
                 md = publication.report_markdown
                 written["article"] = publication.article_markdown
@@ -756,6 +771,7 @@ class SocialResearchService:
         repo_keep_clones: bool = False,
         materials: bool = True,
         materials_limit: int = 0,
+        brain: Path | None = None,
     ) -> ResearchArtifacts:
         """
         Run research for an existing project and save results to the project folder.
@@ -814,6 +830,7 @@ class SocialResearchService:
                 project.config.topic,
                 project.config.sibling_topics,
             ),
+            brain=brain,
         )
 
         # Run with log in project folder
@@ -848,6 +865,17 @@ class SocialResearchService:
             claims=artifacts.claims,
         )
         project.save_results(artifacts.report_json, artifacts.report_markdown)
+        if brain is not None and artifacts.status != "failed":
+            # After result.json (brainkit gates ingest on it). Never raises:
+            # a busy or broken brain must not cost a finished, paid run.
+            from researchkit.brains import ingest_into
+
+            try:
+                outcome: dict[str, Any] = ingest_into(brain, project.path)
+            except Exception as e:
+                outcome = {"brain": str(brain), "error": str(e)[:300]}
+            artifacts.report_json["brain"] = outcome
+            project.save_results(artifacts.report_json, artifacts.report_markdown)
         # result.json now supersedes the per-provider partials.
         project.clear_partials()
 
@@ -1011,6 +1039,7 @@ class SocialResearchService:
         log_level: str = "DEBUG",
         materials: bool = True,
         materials_limit: int = 0,
+        brain: Path | None = None,
         repos_enabled: bool = True,
         repo_keep_clones: bool = False,
     ) -> tuple[Project, ResearchArtifacts]:
@@ -1053,6 +1082,7 @@ class SocialResearchService:
             repo_keep_clones=repo_keep_clones,
             materials=materials,
             materials_limit=materials_limit,
+            brain=brain,
         )
 
         return project, artifacts

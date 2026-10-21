@@ -277,10 +277,11 @@ def publish(
     run_id: str,
     emit: Callable[[dict[str, Any]], None] = lambda evt: None,
     repo_cards: list[str] | None = None,
+    prior: list[tuple[str, str, str]] | None = None,
 ) -> Publication:
     """Write and check the report and article from the run's evidence."""
     payload = bundle.to_dict()
-    evidence = load_evidence(project_dir, payload)
+    evidence = load_evidence(project_dir, payload, prior)
     sections = plan_sections(bundle.meta_summary)
     picks = select_passages(sections, evidence)
     by_n = evidence.by_n()
@@ -382,6 +383,10 @@ def publish(
         ]
     )
     archive_text: dict[str, str] = {}
+    prior_text = {canonical_url(u): t for u, _, t in prior or []}
+    for src in cited.sources:
+        if src.status == "brain" and src.url in prior_text:
+            archive_text[src.url] = prior_text[src.url]
     if project_dir is not None:
         for s in cited.sources:
             if s.archived and s.file:

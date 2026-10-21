@@ -787,7 +787,8 @@ Structure:
 3. Use all relevant evidence: the planned section's passages first, then the matching findings in the cross-source analysis and the provider findings (cite them through the source numbers they name). Do not drop a measured result that bears on the section.
 4. No H1, no introduction, no conclusion, no summary, no Sources section: the lead and the source list are added separately.
 5. If a planned section has no supporting evidence, write one sentence saying it is not established.
-6. End with an H2 "What the sources did not answer": 2-5 bullets naming open questions that matter for the topic.
+6. Sources titled "(earlier research)" come from earlier work on this subject. Use them, but prefer newer evidence when they conflict, and say in the sentence when a finding was already known before ("as earlier research found…") versus newly established.
+7. End with an H2 "What the sources did not answer": 2-5 bullets naming open questions that matter for the topic.
 
 {_WRITING_RULES}"""
 

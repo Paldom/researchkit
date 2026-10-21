@@ -10,6 +10,7 @@ A project is a folder containing:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -567,6 +568,14 @@ def generate_project_name(topic: str, timestamp: datetime | None = None) -> str:
     ts = timestamp or datetime.now()
     ts_str = ts.strftime("%Y%m%d_%H%M%S")
     topic_slug = slugify(topic, max_length=40).replace("-", "_")
+    # A long topic truncated to the same 40-char slug in the same second
+    # (batch runs sharing a prompt preamble) gave two different runs one
+    # name, and a shared brain keys runs by name: the second ingest pruned
+    # the first run's sources. A short hash of the full topic separates them;
+    # short topics keep their exact, readable names.
+    if len(slugify(topic, max_length=1000)) > 40:
+        digest = hashlib.sha1(topic.encode("utf-8")).hexdigest()[:6]
+        topic_slug = f"{topic_slug}_{digest}"
     return f"{ts_str}_{topic_slug}"
 
 
