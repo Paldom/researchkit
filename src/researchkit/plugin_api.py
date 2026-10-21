@@ -115,6 +115,10 @@ class ConnectorSpec:
     factory: Callable[[ConnectorContext], BaseSiteConnector]
     default_max_items: int = 5
     requires_env: tuple[str, ...] = ()
+    # False: installed and selectable (``--sites NAME``), but not part of a
+    # plain run's site research. For connectors that log in, scrape walled
+    # or ToS-restricted sites, or rarely earn a citation (PLAN 5.1).
+    default_enabled: bool = True
 
 
 @dataclass(frozen=True)

@@ -223,3 +223,24 @@ def test_plugin_provider_constructs_through_aggregator(fake_eps: list) -> None:
     assert isinstance(provider, DummyProvider)
     assert provider.ctx.model == "dummy-model-v2"
     assert provider.ctx.options["knob"] == 42
+
+
+def test_opt_in_connector_is_installed_but_not_a_default(
+    fake_eps: list, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PLAN 5.1: default_enabled=False keeps a connector out of plain runs."""
+    manifest = PluginManifest(
+        api_version=1,
+        connectors=(
+            ConnectorSpec(
+                "walled", lambda ctx: DummyConnector(), default_enabled=False
+            ),
+            ConnectorSpec("open", lambda ctx: DummyConnector()),
+        ),
+    )
+    fake_eps.append(FakeEntryPoint("my-plugin", manifest))
+    registry = build_registry()
+    monkeypatch.setattr(plugins_mod, "_registry", registry)
+    assert "walled" in registry.connector_names  # still selectable by name
+    defaults = plugins_mod.default_site_research_sites()
+    assert "open" in defaults and "walled" not in defaults

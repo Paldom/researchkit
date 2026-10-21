@@ -248,8 +248,15 @@ def build_registry() -> Registry:
 
 
 def default_site_research_sites() -> list[str]:
-    """Every active connector — installed plugins enrich runs by default."""
-    return list(get_registry().connector_names)
+    """Active connectors that join a plain run (``default_enabled``).
+
+    Opt-in connectors stay selectable by name; they just never start on
+    their own (PLAN 5.1).
+    """
+    registry = get_registry()
+    return [
+        n for n in registry.connector_names if registry.connectors[n].default_enabled
+    ]
 
 
 _registry: Registry | None = None

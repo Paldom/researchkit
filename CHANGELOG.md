@@ -68,6 +68,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Opt-in connectors** (PLAN 5.1): `ConnectorSpec.default_enabled`
+  (additive; `PLUGIN_API_VERSION` stays 1). A connector with
+  `default_enabled=False` is installed and selectable by name but never part
+  of a plain run's site research, and the web UI offers it unticked. The
+  youtube, medium, substack and stealth plugins (webui, linkedin,
+  medium_stealth) now ship opt-in: they log in, scrape walled sites, or
+  earned under 5% of citations.
+
 - **Depth telemetry** (PLAN 3.7). `result.json` gains a `depth` block with
   one entry per slot and branch, read from what each CLI already reports:
   Codex (searches, pages opened, cited-but-never-opened), Kimi (search and

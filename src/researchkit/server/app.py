@@ -52,6 +52,12 @@ def _known_connectors() -> tuple[str, ...]:
     return tuple(get_registry().connector_names)
 
 
+def _default_sites() -> list[str]:
+    from researchkit.plugins import default_site_research_sites
+
+    return default_site_research_sites()
+
+
 _MAX_TRACKED_RUNS = 100
 _MAX_ACTIVE_RUNS = 4
 _SSE_HEARTBEAT_SECONDS = 15.0
@@ -363,7 +369,8 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
             # UI default mirrors the legacy Gradio app: everything selected.
             "default_providers": providers,
             "connectors": list(_known_connectors()),
-            "default_sites": list(_known_connectors()),
+            # Opt-in connectors are offered but unticked (PLAN 5.1).
+            "default_sites": _default_sites(),
             "plugins": registry.plugin_versions(),
             # Each preset's declared run defaults (models.yaml); the UI's
             # "harness only" mode reads the harness preset's set from here.

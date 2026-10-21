@@ -466,7 +466,12 @@ Rules that keep everyone sane:
   Plugins hand data to core; core writes all files.
 - Site research runs against **every active connector by default** —
   installing a connector plugin (plus its key) is all it takes for its
-  results to appear in runs, reports, and the materials archive.
+  results to appear in runs, reports, and the materials archive. Set
+  `default_enabled=False` on a `ConnectorSpec` for connectors that log in,
+  scrape walled or ToS-restricted sites, or rarely earn a citation: they
+  stay installed and selectable (`--sites NAME`, the UI's site list) but
+  never start on their own. The bundled youtube, medium, substack and
+  stealth (webui, linkedin, medium_stealth) plugins ship that way.
 - Optional hooks: `search_batch` (replaces per-keyword search),
   `summarize_batch` (adds a digest section), `popularity_label` (report
   display like `Views: 1.2M`), `sequential = True` (hard rate limits),
