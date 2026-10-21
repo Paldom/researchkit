@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextvars
 import logging
 import shutil
+import time
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -437,9 +438,22 @@ class SocialResearchService:
             ResearchArtifacts containing the bundle, formatted reports, paths, and run_id
         """
 
+        # Per-stage timeline persisted in result.json (PLAN 1.14): seconds
+        # since run start on a monotonic clock, one entry per progress event.
+        # Without it the critical path can only be guessed from logs.
+        started = time.monotonic()
+        timeline: list[dict[str, Any]] = []
+
         def emit(evt: ProgressEvent) -> None:
             """Emit a progress event: log it and forward to UI callback."""
             stage = evt.get("stage", "-")
+            entry: dict[str, Any] = {
+                "stage": stage,
+                "t_s": round(time.monotonic() - started, 2),
+            }
+            if "provider" in evt:
+                entry["provider"] = evt["provider"]
+            timeline.append(entry)
             message = evt.get("message", stage)
             extra: dict[str, Any] = {"stage": stage}
             if "provider" in evt:
@@ -675,6 +689,7 @@ class SocialResearchService:
             )
             report_json = bundle.to_dict()
             report_json["run_status"] = status
+            report_json["timings"] = timeline
             # skills.sh-style hits go to skillskit as candidates, not evidence.
             report_json["skill_candidates"] = [
                 s.url

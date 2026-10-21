@@ -46,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `result.json` carries `timings`: every progress event (provider start/done,
+  summaries, writers, formatting) with seconds since run start on a monotonic
+  clock, so the critical path of a run can be read off its own record.
+
 - `researchkit doctor --probe` sends one tiny prompt to each CLI harness the
   preset uses (in parallel, 120 s cap) and reports exhausted quota, revoked
   auth or an unusable model id. A login check can't see those: Antigravity

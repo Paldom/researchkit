@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 from pathlib import Path
 from typing import ClassVar
@@ -201,6 +202,15 @@ class TestSocialResearchService:
         assert "## Digest" in artifacts.report_markdown
 
         stages = [event["stage"] for event in events]
+        # PLAN 1.14 / 1.3: a monotonic per-stage timeline and the honest status.
+        timings = artifacts.report_json["timings"]
+        assert [t["stage"] for t in timings] == stages
+        assert all(a["t_s"] <= b["t_s"] for a, b in itertools.pairwise(timings))
+        assert artifacts.report_json["run_status"]["status"] in (
+            "ok",
+            "degraded",
+            "failed",
+        )
         assert "digest" in stages
         assert "digest_done" in stages
         assert "professional_overview" in stages
