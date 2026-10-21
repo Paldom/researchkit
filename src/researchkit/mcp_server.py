@@ -19,6 +19,7 @@ import time
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
@@ -75,6 +76,7 @@ def research(
     days: int = 7,
     providers: list[str] | None = None,
     preset: str | None = None,
+    brain: str | None = None,
 ) -> str:
     """Research a topic across AI web-search providers and return a cited report.
 
@@ -88,10 +90,13 @@ def research(
         providers: Providers to query; defaults to openai, gemini, grok and
             perplexity. Others available: tavily, claude, github, glm, kimi, brave, openalex.
         preset: models.yaml preset name (default: the active preset).
+        brain: A named shared brain (see ``list_brains``) to start from and
+            feed; the run cites what the brain already knows and is ingested
+            into it afterwards. Names only, not paths.
 
     Returns:
-        The full markdown report, including per-provider findings, the
-        consolidated analysis, and source URLs.
+        The breadth-first markdown report: TL;DR, In brief, finding
+        sections, Sources.
     """
     service = _get_service()
     project, artifacts = service.create_and_run_project(
@@ -99,9 +104,47 @@ def research(
         days=days,
         providers=providers,
         preset_name=preset,
+        brain=_named_brain(brain),
     )
     logger.info("MCP research run finished: %s", project.name)
     return f"<!-- project: {project.name} -->\n{artifacts.report_markdown}"
+
+
+def _named_brain(name: str | None) -> Path | None:
+    """Resolve a brain NAME (paths refused: a remote caller must not pick
+    where the server writes)."""
+    if not name:
+        return None
+    if "/" in name or name.startswith((".", "~")):
+        raise ValueError("brain must be a name from list_brains, not a path")
+    from researchkit.brains import resolve_brain
+
+    return resolve_brain(name)
+
+
+@mcp.tool()
+def list_brains() -> list[dict[str, Any]]:
+    """Named shared brains (each fed by many research runs) with their counts."""
+    from researchkit.brains import list_brains as _list
+
+    return [info.to_dict() for info in _list()]
+
+
+@mcp.tool()
+def brain_context(brain: str, query: str, limit: int = 8) -> list[dict[str, Any]]:
+    """What a shared brain already knows about ``query``: cited source notes.
+
+    Returns url, title, snippet and published date per hit, so an agent can
+    answer from earlier research before starting a new run.
+    """
+    from researchkit.brains import prior_knowledge
+
+    path = _named_brain(brain)
+    assert path is not None
+    return [
+        {"url": h.url, "title": h.title, "snippet": h.snippet, "published": h.published}
+        for h in prior_knowledge(path, query, limit=limit)
+    ]
 
 
 # --- explore: boosted, subscription-only research -------------------------

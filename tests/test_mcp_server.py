@@ -38,6 +38,8 @@ def test_tools_are_registered() -> None:
         "explore_start",
         "explore_status",
         "explore_report",
+        "list_brains",
+        "brain_context",
     }
 
 
@@ -262,3 +264,16 @@ class TestHttpTransportConfig:
         monkeypatch.setattr(mcp_module, "guard_no_nested_run", lambda: None)
         mcp_module.main([])
         assert calls == [{}]  # no transport kwarg == stdio
+
+
+def test_brain_tools_refuse_paths() -> None:
+    """PLAN B.7: a remote caller names a brain; it never picks a path."""
+    import pytest
+
+    from researchkit.mcp_server import _named_brain
+
+    assert _named_brain(None) is None
+    with pytest.raises(ValueError):
+        _named_brain("/etc")
+    with pytest.raises(ValueError):
+        _named_brain("../x")

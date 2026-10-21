@@ -80,7 +80,9 @@ class FakeService:
             path = _P(source)
             self.user_sources.append(f"file:{path.name}:{len(path.read_text())}")
 
-    def run_project(self, project: Project, *, progress: Any = None) -> Any:
+    def run_project(
+        self, project: Project, *, progress: Any = None, **kwargs: Any
+    ) -> Any:
         self.run_calls: list[str] = getattr(self, "run_calls", [])
         self.run_calls.append(project.name)
         (project.path / "report.md").write_text("# R", encoding="utf-8")
@@ -136,18 +138,9 @@ def test_research_run_and_sse_stream(tmp_path: Path) -> None:
     assert status["status"] == "done"
     assert status["project"] == "20260705_researchkit"
     assert service.calls[0]["days"] == 3
-    # UI parity with the legacy Gradio app: every registered provider by
-    # default (registry order is sorted; plugins may extend the set).
-    assert set(service.calls[0]["providers"]) >= {
-        "openai",
-        "gemini",
-        "grok",
-        "perplexity",
-        "tavily",
-        "claude",
-        "github",
-        "glm",
-    }
+    # No providers in the request: the preset decides (harness presets declare
+    # a zero-key set). The server used to substitute every known provider.
+    assert service.calls[0]["providers"] is None
 
     with client.stream("GET", f"/api/research/{run_id}/events") as stream:
         body = "".join(stream.iter_text())
@@ -471,6 +464,27 @@ def test_days_beyond_thirty_accepted_and_capped(tmp_path: Path) -> None:
         client.post(
             "/api/research",
             json={"topic": "t3", "user_texts": ["x" * 100_001]},
+        ).status_code
+        == 422
+    )
+
+
+def test_shared_brain_endpoints(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PLAN B.6: create, list, read a named brain; names only over HTTP."""
+    pytest.importorskip("brainkit.brain")
+    monkeypatch.setenv("RESEARCHKIT_BRAINS_DIR", str(tmp_path / "brains"))
+    client = TestClient(create_app(FakeService(tmp_path)))  # type: ignore[arg-type]
+
+    created = client.post("/api/brains", json={"name": "team"})
+    assert created.status_code == 200 and created.json()["name"] == "team"
+    assert [b["name"] for b in client.get("/api/brains").json()] == ["team"]
+    assert "index" in client.get("/api/brains/team").json()
+    assert client.post("/api/brains", json={"name": "../etc"}).status_code == 422
+    assert (
+        client.post(
+            "/api/research", json={"topic": "ai agents", "brain": "/tmp/x"}
         ).status_code
         == 422
     )

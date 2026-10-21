@@ -64,6 +64,18 @@ class UserFileIn(BaseModel):
     content: str = Field(min_length=1, max_length=200_000)
 
 
+class BrainIn(BaseModel):
+    """Create a named shared brain."""
+
+    name: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,63}$")
+
+
+class BrainIngestIn(BaseModel):
+    """Attach finished projects to a shared brain."""
+
+    projects: list[str] = Field(min_length=1, max_length=100)
+
+
 class ResearchIn(BaseModel):
     """Request body for POST /api/research."""
 
@@ -76,6 +88,9 @@ class ResearchIn(BaseModel):
     include_raw: bool = True
     # None = the preset decides (harness presets turn it off).
     site_research: bool | None = None
+    # A named shared brain to feed and start from (PLAN §4b). Names only over
+    # HTTP: a path would let a client make the server write anywhere.
+    brain: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9._-]{0,63}$")
     site_research_sites: list[str] | None = None
     # Boost: LLM council refines the topic and may fan out into parallel
     # sub-projects (manual keywords and custom sources are ignored there).
@@ -304,7 +319,10 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
             # Fresh service per run unless one was injected (tests): isolates
             # concurrent runs from any shared-state assumptions in the engine.
             run_svc = svc if service is not None else SocialResearchService()
-            providers = list(params.providers or _known_providers())
+            # None = the preset decides (harness presets declare a zero-key set);
+            # substituting every known provider bypassed that.
+            providers = list(params.providers) if params.providers else None
+            brain = _brain_path(params.brain)
             if params.boost:
                 boosted = run_svc.create_and_run_boosted(
                     params.topic,
@@ -337,7 +355,7 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
                     except Exception:
                         logger.warning("Skipping invalid user URL %r", url)
                 _attach_document_sources(run_svc, project, params)
-                run_svc.run_project(project, progress=state.events.put)
+                run_svc.run_project(project, progress=state.events.put, brain=brain)
                 state.project = project.name
             else:
                 project, _artifacts = run_svc.create_and_run_project(
@@ -351,9 +369,15 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
                     site_research_enabled=params.site_research,
                     site_research_sites=params.site_research_sites,
                     progress=state.events.put,
+                    brain=brain,
                 )
                 state.project = project.name
             _archive_materials(run_svc, state, params)
+            if params.boost and brain is not None and state.project:
+                # Boosted: one ingest of the parent (brainkit recurses).
+                from researchkit.brains import ingest_into
+
+                ingest_into(brain, PROJECTS_DIR / state.project)
             state.status = "done"
         except Exception as e:  # surface any pipeline failure to the client
             logger.exception("Research run failed")
@@ -504,6 +528,80 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
     @app.get("/api/projects/{name}/skill")
     def project_skill(name: str) -> PlainTextResponse:
         return _project_text(name, "skill/SKILL.md", "text/markdown")
+
+    def _brain_path(name: str | None) -> Path | None:
+        if not name:
+            return None
+        from researchkit.brains import resolve_brain
+
+        try:
+            return resolve_brain(name)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+
+    @app.get("/api/brains")
+    def list_shared_brains() -> list[dict[str, Any]]:
+        """Named shared brains with run and note counts (PLAN B.6)."""
+        from researchkit.brains import list_brains
+
+        return [info.to_dict() for info in list_brains()]
+
+    @app.post("/api/brains")
+    def create_shared_brain(params: BrainIn) -> dict[str, Any]:
+        """Create an empty named brain in advance."""
+        from researchkit.brains import BrainkitMissingError, create_brain, describe
+
+        try:
+            path = create_brain(params.name)
+        except BrainkitMissingError as e:
+            raise HTTPException(status_code=503, detail=str(e)) from e
+        return describe(path, params.name).to_dict()
+
+    @app.get("/api/brains/{name}")
+    def shared_brain(name: str) -> JSONResponse:
+        """A shared brain's map, same shape as a project's brain."""
+        from researchkit.brain import brain_notes, read_brain_file
+
+        brain_dir = _brain_path(name)
+        assert brain_dir is not None
+        index = read_brain_file(brain_dir, "index.md")
+        if index is None:
+            raise HTTPException(status_code=404, detail="No such brain")
+        return JSONResponse({"index": index, "notes": brain_notes(brain_dir)})
+
+    @app.get("/api/brains/{name}/note")
+    def shared_brain_note(name: str, path: str) -> PlainTextResponse:
+        """One file of a shared brain by brain-relative path."""
+        from researchkit.brain import read_brain_file
+
+        brain_dir = _brain_path(name)
+        assert brain_dir is not None
+        text = read_brain_file(brain_dir, path)
+        if text is None:
+            raise HTTPException(status_code=404, detail="No such note")
+        return PlainTextResponse(text, media_type="text/markdown")
+
+    @app.post("/api/brains/{name}/ingest")
+    def ingest_into_shared_brain(
+        name: str, params: BrainIngestIn
+    ) -> list[dict[str, Any]]:
+        """Attach earlier runs to a shared brain (re-adding is a no-op)."""
+        from researchkit.brains import BrainkitMissingError, ingest_into
+
+        brain_dir = _brain_path(name)
+        assert brain_dir is not None
+        reports = []
+        for project_name in params.projects:
+            project = _find_project(project_name)
+            if not project.has_results:
+                raise HTTPException(
+                    status_code=409, detail=f"{project_name} has no results"
+                )
+            try:
+                reports.append(ingest_into(brain_dir, project.path))
+            except BrainkitMissingError as e:
+                raise HTTPException(status_code=503, detail=str(e)) from e
+        return reports
 
     @app.get("/api/projects/{name}/brain")
     def project_brain(name: str) -> JSONResponse:

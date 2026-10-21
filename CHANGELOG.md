@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The web server substituted _every_ known provider when a request named
+  none, bypassing the preset's declared set (a harness-preset request called
+  Perplexity, Tavily and the rest). It now defers to the preset.
+
 - Two runs whose long topics truncate to the same slug in the same second
   (batch runs sharing a preamble) got the same project name. A shared brain
   keys runs by name, so the second ingest pruned the first run's sources.
@@ -71,6 +75,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     entrypoint gets it). It is serialized per brain, retried while another
     process holds brainkit's writer lock, and recorded in `result.json`
     `brain`.
+  - HTTP API: `GET/POST /api/brains`, `GET /api/brains/{name}` (+`/note`),
+    `POST /api/brains/{name}/ingest`, and `brain` on `/api/research`. MCP:
+    `research(brain=…)`, `list_brains`, `brain_context`. Over HTTP and MCP a
+    brain is addressed by name only, never a path.
 
 - `result.json` carries `timings`: every progress event (provider start/done,
   summaries, writers, formatting) with seconds since run start on a monotonic
