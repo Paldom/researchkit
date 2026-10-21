@@ -472,7 +472,7 @@ Rules that keep everyone sane:
   scrape walled or ToS-restricted sites, or rarely earn a citation: they
   stay installed and selectable (`--sites NAME`, the UI's site list) but
   never start on their own. The bundled youtube, medium, substack and
-  stealth (webui, linkedin, medium_stealth) plugins ship that way.
+  stealth (webui, linkedin, medium_stealth) plugins run by default.
 - Optional hooks: `search_batch` (replaces per-keyword search),
   `summarize_batch` (adds a digest section), `popularity_label` (report
   display like `Views: 1.2M`), `sequential = True` (hard rate limits),

@@ -257,6 +257,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The youtube, medium, substack and stealth plugins (webui, linkedin,
+  medium_stealth) run by default again, so every site is selected in a plain
+  run as before. `default_enabled` stays available to plugin authors.
+
 - **One dispatcher for plain-API completions** (PLAN A.8):
   `researchkit.api_llm.complete`. The improver (six client branches), the
   summarizer (Gemini, GLM, Kimi), the keyword synthesizer and
