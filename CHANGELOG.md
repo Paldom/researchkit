@@ -68,6 +68,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Origin folding** (PLAN 4.6). Archived sources whose text is the same
+  (5-word shingle Jaccard of 0.6 or more: syndication, mirrors, scraped
+  copies) share one origin. The writer's source list marks the copy
+  "(same text as [n])", the prompt asks for "independently originating"
+  sources, and the integrity gate fails a "corroborated" claim whose
+  citations are copies of one text.
+
 - **Opt-in connectors** (PLAN 5.1): `ConnectorSpec.default_enabled`
   (additive; `PLUGIN_API_VERSION` stays 1). A connector with
   `default_enabled=False` is installed and selectable by name but never part

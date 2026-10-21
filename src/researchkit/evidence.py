@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from researchkit.urls import canonical_url
+from researchkit.urls import canonical_url, host_of
 
 # Sources whose archived body is a synthesized summary or procedure listing
 # never count as evidence (they are context, not a source's own text).
@@ -32,6 +32,10 @@ _MAX_PASSAGES_PER_SOURCE = 40
 PER_SECTION_WORDS = 2500
 TOTAL_WORDS = 14000
 _MAX_PER_SOURCE_PER_SECTION = 3
+# Two archived bodies sharing this share of their 5-word shingles are one
+# text (syndication, mirrors, scraped copies), whatever the host.
+_SAME_TEXT_JACCARD = 0.6
+_FOLD_MIN_WORDS = 80
 _SKIP_HEADINGS = re.compile(
     r"^(tl;?dr|summary|overview|introduction|conclusion|sources?|references|"
     r"key references|what (the sources|we) did ?n[o']t (answer|know)|gaps?)\b",
@@ -51,6 +55,11 @@ class EvidenceSource:
     file: str | None = None
     content_hash: str = ""
     providers: list[str] = field(default_factory=list)
+    # Independence (PLAN 4.6): the host of the page this text originates
+    # from. A syndicated or mirrored copy gets its original's origin and
+    # ``copy_of`` its number, so it never counts as a second source.
+    origin: str = ""
+    copy_of: int = 0
 
     @property
     def archived(self) -> bool:
@@ -170,6 +179,7 @@ def load_evidence(
             for ref in collect_source_refs(payload)
         ]
     seen: set[str] = set()
+    bodies: dict[int, str] = {}
     for entry in entries:
         url = canonical_url(str(entry.get("url") or ""))
         if not url or url in seen:
@@ -196,6 +206,7 @@ def load_evidence(
             continue
         body, digest = _body_and_hash(path)
         source.content_hash = digest
+        bodies[source.n] = body
         evidence.passages.extend(_split_passages(source.n, body))
     # Prior knowledge from a shared brain: (url, title, text) of source notes
     # earlier runs archived. Numbered after this run's own sources, citable,
@@ -213,7 +224,39 @@ def load_evidence(
         )
         if text.strip():
             evidence.passages.append(Passage(id=f"s{n}.p1", n=n, text=text.strip()))
+    fold_origins(evidence.sources, bodies)
     return evidence
+
+
+def _shingles(text: str) -> set[int]:
+    words = _WORD.findall(text.lower())
+    return {hash(" ".join(words[i : i + 5])) for i in range(len(words) - 4)}
+
+
+def fold_origins(sources: list[EvidenceSource], bodies: dict[int, str]) -> None:
+    """Set each source's ``origin``; copies of one text share their original's.
+
+    ponytail: exact pairwise Jaccard over shingle sets, O(n²) in archived
+    sources (~100 per run, milliseconds). MinHash/LSH if runs reach the
+    thousands.
+    """
+    for s in sources:
+        s.origin = host_of(s.url)
+    sigs = {
+        n: _shingles(b) for n, b in bodies.items() if len(b.split()) >= _FOLD_MIN_WORDS
+    }
+    by_n = {s.n: s for s in sources}
+    order = sorted(sigs)
+    for i, a in enumerate(order):
+        if by_n[a].copy_of:
+            continue
+        for b in order[i + 1 :]:
+            if by_n[b].copy_of:
+                continue
+            union = len(sigs[a] | sigs[b])
+            if union and len(sigs[a] & sigs[b]) / union >= _SAME_TEXT_JACCARD:
+                by_n[b].copy_of = a
+                by_n[b].origin = by_n[a].origin
 
 
 def plan_sections(meta_summary: str, *, max_sections: int = 5) -> list[tuple[str, str]]:

@@ -304,7 +304,14 @@ def publish(
         for heading, orientation in sections
     ]
     source_rows = [
-        (s.n, _clean_title(s.title, s.url), s.url, s.archived) for s in evidence.sources
+        (
+            s.n,
+            _clean_title(s.title, s.url)
+            + (f" (same text as [{s.copy_of}])" if s.copy_of else ""),
+            s.url,
+            s.archived,
+        )
+        for s in evidence.sources
     ]
     emit(
         {

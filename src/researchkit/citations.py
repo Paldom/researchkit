@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from researchkit.evidence import Evidence, EvidenceSource
-from researchkit.urls import canonical_url, origin_key
+from researchkit.urls import canonical_url, host_of, origin_key
 
 _ANCHOR_GROUP = re.compile(r"\[(\d{1,3}(?:\s*[,;]\s*\d{1,3})*)\]")
 _MD_LINK = re.compile(r"\[([^\]\n]{1,200})\]\((https?://[^\s)]+)\)")
@@ -132,6 +132,7 @@ def renumber(texts: list[str], evidence: Evidence) -> CitedDocuments:
             file=s.file,
             content_hash=s.content_hash,
             providers=s.providers,
+            origin=s.origin,
         )
         for i, s in enumerate(used, start=1)
     ]
@@ -232,7 +233,8 @@ def check_publication(
                 _CORROBORATED.search(sentence)
                 and "uncorroborated" not in sentence.lower()
             ):
-                origins = {origin_key(s.url).split("/", 1)[0] for s in cited_sources}
+                # Hosts, folded: a syndicated copy shares its original's origin.
+                origins = {s.origin or host_of(s.url) for s in cited_sources}
                 if len(origins) < 2:
                     issues.append(
                         Issue(

@@ -767,7 +767,7 @@ _WRITING_RULES = """Evidence rules:
 - When sources disagree, state both readings with their citations; do not average them.
 - When evidence is thin, single-source or unconfirmed, qualify the claim itself in the same sentence ("one vendor reports…", "unverified", "a single benchmark of 50 pages").
 - Prefer primary sources (the vendor's own docs, the paper, the repo) over coverage of them.
-- Call a claim "corroborated" only when it cites two or more independent sources.
+- Call a claim "corroborated" only when it cites two or more independently originating sources; a source marked "(same text as [n])" is a copy of [n], not a second source.
 
 Style rules:
 - Every sentence carries a fact, number, name, tradeoff or step.
