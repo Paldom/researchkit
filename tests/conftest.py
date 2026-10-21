@@ -18,3 +18,14 @@ def _fast_network_backoff() -> None:
     network_retry.DEFAULT_BACKOFF_MIN = 0.0
     network_retry.DEFAULT_BACKOFF_MAX = 0.01
     network_retry.DEFAULT_JITTER_MAX = 0.01
+
+
+@pytest.fixture(autouse=True)
+def _clean_quota_registry() -> object:
+    # The exhausted-pool registry is process-wide by design; tests must not
+    # leak a "quota exhausted" verdict into each other.
+    from researchkit.failures import clear_exhausted
+
+    clear_exhausted()
+    yield
+    clear_exhausted()

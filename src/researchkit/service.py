@@ -10,11 +10,11 @@ from __future__ import annotations
 import contextvars
 import logging
 import shutil
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from researchkit.aggregator import InsightAggregator, InsightBundle
 from researchkit.final_summary import (
@@ -41,6 +41,9 @@ from researchkit.prompts import run_context_note_scope
 from researchkit.run_limit import run_slot
 from researchkit.system_config import EffectiveModels, SystemConfigManager
 from researchkit.utils import slugify
+
+if TYPE_CHECKING:
+    from researchkit.providers.base import ProviderResult
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +94,8 @@ class ResearchArtifacts:
     # writer was skipped, failed, or (skill) declined for thin research.
     article_markdown: str | None = None
     skill_markdown: str | None = None
+    # Honest outcome (see run_status): "ok" / "degraded" / "failed".
+    status: str = "ok"
 
 
 @dataclass
@@ -176,6 +181,40 @@ def claude_cli_login_problem() -> str | None:
             "(or, on an API route, bill the API instead of the subscription)."
         )
     return None
+
+
+def run_status(
+    provider_results: Sequence[ProviderResult], article: str | None
+) -> dict[str, Any]:
+    """The run's honest outcome, recorded in result.json and the exit code.
+
+    ``failed``: no slot returned a single source, so there is nothing cited.
+    ``degraded``: something failed (a slot hit quota, timed out, errored) or
+    the article is missing. ``ok`` otherwise. A slot that answered without
+    sources is ``empty``: routine for keyless providers, so it is reported but
+    does not degrade the run on its own.
+    """
+    slots = {r.provider: r.slot_state for r in provider_results}
+    with_sources = sum(1 for state in slots.values() if state == "complete")
+    failed_slots = sorted(
+        n for n, state in slots.items() if state not in ("complete", "empty")
+    )
+    reasons: list[str] = []
+    if with_sources == 0:
+        reasons.append("no provider returned sources")
+    if failed_slots:
+        reasons.append(
+            "failed slots: " + ", ".join(f"{n} ({slots[n]})" for n in failed_slots)
+        )
+    if not article:
+        reasons.append("article missing")
+    status = "failed" if with_sources == 0 else ("degraded" if reasons else "ok")
+    return {
+        "status": status,
+        "reasons": reasons,
+        "slots": slots,
+        "with_sources": with_sources,
+    }
 
 
 def refuse_api_billed_llm(em: EffectiveModels, providers: Iterable[str]) -> None:
@@ -575,29 +614,42 @@ class SocialResearchService:
                     }
                 )
 
-            # Count successes and failures
-            successes = sum(1 for r in bundle.provider_results if r.is_success)
-            failures = len(bundle.provider_results) - successes
-
+            status = run_status(bundle.provider_results, written.get("article"))
+            states = list(status["slots"].values())
+            successes = states.count("complete")
+            empty = states.count("empty")
+            failures = len(states) - successes - empty
             emit(
                 {
                     "stage": "done",
-                    "message": f"Run complete: {successes} succeeded, {failures} failed",
+                    "message": (
+                        f"Run {status['status']}: {successes} with sources, "
+                        f"{empty} empty, {failures} failed"
+                        + (
+                            f" — {'; '.join(status['reasons'])}"
+                            if status["reasons"]
+                            else ""
+                        )
+                    ),
                     "run_id": run_id,
                     "successes": successes,
                     "failures": failures,
+                    "status": status["status"],
                 }
             )
+            report_json = bundle.to_dict()
+            report_json["run_status"] = status
 
             return ResearchArtifacts(
                 run_id=run_id,
                 bundle=bundle,
                 report_markdown=md,
-                report_json=bundle.to_dict(),
+                report_json=report_json,
                 report_path=report_path,
                 log_path=run_log_path,
                 article_markdown=written.get("article"),
                 skill_markdown=written.get("skill"),
+                status=status["status"],
             )
 
     def create_project(

@@ -263,6 +263,44 @@ def complete_via_spec(
 ) -> str:
     """Run one non-search completion on the backend a model spec selects.
 
+    Refuses up front when the spec's quota pool is known to be exhausted
+    (:class:`~researchkit.failures.QuotaExhaustedError`), and records a quota
+    failure so later calls on the same pool skip instead of repeating it.
+    Routing details: :func:`_complete_via_spec`.
+    """
+    from researchkit.failures import (
+        QuotaExhaustedError,
+        exhausted_reason,
+        note_failure,
+        pool_for_spec,
+    )
+
+    pool = pool_for_spec(model_spec)
+    if reason := exhausted_reason(pool):
+        raise QuotaExhaustedError(pool, reason)
+    try:
+        return _complete_via_spec(
+            model_spec,
+            system_prompt,
+            user_prompt,
+            label=label,
+            claude_budget=claude_budget,
+        )
+    except Exception as e:
+        note_failure(pool, str(e))
+        raise
+
+
+def _complete_via_spec(
+    model_spec: str,
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    label: str,
+    claude_budget: float = 3.0,
+) -> str:
+    """Run one non-search completion on the backend a model spec selects.
+
     ``codex:<m>`` -> Codex CLI, ``agy:<m>`` -> Antigravity CLI,
     ``grokcli:<m>`` -> Grok CLI, ``kimicli:<m>`` -> Kimi Code CLI,
     ``claude*`` -> Claude Code CLI, anything else -> the provider API. A

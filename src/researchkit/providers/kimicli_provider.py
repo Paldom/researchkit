@@ -79,6 +79,11 @@ class KimiCliProvider(CodexProvider):
     keywords and summaries); only the command line and output parsing differ.
     """
 
+    @property
+    def quota_pool(self) -> str:
+        """Subscription allowance this harness bills."""
+        return "kimicli"
+
     _label_prefix = "kimicli"
     _error_prefix = "Kimi Code CLI"
 

@@ -110,6 +110,11 @@ class CodexProvider(BaseProvider):
     citations (titles backfilled) rather than structured annotations.
     """
 
+    @property
+    def quota_pool(self) -> str:
+        """Subscription allowance this harness bills."""
+        return "codex"
+
     # Subclass knobs: GrokCliProvider reuses this provider's whole research
     # shape and overrides only command construction + output parsing.
     _label_prefix = "codex.exec"

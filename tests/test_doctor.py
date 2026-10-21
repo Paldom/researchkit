@@ -333,3 +333,40 @@ class TestCliRouting:
         assert cli.cmd_doctor(args) == 0
         monkeypatch.setattr(doctor_mod, "run_doctor", lambda p: results_bad)
         assert cli.cmd_doctor(args) == 1
+
+
+class TestProbe:
+    def test_probe_classifies_and_dedupes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import researchkit.council as council
+
+        calls: list[str] = []
+
+        def fake(spec: str, system: str, user: str, **kw: Any) -> str:
+            calls.append(spec)
+            if spec.startswith("kimicli"):
+                raise RuntimeError("429 You've reached your 5-hour usage limit")
+            if spec.startswith("agy"):
+                raise RuntimeError("timed out after 120 seconds")
+            return "ok"
+
+        monkeypatch.setattr(council, "complete_via_spec", fake)
+        results = {r.spec: r for r in doctor_mod.run_probe("harness")}
+        assert len(calls) == len(set(calls))  # each distinct spec probed once
+        assert results["kimicli:kimi-code/k3"].status == "fail"
+        assert "quota" in results["kimicli:kimi-code/k3"].detail
+        assert results["agy:gemini-3.8-flash-high"].status == "warn"
+        assert results["codex:gpt-6.1-sol"].status == "ok"
+        # API slots are not probed unless asked (they bill tokens)
+        assert not any(s.startswith(("gpt-", "glm-")) for s in calls)
+
+    def test_probe_restores_timeout_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import os
+
+        import researchkit.council as council
+
+        monkeypatch.setenv("RESEARCHKIT_CLI_TIMEOUT", "777")
+        monkeypatch.setattr(council, "complete_via_spec", lambda *a, **k: "ok")
+        doctor_mod.run_probe("harness-fast")
+        assert os.environ["RESEARCHKIT_CLI_TIMEOUT"] == "777"

@@ -163,6 +163,11 @@ class AntigravityProvider(BaseProvider):
     real publisher URLs (with titles).
     """
 
+    @property
+    def quota_pool(self) -> str:
+        """Subscription allowance this harness bills."""
+        return "agy"
+
     def __init__(
         self,
         api_key: str | None = None,  # parity only; agy uses its own sign-in

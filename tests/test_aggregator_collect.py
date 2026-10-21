@@ -184,3 +184,32 @@ class TestPartialResultsAndResume:
         )
         results = agg.collect_sync("t", 7, ["openai"])
         assert [r.raw_text for r in results] == ["cached"]
+
+
+def test_exhausted_pool_is_skipped_and_quota_is_recorded() -> None:
+    """A quota failure marks the pool; the next run skips it without calling
+    the provider (PLAN 1.2)."""
+    from researchkit.failures import exhausted_reason
+
+    calls: list[str] = []
+
+    class _Quota(_StubProvider):
+        def fetch_insights(self, topic: str, days: int) -> ProviderResult:
+            calls.append(self._name)
+            return ProviderResult(
+                provider=self._name,
+                model="stub",
+                raw_text="",
+                error="You've hit your session limit · resets 10pm",
+            )
+
+    agg = InsightAggregator()
+    agg._create_provider = lambda name, keywords=None: _Quota(name, "x")  # type: ignore[assignment]
+    agg.collect_sync("t", 7, ["openai"])
+    assert calls == ["openai"]
+    assert exhausted_reason("openai-api")
+
+    results = agg.collect_sync("t", 7, ["openai"])
+    assert calls == ["openai"]  # not called again
+    assert results[0].slot_state == "quota"
+    assert "skipped" in (results[0].error or "")

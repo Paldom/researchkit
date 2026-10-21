@@ -113,6 +113,23 @@ class ProviderResult:
         """Check if the result was successful."""
         return self.error is None and bool(self.raw_text)
 
+    @property
+    def failure(self) -> str | None:
+        """Why this slot produced nothing (``quota``, ``timeout``, …), or None."""
+        from researchkit.failures import classify_failure
+
+        if self.error is None:
+            return None if self.raw_text else "empty"
+        kind = classify_failure(self.error)
+        return str(kind) if kind else None
+
+    @property
+    def slot_state(self) -> str:
+        """``complete`` / ``empty`` (answered, no sources) / a failure kind."""
+        if self.is_success:
+            return "complete" if self.sources else "empty"
+        return self.failure or "error"
+
     def to_dict(self) -> dict[str, Any]:
         """Full serialization, including ``raw_text`` — this is the paid output.
 
@@ -290,6 +307,11 @@ class BaseProvider(ABC):
             ProviderResult with the collected insights
         """
         pass
+
+    @property
+    def quota_pool(self) -> str:
+        """The allowance this provider bills; CLI harnesses override it."""
+        return f"{self.provider_name}-api"
 
     def _create_error_result(self, error: str) -> ProviderResult:
         """Create an error result."""

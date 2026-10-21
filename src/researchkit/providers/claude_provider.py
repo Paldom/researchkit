@@ -237,6 +237,11 @@ class ClaudeProvider(BaseProvider):
     - Active Claude Code subscription (uses subscription auth, not API key)
     """
 
+    @property
+    def quota_pool(self) -> str:
+        """Subscription allowance this harness bills."""
+        return "claude"
+
     provider_name = "claude"
     model_name = "claude-sonnet-5-5"
 

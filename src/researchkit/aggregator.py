@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from researchkit.failures import exhausted_reason, note_failure
 from researchkit.keyword_synthesizer import KeywordSynthesizer
 from researchkit.plugin_api import ProviderContext
 from researchkit.plugins import Registry, get_registry
@@ -232,9 +233,27 @@ class InsightAggregator:
     ) -> ProviderResult:
         """Fetch insights from a single provider asynchronously."""
         provider = self._create_provider(provider_name, keywords=keywords)
+        # Duck-typed plugin providers may not define quota_pool.
+        pool = str(getattr(provider, "quota_pool", f"{provider_name}-api"))
+        # A pool already out of quota (this run or a concurrent one) would only
+        # fail again: skip it with the original reason instead of paying for
+        # another doomed start.
+        if reason := exhausted_reason(pool):
+            logger.warning(
+                f"Skipping {provider_name}: {pool} quota exhausted ({reason[:120]})",
+                extra={"stage": "provider_quota_skip", "provider": provider_name},
+            )
+            return ProviderResult(
+                provider=provider_name,
+                model=str(getattr(provider, "model_name", "unknown")),
+                raw_text="",
+                error=f"skipped: {pool} quota exhausted earlier — {reason}",
+            )
         # Run the synchronous fetch in a thread pool
         # asyncio.to_thread propagates contextvars, so run_id is available
-        return await asyncio.to_thread(provider.fetch_insights, topic, days)
+        result = await asyncio.to_thread(provider.fetch_insights, topic, days)
+        note_failure(pool, result.error)
+        return result
 
     async def _run_site_research(
         self,

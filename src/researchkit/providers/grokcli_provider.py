@@ -108,6 +108,11 @@ class GrokCliProvider(CodexProvider):
     keywords and summaries); only the command line and output parsing differ.
     """
 
+    @property
+    def quota_pool(self) -> str:
+        """Subscription allowance this harness bills."""
+        return "grokcli"
+
     _label_prefix = "grokcli"
     _error_prefix = "grok CLI"
 

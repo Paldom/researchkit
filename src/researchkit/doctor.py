@@ -330,3 +330,81 @@ def format_report(results: list[CheckResult], preset_name: str) -> str:
         f"{warns} warnings, {fails} failures"
     )
     return "\n".join(lines)
+
+
+_PROBE_PROMPT = "Reply with exactly: ok"
+_PROBE_TIMEOUT_S = "120"
+
+
+def _probe_specs(em: EffectiveModels, *, include_api: bool) -> dict[str, str]:
+    """Distinct model specs the preset would call, keyed by spec, valued by slot.
+
+    CLI harness specs always; LLM API ids only with ``include_api`` (each
+    probe is a real, if tiny, billed request). Search-only slots are skipped.
+    """
+    from researchkit.council import is_cli_backed_spec, split_effort_spec
+
+    candidates: list[tuple[str, str]] = [
+        (slot, getattr(em, slot))
+        for slot in ("openai", "gemini", "grok", "claude", "kimi", "glm", "github")
+    ]
+    candidates += [
+        (s, getattr(em, s)) for s in ("summarizer", "site_summarizer", "improver")
+    ]
+    candidates += [(f"council[{i}]", m) for i, m in enumerate(em.council_members, 1)]
+    candidates += [("boss", em.council_boss)]
+    specs: dict[str, str] = {}
+    for slot, spec in candidates:
+        base, _ = split_effort_spec(spec)
+        cli = is_cli_backed_spec(base) or base.lower().startswith("deep")
+        if (cli or include_api) and base not in specs:
+            specs[base] = slot
+    return specs
+
+
+def run_probe(
+    preset_name: str | None = None, *, include_api: bool = False
+) -> list[CheckResult]:
+    """Send one tiny prompt per distinct harness (and, opt-in, API) spec.
+
+    Catches what a login check can't: exhausted quota, revoked auth, a model
+    id the account can't use. Costs one minimal completion per spec, so it is
+    opt-in (``doctor --probe`` / ``--probe-api``).
+    """
+    import os
+    from concurrent.futures import ThreadPoolExecutor
+
+    from researchkit.council import complete_via_spec
+    from researchkit.failures import FailureKind, classify_failure
+
+    em = SystemConfigManager().resolve_effective_models(preset_name)
+    specs = _probe_specs(em, include_api=include_api)
+
+    def _one(spec: str) -> CheckResult:
+        slot = f"probe:{specs[spec]}"
+        # deep: is a workflow, not a completion target — probe its model.
+        target = "claude:" + spec.split(":", 1)[1] if spec.startswith("deep:") else spec
+        try:
+            text = complete_via_spec(target, "", _PROBE_PROMPT, label="doctor.probe")
+        except Exception as e:  # classified below; never raises out of doctor
+            kind = classify_failure(str(e))
+            status = (
+                "warn"
+                if kind in (FailureKind.TIMEOUT, FailureKind.TRANSIENT)
+                else "fail"
+            )
+            return CheckResult(slot, spec, status, f"{kind}: {str(e)[:160]}")
+        if not text.strip():
+            return CheckResult(slot, spec, "warn", "answered with empty text")
+        return CheckResult(slot, spec, "ok", "answered")
+
+    previous = os.environ.get("RESEARCHKIT_CLI_TIMEOUT")
+    os.environ["RESEARCHKIT_CLI_TIMEOUT"] = _PROBE_TIMEOUT_S  # probes are tiny
+    try:
+        with ThreadPoolExecutor(max_workers=max(1, len(specs))) as pool:
+            return list(pool.map(_one, specs))
+    finally:
+        if previous is None:
+            os.environ.pop("RESEARCHKIT_CLI_TIMEOUT", None)
+        else:
+            os.environ["RESEARCHKIT_CLI_TIMEOUT"] = previous

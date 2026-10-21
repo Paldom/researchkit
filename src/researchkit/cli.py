@@ -293,6 +293,19 @@ Site Research (optional):
         default=None,
         help="Preset to check (default: the active preset)",
     )
+    doctor_parser.add_argument(
+        "--probe",
+        action="store_true",
+        help=(
+            "Also send one tiny prompt to each CLI harness the preset uses "
+            "(subscription billing) to catch exhausted quota or revoked auth"
+        ),
+    )
+    doctor_parser.add_argument(
+        "--probe-api",
+        action="store_true",
+        help="With --probe, also probe LLM API slots (each is a tiny billed request)",
+    )
 
     # --- council command ---
     council_parser = subparsers.add_parser(
@@ -1053,9 +1066,9 @@ def cmd_run(args, service: SocialResearchService) -> int:
         return 1
 
     failures = [r for r in artifacts.bundle.provider_results if not r.is_success]
-    all_failed = bool(failures) and len(failures) == len(
-        artifacts.bundle.provider_results
-    )
+    # "failed" = no slot returned a source (run_status): nothing cited to
+    # archive, and the exit code must say so even if every CLI "answered".
+    all_failed = artifacts.status == "failed"
 
     # No materials/ingest for a run with zero successful providers — there is
     # nothing cited to archive, and a hollow topic note would pollute a brain.
@@ -1072,6 +1085,12 @@ def cmd_run(args, service: SocialResearchService) -> int:
 
     # Output report
     print(artifacts.report_markdown)
+    status = artifacts.report_json.get("run_status") or {}
+    if status.get("status") not in (None, "ok"):
+        print(
+            f"Run {status['status']}: {'; '.join(status.get('reasons', []))}",
+            file=sys.stderr,
+        )
     print(f"wrote: {project.path.resolve()}", file=sys.stderr)
     _print_next_steps(project.path.resolve())
 
@@ -1378,9 +1397,12 @@ def _harness_council(preset: str, harnesses=None, boss=None):
     from researchkit.council import LLMCouncil
     from researchkit.system_config import SystemConfigManager
 
-    council = LLMCouncil.from_effective_models(
-        SystemConfigManager().resolve_effective_models(preset)
-    )
+    effective = SystemConfigManager().resolve_effective_models(preset)
+    council = LLMCouncil.from_effective_models(effective)
+    # advise/council answer long, context-heavy questions: the in-run $3 cap
+    # cut Fable 5.1 off mid-answer (error_max_budget_usd on a 20k-word
+    # context). These commands get the preset's full Claude budget.
+    council.claude_budget = effective.claude_max_budget
     if harnesses:
         council.members = list(harnesses)
     if boss:
@@ -1421,6 +1443,12 @@ def cmd_doctor(args) -> int:
     preset = args.preset or SystemConfigManager().get_active_preset()
     try:
         results = run_doctor(args.preset)
+        if getattr(args, "probe", False) or getattr(args, "probe_api", False):
+            from researchkit.doctor import run_probe
+
+            results += run_probe(
+                args.preset, include_api=bool(getattr(args, "probe_api", False))
+            )
     except ValueError as e:  # unknown preset
         print(f"Error: {e}", file=sys.stderr)
         return 1
@@ -1845,9 +1873,9 @@ def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
         return 1
 
     failures = [r for r in artifacts.bundle.provider_results if not r.is_success]
-    all_failed = bool(failures) and len(failures) == len(
-        artifacts.bundle.provider_results
-    )
+    # "failed" = no slot returned a source (run_status): nothing cited to
+    # archive, and the exit code must say so even if every CLI "answered".
+    all_failed = artifacts.status == "failed"
 
     # No materials/ingest for a run with zero successful providers — there is
     # nothing cited to archive, and a hollow topic note would pollute a brain.
@@ -1864,6 +1892,12 @@ def cmd_instant(args, service: SocialResearchService, topic: str) -> int:
 
     # Output report
     print(artifacts.report_markdown)
+    status = artifacts.report_json.get("run_status") or {}
+    if status.get("status") not in (None, "ok"):
+        print(
+            f"Run {status['status']}: {'; '.join(status.get('reasons', []))}",
+            file=sys.stderr,
+        )
     print(f"wrote: {project.path.resolve()}", file=sys.stderr)
     _print_next_steps(project.path.resolve())
 

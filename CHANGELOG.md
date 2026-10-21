@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `researchkit doctor --probe` sends one tiny prompt to each CLI harness the
+  preset uses (in parallel, 120 s cap) and reports exhausted quota, revoked
+  auth or an unusable model id. A login check can't see those: Antigravity
+  showed ✓ while out of quota for a week. `--probe-api` also probes LLM API
+  slots (opt-in, since each probe is a small billed request).
+- Honest run status. `result.json` carries `run_status` (`ok` / `degraded` /
+  `failed`, reasons, per-slot state). The done line reads "Run degraded: 2
+  with sources, 5 empty, 2 failed — failed slots: kimi (quota)…", and a run
+  where no slot returned a source exits non-zero even if every CLI answered.
+- Failure classes (`researchkit.failures`): quota, rate limit, auth, config,
+  timeout, transient, error. The patterns come from 248 past runs' real error
+  strings. A quota failure marks that allowance (one per CLI harness or API
+  vendor) exhausted process-wide until its stated reset or 1 h. Later
+  providers, council members and writers on the same allowance are skipped
+  with the original reason instead of failing again. Retries no longer fire
+  on quota, auth or config errors.
+
 - `harness_only: true` preset flag (set on `harness` and `harness-fast`):
   every LLM step a run uses — the research slots it selects, summarizers,
   improver, council and boss — must be a CLI harness spec. A run that would
@@ -32,6 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `github: codex:gpt-6.1-sol`.
 
 ### Changed
+
+- `advise` and `council` give Claude the preset's full `claude_max_budget`
+  ($15 on harness) instead of the in-run $3 cap, which stopped Fable 5.1
+  mid-answer on long `--context-file` questions (`error_max_budget_usd`).
 
 - Startup is ~9x faster: `import researchkit.cli` takes 0.10 s instead of
   0.88 s. The package and `researchkit.providers` resolve their exports

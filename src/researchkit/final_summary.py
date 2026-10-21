@@ -15,6 +15,7 @@ from tenacity import (
     wait_random,
 )
 
+from researchkit.failures import exhausted_reason, note_failure
 from researchkit.prompts import (
     get_article_system_prompt,
     get_article_user_prompt_footer,
@@ -370,6 +371,8 @@ class ClaudeFinalSummaryGenerator:
     def _fail(self, message: str) -> None:
         """Record why this run produced nothing and log it."""
         self.last_error = message
+        # A Claude session/weekly limit hit by one writer stops the others.
+        note_failure("claude", message)
         logger.warning(
             f"{self.__class__.__name__}: {message}",
             extra={"stage": f"{self.stage_name}_error"},
@@ -377,6 +380,13 @@ class ClaudeFinalSummaryGenerator:
 
     def _run_claude(self, user_prompt: str) -> str | None:
         """Run Claude Code CLI and return the summary markdown."""
+        if reason := exhausted_reason("claude"):
+            self.last_error = f"skipped: claude quota exhausted earlier — {reason}"
+            logger.warning(
+                f"{self.__class__.__name__}: {self.last_error}",
+                extra={"stage": f"{self.stage_name}_error"},
+            )
+            return None
         self.last_error = None
         cmd = [
             "claude",

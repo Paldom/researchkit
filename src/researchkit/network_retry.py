@@ -104,6 +104,17 @@ def _is_transient_error(exc: BaseException) -> bool:
     1. The exception is (or wraps) a known transient network error.
     2. The exception carries a retryable HTTP status code.
     """
+    # Exhausted allowance, bad credentials and bad flags never heal on retry;
+    # retrying them only burns wall time (and, for quota, more refusals).
+    from researchkit.failures import FailureKind, classify_failure
+
+    if classify_failure(str(exc)) in (
+        FailureKind.QUOTA,
+        FailureKind.AUTH,
+        FailureKind.CONFIG,
+    ):
+        return False
+
     if isinstance(exc, _TRANSIENT_EXCEPTION_TYPES):
         return True
 
