@@ -133,6 +133,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Repo harvest runs beside the archive download** (PLAN 3.4), so the
+  writers wait for the slower of the two rather than both in turn. Every
+  clone is capped by what remains of the 90 s deadline and the worker pool
+  is joined: a slow clone is killed instead of abandoned, and nothing keeps
+  writing into `repos/` after the run moved on. The serial
+  `clone_cited_repos` (the `repos` command) and the pipeline now share one
+  clone, harvest and delete-after-extract routine.
+
 - **No provider-side page fetches** (PLAN 3.3). Codex, Grok CLI and Kimi no
   longer scrape every cited page for its `<title>`, and agy no longer GETs
   each page after resolving its grounding redirect (the HEAD that resolves

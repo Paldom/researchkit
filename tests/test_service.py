@@ -291,6 +291,49 @@ class TestArchiveFirst:
             "failed",
         )
 
+    def test_repo_harvest_runs_beside_the_archive(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        import threading
+
+        import researchkit.service as service_module
+
+        monkeypatch.setattr(service_module, "InsightAggregator", FakeAggregator)
+        service = SocialResearchService(projects_dir=tmp_path)
+        monkeypatch.setattr(
+            service,
+            "get_effective_models",
+            lambda preset_name=None: _make_effective_models(),
+        )
+        harvesting = threading.Event()
+
+        def enrich(
+            repo_dir: Path, bundle: object, emit: object, keep_clones: bool = False
+        ) -> list[str]:
+            harvesting.set()
+            return ["repo: o/r"]
+
+        def archive(payload: dict) -> dict:
+            # Serial code would deadlock here (harvest runs after archive).
+            assert harvesting.wait(5), "repo harvest did not overlap the archive"
+            return {"fetched": 1, "total_cited": 1}
+
+        monkeypatch.setattr(service, "_enrich_with_repos", enrich)
+        cards: list[list[str]] = []
+        real_publish = service_module.publish
+        monkeypatch.setattr(
+            service_module,
+            "publish",
+            lambda **kw: (cards.append(kw["repo_cards"]), real_publish(**kw))[1],
+        )
+        service.run(
+            ResearchRequest(topic="AI agents", providers=["openai"]),
+            log_dir=tmp_path,
+            archive=archive,
+            repo_dir=tmp_path,
+        )
+        assert cards == [["repo: o/r"]]
+
     def test_nothing_archived_fails_the_run(self) -> None:
         from researchkit.providers.base import ProviderResult, Source
         from researchkit.service import run_status

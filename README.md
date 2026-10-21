@@ -262,8 +262,9 @@ uv run researchkit repos <project>                 # or after the fact, on a fin
 ```
 
 The step is bounded so it can never cost you a report you already paid for: 3
-workers, 30s per repo, a 90-second hard deadline, top 5 cited repos. Whatever
-finished by the deadline is used, the rest are abandoned, and the run says so
+workers, 30s per repo, a 90-second hard deadline, top 5 cited repos, running
+beside the archive download. Whatever finished by the deadline is used, a
+clone still running is killed at it, and the run says so
 (`Repository grounding: 3/5 harvested, 2 unavailable in time`). Nothing in it
 can raise.
 

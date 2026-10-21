@@ -26,7 +26,8 @@ import re
 import shutil
 import subprocess
 import threading
-from concurrent.futures import ThreadPoolExecutor, wait
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -445,56 +446,7 @@ def clone_cited_repos(
 
     root = project_path / "repos"
     root.mkdir(parents=True, exist_ok=True)
-    cloned: list[ClonedRepo] = []
-    for url in urls:
-        slug = _repo_slug(url) or url
-        dest = root / slug.replace("/", "-")
-        entry = ClonedRepo(slug=slug, url=url)
-        if dest.exists():
-            entry.path = dest
-        else:
-            try:
-                _clone(url, dest)
-                entry.path = dest
-            except Exception as e:
-                entry.error = " ".join(str(e).split())[:200]
-                logger.warning("repo clone failed for %s: %s", slug, entry.error)
-                cloned.append(entry)
-                continue
-        entry.files, entry.languages, entry.readme_lead = _inspect(dest)
-
-        # Harvest while the tree exists — after this, the extract IS the repo.
-        try:
-            harvested = harvest_repo(dest)
-            entry.manifest = harvested["manifest"]
-            entry.docs = harvested["docs"]
-            entry.api = harvested["api"]
-            entry.tree = harvested["tree"]
-        except Exception as e:  # a weird tree must not lose the whole run
-            logger.warning("repo harvest failed for %s: %s", slug, e)
-
-        extract_name = f"{slug.replace('/', '-')}.md"
-        try:
-            (root / extract_name).write_text(
-                render_repo_extract(entry), encoding="utf-8"
-            )
-            entry.extract_file = extract_name
-        except OSError as e:
-            logger.warning("could not write repo extract for %s: %s", slug, e)
-
-        if not keep_clones:
-            # Only ever after the extract is on disk: deleting first and
-            # failing to write would lose the repo entirely.
-            if entry.extract_file:
-                shutil.rmtree(dest, ignore_errors=True)
-                entry.deleted = not dest.exists()
-                entry.path = None if entry.deleted else dest
-            else:
-                logger.warning(
-                    "keeping clone of %s: no extract was written to replace it",
-                    slug,
-                )
-        cloned.append(entry)
+    cloned = [_extract_single(root, url, _CLONE_TIMEOUT_S, keep_clones) for url in urls]
 
     analysis = summarize_repos(topic, cloned, model_spec) if topic else ""
     (root / "SUMMARY.md").write_text(render_summary(cloned, analysis), encoding="utf-8")
@@ -551,10 +503,9 @@ def extract_repos_for_run(
     """Clone + harvest cited repos concurrently under a hard wall-clock deadline.
 
     Built for the critical path, so the contract is defensive: it never raises,
-    never waits past ``deadline_s``, and returns only what finished. Repos still
-    running when the deadline expires are abandoned — their threads are daemons
-    that will clean up on their own — because a paid report must not wait on a
-    slow clone. A run that gets nothing back is a run that reports its findings
+    never waits much past ``deadline_s`` (a clone is killed at the deadline;
+    only a local harvest can run over), and returns only what finished,
+    because a paid report must not wait on a slow clone. A run that gets nothing back is a run that reports its findings
     without repository grounding, which is a degraded result, not a failed one.
     """
     urls = extract_repo_urls(result)[: max(0, limit)]
@@ -569,19 +520,22 @@ def extract_repos_for_run(
     done: list[ClonedRepo] = []
     done_lock = threading.Lock()
 
+    deadline_at = time.monotonic() + max(0.0, deadline_s)
+
     def one(url: str) -> None:
-        entry = _extract_single(root, url, per_repo_s, keep_clones)
+        # Each clone gets at most what is left of the run's deadline, so the
+        # pool can be joined: nothing outlives this call or writes into
+        # repos/ after it returned (the old shutdown(wait=False) leak).
+        left = deadline_at - time.monotonic()
+        if left < 1.0:
+            return
+        entry = _extract_single(root, url, min(per_repo_s, left), keep_clones)
         with done_lock:
             done.append(entry)
 
-    executor = ThreadPoolExecutor(max_workers=max(1, workers))
-    try:
-        futures = [executor.submit(one, url) for url in urls]
-        wait(futures, timeout=max(0.0, deadline_s))
-    finally:
-        # Do not join: shutdown(wait=True) would reintroduce the very delay the
-        # deadline exists to prevent.
-        executor.shutdown(wait=False, cancel_futures=True)
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
+        for url in urls:
+            executor.submit(one, url)
 
     with done_lock:
         finished = list(done)
@@ -598,32 +552,51 @@ def extract_repos_for_run(
 
 
 def _extract_single(
-    root: Path, url: str, per_repo_s: float, keep_clones: bool
+    root: Path, url: str, clone_timeout_s: float, keep_clones: bool
 ) -> ClonedRepo:
-    """Clone, harvest, write the extract, drop the tree. Never raises."""
+    """Clone, harvest, write the extract, then drop the tree. Never raises.
+
+    A failed harvest keeps the inspected basics; the tree is deleted only once
+    its extract is on disk, so a failed write never loses the repo.
+    """
     slug = _repo_slug(url) or url
     dest = root / slug.replace("/", "-")
     entry = ClonedRepo(slug=slug, url=url)
     try:
         if not dest.exists():
-            _clone(url, dest, timeout_s=per_repo_s)
+            _clone(url, dest, timeout_s=clone_timeout_s)
         entry.path = dest
         entry.files, entry.languages, entry.readme_lead = _inspect(dest)
+    except Exception as e:
+        entry.error = " ".join(str(e).split())[:200]
+        logger.warning("repo clone failed for %s: %s", slug, entry.error)
+        return entry
+
+    try:
         harvested = harvest_repo(dest)
         entry.manifest = harvested["manifest"]
         entry.docs = harvested["docs"]
         entry.api = harvested["api"]
         entry.tree = harvested["tree"]
-        extract_name = f"{slug.replace('/', '-')}.md"
+    except Exception as e:  # a weird tree must not lose the whole run
+        logger.warning("repo harvest failed for %s: %s", slug, e)
+
+    extract_name = f"{slug.replace('/', '-')}.md"
+    try:
         (root / extract_name).write_text(render_repo_extract(entry), encoding="utf-8")
         entry.extract_file = extract_name
-        if not keep_clones:
+    except OSError as e:
+        logger.warning("could not write repo extract for %s: %s", slug, e)
+
+    if not keep_clones:
+        if entry.extract_file:
             shutil.rmtree(dest, ignore_errors=True)
             entry.deleted = not dest.exists()
             entry.path = None if entry.deleted else dest
-    except Exception as e:
-        entry.error = " ".join(str(e).split())[:200]
-        logger.warning("repo extraction failed for %s: %s", slug, entry.error)
+        else:
+            logger.warning(
+                "keeping clone of %s: no extract was written to replace it", slug
+            )
     return entry
 
 

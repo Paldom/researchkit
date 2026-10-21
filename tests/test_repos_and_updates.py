@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -59,7 +60,9 @@ class TestRepoExtraction:
         monkeypatch.setattr(repos_mod.shutil, "which", lambda b: "/usr/bin/git")
         seen: list[str] = []
         monkeypatch.setattr(
-            repos_mod, "_clone", lambda url, dest: (seen.append(url), dest.mkdir())[1]
+            repos_mod,
+            "_clone",
+            lambda url, dest, **kw: (seen.append(url), dest.mkdir())[1],
         )
         repos_mod.clone_cited_repos(
             tmp_path,
@@ -75,7 +78,7 @@ class TestCloneReporting:
     ) -> None:
         monkeypatch.setattr(repos_mod.shutil, "which", lambda b: "/usr/bin/git")
 
-        def boom(url: str, dest: Path) -> None:
+        def boom(url: str, dest: Path, **kw: Any) -> None:
             raise RuntimeError("repository not found")
 
         monkeypatch.setattr(repos_mod, "_clone", boom)
@@ -173,7 +176,9 @@ class TestHarvestThenDelete:
 
     def _run(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **kwargs: Any):
         monkeypatch.setattr(repos_mod.shutil, "which", lambda b: "/usr/bin/git")
-        monkeypatch.setattr(repos_mod, "_clone", lambda url, dest: _fake_repo(dest))
+        monkeypatch.setattr(
+            repos_mod, "_clone", lambda url, dest, **kw: _fake_repo(dest)
+        )
         return repos_mod.clone_cited_repos(
             tmp_path, _result("https://github.com/o/widget"), **kwargs
         )
@@ -211,7 +216,9 @@ class TestHarvestThenDelete:
         # If writing the extract fails, deleting the tree would lose the repo
         # entirely — the whole point of the ordering.
         monkeypatch.setattr(repos_mod.shutil, "which", lambda b: "/usr/bin/git")
-        monkeypatch.setattr(repos_mod, "_clone", lambda url, dest: _fake_repo(dest))
+        monkeypatch.setattr(
+            repos_mod, "_clone", lambda url, dest, **kw: _fake_repo(dest)
+        )
         real_write = Path.write_text
 
         def fail_extract(self: Path, *args: Any, **kw: Any) -> int:
@@ -258,7 +265,7 @@ class TestPipelineEnrichment:
     or broken clone may degrade the grounding but must never cost the report.
     """
 
-    def test_deadline_returns_what_finished_and_abandons_the_rest(
+    def test_deadline_kills_the_slow_clone_and_returns_what_finished(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         import time
@@ -267,7 +274,10 @@ class TestPipelineEnrichment:
 
         def slow_or_fast(url: str, dest: Path, **kw: Any) -> None:
             if "slow" in url:
-                time.sleep(30)  # never finishes inside the deadline
+                # Like the real _clone: git is killed at its timeout, which
+                # is now capped by what is left of the deadline.
+                time.sleep(min(30, kw["timeout_s"]))
+                raise RuntimeError("clone timed out")
             _fake_repo(dest)
 
         monkeypatch.setattr(repos_mod, "_clone", slow_or_fast)
@@ -280,8 +290,10 @@ class TestPipelineEnrichment:
         )
         elapsed = time.monotonic() - started
 
-        assert elapsed < 10, f"the deadline did not hold: waited {elapsed:.1f}s"
+        assert elapsed < 4, f"the deadline did not hold: waited {elapsed:.1f}s"
         assert [r.slug for r in repos if r.ok] == ["o/fast"]
+        # Joined, not abandoned: no worker is still running after the return.
+        assert not [t for t in threading.enumerate() if "ThreadPool" in t.name]
 
     def test_a_raising_repo_never_propagates(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

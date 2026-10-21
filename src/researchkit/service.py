@@ -7,13 +7,14 @@ should use. It coordinates provider collection, summarization, formatting, and s
 
 from __future__ import annotations
 
+import contextvars
 import dataclasses
 import json
 import logging
 import shutil
 import time
 from collections.abc import Callable, Iterable, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -539,10 +540,21 @@ class SocialResearchService:
             # Hard-bounded, never raises — a slow clone degrades the grounding,
             # it does not cost the report. (Design reviewed by the flagship
             # council: bound it, never block on it, keep the bulk on disk.)
-            repo_cards: list[str] = []
+            # Runs beside the archive download below (PLAN 3.4): the two are
+            # independent network work, so the writers wait for the slower
+            # one, not for both in turn. Joined before publication.
+            archive_payload = bundle.to_dict()  # snapshot before repos mutate it
+            repo_job: Future[list[str]] | None = None
+            repo_pool: ThreadPoolExecutor | None = None
             if repos_enabled and repo_dir is not None:
-                repo_cards = self._enrich_with_repos(
-                    repo_dir, bundle, emit, keep_clones=repo_keep_clones
+                repo_pool = ThreadPoolExecutor(max_workers=1)
+                repo_job = repo_pool.submit(
+                    contextvars.copy_context().run,
+                    self._enrich_with_repos,
+                    repo_dir,
+                    bundle,
+                    emit,
+                    keep_clones=repo_keep_clones,
                 )
 
             # --- Archive first (PLAN 2.4) ------------------------------------
@@ -556,7 +568,7 @@ class SocialResearchService:
             ):
                 emit({"stage": "materials_start", "message": "Archiving cited sources"})
                 try:
-                    manifest = archive(bundle.to_dict())
+                    manifest = archive(archive_payload)
                     materials_summary = {
                         "fetched": manifest.get("fetched", 0),
                         "total_cited": manifest.get("total_cited", 0),
@@ -579,6 +591,11 @@ class SocialResearchService:
                         "total_cited": 0,
                         "error": str(e),
                     }
+
+            repo_cards: list[str] = []
+            if repo_job is not None and repo_pool is not None:
+                repo_cards = repo_job.result()
+                repo_pool.shutdown()
 
             # --- Publication (PLAN 2.4-2.11) ---------------------------------
             written: dict[str, str | None] = {}
