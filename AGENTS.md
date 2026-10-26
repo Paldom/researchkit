@@ -40,6 +40,10 @@ Every live run spends. Test with the smallest thing that proves the change:
   re-runs only those three on frozen research (no provider calls), which is
   the cheap way to test a writing change. The brain that follows is free
   (stdlib brainkit).
+- **Then the article is finished with `/deslop` and `/illustrate`**: two more
+  Claude Code sessions (subscription), after `npx skills update` checks both
+  skill families for new versions. `RESEARCHKIT_ARTICLE_FINISH=0` turns the
+  pass off for a smoke test.
 - **Never boost to smoke-test.** `--boost` and `explore` fan out into many
   sub-runs and multiply cost by the fan-out. They are for real research, not
   verification.

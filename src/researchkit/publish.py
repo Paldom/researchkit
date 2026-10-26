@@ -105,6 +105,8 @@ class Publication:
     claims: list[dict[str, Any]] = field(default_factory=list)
     issues: list[Issue] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)
+    # /deslop + /illustrate pass on the article (article_finish).
+    finishing: dict[str, Any] = field(default_factory=dict)
 
     @property
     def hard_issues(self) -> list[Issue]:
@@ -119,6 +121,7 @@ class Publication:
             "hard_issues": [i.to_dict() for i in self.hard_issues],
             "advisories": sum(1 for i in self.issues if not i.hard),
             "errors": self.errors,
+            "article_finishing": self.finishing,
             "lead_written": self.lead is not None,
             "body_written": self.body is not None,
         }
@@ -408,6 +411,25 @@ def publish(
                 with contextlib.suppress(OSError):
                     path = project_dir / "materials" / s.file
                     archive_text[s.url] = path.read_text(encoding="utf-8")
+    finishing: dict[str, Any] = {}
+    if article and project_dir is not None:
+        from researchkit import article_finish
+
+        if article_finish.enabled():
+            done = article_finish.finish_article(
+                article,
+                title=_title(topic),
+                project_dir=project_dir,
+                model=model,
+                max_budget=budget,
+                emit=emit,
+            )
+            article = done.markdown
+            finishing = {
+                "deslopped": done.deslopped,
+                "illustrations": done.illustrations,
+                "notes": done.notes,
+            }
     issues = check_publication({"report.md": report_text}, cited, archive_text)
     if article:
         issues += _article_link_issues(article, evidence)
@@ -432,4 +454,5 @@ def publish(
         claims=claims,
         issues=issues,
         errors=errors,
+        finishing=finishing,
     )

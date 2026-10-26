@@ -100,6 +100,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every article goes through `/deslop` and `/illustrate`** (owner rule,
+  2026-10-26). After the writers, `researchkit.article_finish` updates both
+  skill families (`npx skills update -g`, once per process), then runs a
+  Claude Code session per skill. The session runs in an empty temp
+  directory holding only `article.md`, with an explicit tool allowlist,
+  no web tools, MCP or hooks, and no permission bypass.
+  - A deslop pass that changes any citation anchor, link URL or number is
+    discarded.
+  - The final SVG is copied to `article-assets/` and linked under the
+    article's title.
+  - A missing skill or a failed session never costs the article; the
+    outcome is recorded in `publication.article_finishing`.
+  - `RESEARCHKIT_ARTICLE_FINISH=0` turns the pass off.
+
 - **Experiment arms for the PLAN 3.8 and 5.4 A/Bs.** `RESEARCHKIT_DEPTH=deep`
   runs the Codex research slot with live search, `xhigh` effort and a
   rounds contract (sub-questions, search, primary pages, gaps, one

@@ -47,6 +47,13 @@ def _no_network_archiving(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _no_article_finishing(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The /deslop + /illustrate pass spawns a tool-enabled Claude Code session
+    # and runs `npx skills update`; tests of it opt back in explicitly.
+    monkeypatch.setenv("RESEARCHKIT_ARTICLE_FINISH", "0")
+
+
+@pytest.fixture(autouse=True)
 def _no_real_claude_writers(monkeypatch: pytest.MonkeyPatch) -> None:
     # The publication stage spawns Claude Code writers; a unit test must never
     # bill a subscription. Tests that exercise the writer command patch
