@@ -14,20 +14,21 @@ resolution-markers = [
 exclude-newer = "2026-07-04T00:00:00Z"
 
 [options.exclude-newer-package]
-httpcore2 = "2026-08-19T00:00:00Z"
 urllib3 = "2026-09-16T00:00:00Z"
-httpx2 = "2026-08-19T00:00:00Z"
 hatchling = "2026-08-01T00:00:00Z"
-anyio = "2026-07-13T00:00:00Z"
 pyasn1 = "2026-08-01T00:00:00Z"
 pyjwt = "2026-09-24T00:00:00Z"
-virtualenv = "2026-09-25T00:00:00Z"
-python-discovery = "2026-08-29T00:00:00Z"
-httpx2-jsfetch = "2026-08-08T00:00:00Z"
 aiohttp = "2026-10-06T00:00:00Z"
 cryptography = "2026-08-01T00:00:00Z"
-mcp = "2026-09-08T00:00:00Z"
+anyio = "2026-07-13T00:00:00Z"
+httpx2-jsfetch = "2026-08-08T00:00:00Z"
+httpx2 = "2026-08-19T00:00:00Z"
 yarl = "2026-09-16T00:00:00Z"
+cloakbrowser = false
+virtualenv = "2026-09-25T00:00:00Z"
+python-discovery = "2026-08-29T00:00:00Z"
+mcp = "2026-09-08T00:00:00Z"
+httpcore2 = "2026-08-19T00:00:00Z"
 
 [[package]]
 name = "aiohappyeyeballs"
