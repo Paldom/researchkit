@@ -591,14 +591,13 @@ def create_app(service: SocialResearchService | None = None) -> FastAPI:
 
     @app.get("/api/projects/{name}/links")
     def project_links(name: str, mode: str = "loose") -> JSONResponse:
-        from researchkit.link_analytics import analyze_project_links
+        from researchkit.link_analytics import analyze_project_links, load_link_result
 
         if mode not in ("strict", "loose"):
             raise HTTPException(status_code=422, detail="mode must be strict|loose")
-        path = _find_project(name).path / "result.json"
-        if not path.is_file():
+        result = load_link_result(_find_project(name).path)
+        if result is None:
             raise HTTPException(status_code=404, detail="No result yet")
-        result = json.loads(path.read_text(encoding="utf-8"))
         return JSONResponse(analyze_project_links(result, mode=mode))  # type: ignore[arg-type]
 
     @app.post("/api/improve-topic")

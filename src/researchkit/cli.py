@@ -1304,6 +1304,7 @@ def cmd_links(args, service: SocialResearchService) -> int:
 
     from researchkit.link_analytics import (
         analyze_occurrences,
+        load_link_result,
         occurrences_from_result_json,
     )
 
@@ -1312,8 +1313,8 @@ def cmd_links(args, service: SocialResearchService) -> int:
         print(f"Error: Project not found: {args.project}", file=sys.stderr)
         return 1
 
-    # Analyze citations from result.json
-    results = project.load_results()
+    # Analyze citations from result.json (a boosted run's live in subprojects/)
+    results = load_link_result(project.path)
     if not results:
         print("Error: result.json not found (project not run yet?)", file=sys.stderr)
         return 1

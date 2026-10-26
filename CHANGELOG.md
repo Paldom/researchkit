@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Boosted runs showed no link analytics** in the web UI's Links tab or
+  `researchkit links`. A boosted parent's `result.json` holds only the
+  council and super-summary, and every citation lives in its sub-projects.
+  `link_analytics.load_link_result` now folds the sub-projects' provider
+  results and site-research items into the parent's, recursively.
+
 - A bold lead-in (`**Codex drops results.** Issue…`) no longer glues itself
   and the following sentences into one `claims.jsonl` row: a sentence now
   also ends after closing markup (`**`, `*`, `_`, a quote, a bracket or a

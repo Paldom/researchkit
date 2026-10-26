@@ -7,9 +7,11 @@ and analytics aggregation for links from result.json.
 
 from __future__ import annotations
 
+import json
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -350,6 +352,45 @@ def analyze_occurrences(
         top_duplicates=groups[:top_n_duplicates],
         raw=raw,
     )
+
+
+def load_link_result(project_dir: Path) -> dict[str, Any] | None:
+    """A project's ``result.json`` with its sub-projects' links folded in.
+
+    A boosted parent's own result holds only the council and the
+    super-summary; every citation lives in ``subprojects/*/result.json``.
+    Reading the parent alone showed no link analytics at all for boosted
+    runs, so their provider results and site-research items are merged in
+    (recursively). ``None`` when the project has not been run.
+    """
+    path = project_dir / "result.json"
+    if not path.is_file():
+        return None
+    result: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    subprojects = project_dir / "subprojects"
+    if not subprojects.is_dir():
+        return result
+    results = list(result.get("provider_results") or [])
+    by_site: dict[str, list[Any]] = {
+        site: list(items or [])
+        for site, items in (
+            (result.get("site_research") or {}).get("items_by_site") or {}
+        ).items()
+    }
+    for child in sorted(p for p in subprojects.iterdir() if p.is_dir()):
+        sub = load_link_result(child)
+        if sub is None:
+            continue
+        results += sub.get("provider_results") or []
+        for site, items in (
+            (sub.get("site_research") or {}).get("items_by_site") or {}
+        ).items():
+            by_site.setdefault(site, []).extend(items or [])
+    merged = dict(result)
+    merged["provider_results"] = results
+    if by_site:
+        merged["site_research"] = {"items_by_site": by_site}
+    return merged
 
 
 def analyze_project_links(
