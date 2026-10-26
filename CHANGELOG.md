@@ -113,6 +113,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A missing skill or a failed session never costs the article; the
     outcome is recorded in `publication.article_finishing`.
   - `RESEARCHKIT_ARTICLE_FINISH=0` turns the pass off.
+  - slop-lint's score before and after is recorded as well. A clean
+    article is left untouched by design, and the score shows that.
+  - Live check: a sloppy draft went from lint score 44 (`mild`) to 0
+    (`clean`) with every citation and number intact, and an illustration
+    was produced and linked.
 
 - **Experiment arms for the PLAN 3.8 and 5.4 A/Bs.** `RESEARCHKIT_DEPTH=deep`
   runs the Codex research slot with live search, `xhigh` effort and a

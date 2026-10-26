@@ -88,6 +88,9 @@ class Finished:
     deslopped: bool = False
     illustrations: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    # slop-lint before/after ({"score", "band"}): a clean article is left
+    # untouched by design, and this says so.
+    lint: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 def enabled() -> bool:
@@ -187,6 +190,28 @@ def _claude(
         return str(proc.stdout)
 
 
+def _lint(path: Path, run: Callable[..., Any]) -> dict[str, Any] | None:
+    """slop-lint's score and band for ``path`` (deterministic, no model)."""
+    for root in _SKILL_DIRS:
+        script = root / "slop-lint" / "scripts" / "slop_lint.py"
+        if script.is_file():
+            break
+    else:
+        return None
+    try:
+        proc = run(
+            ["python3", str(script), str(path), "--genre", "technical", "--json"],
+            timeout=120.0,
+        )
+        data = json.loads(proc.stdout)
+    except Exception:
+        return None
+    row = data[0] if isinstance(data, list) and data else data
+    if not isinstance(row, dict):
+        return None
+    return {"score": row.get("score"), "band": row.get("band")}
+
+
 def _insert_figures(markdown: str, figures: list[tuple[str, str]]) -> str:
     """Link each figure right under the article's H1 (or at the top)."""
     block = "\n".join(f"![{alt}]({path})" for alt, path in figures)
@@ -223,10 +248,12 @@ def finish_article(
         work = Path(tmp)
         (work / "article.md").write_text(article, encoding="utf-8")
 
+        if before := _lint(work / "article.md", run):
+            out.lint["before"] = before
         emit({"stage": "article_deslop", "message": "Deslopping the article"})
         try:
             _claude(
-                "/deslop article.md — genre: article. Edit article.md in place. "
+                "/deslop article.md — genre: technical. Edit article.md in place. "
                 "Keep every [n] citation anchor, link URL, number and quote "
                 "exactly as written.",
                 work,
@@ -242,6 +269,8 @@ def finish_article(
             elif edited.strip() and edited != article:
                 out.markdown = edited
                 out.deslopped = True
+            if after := _lint(work / "article.md", run):
+                out.lint["after"] = after
         except Exception as e:
             out.notes.append(f"deslop failed: {e}")
 

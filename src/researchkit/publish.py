@@ -429,6 +429,7 @@ def publish(
                 "deslopped": done.deslopped,
                 "illustrations": done.illustrations,
                 "notes": done.notes,
+                "lint": done.lint,
             }
     issues = check_publication({"report.md": report_text}, cited, archive_text)
     if article:

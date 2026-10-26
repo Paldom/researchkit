@@ -26,6 +26,10 @@ def _fake_run(on_deslop: str | None, svg: bool = True) -> Any:
 
     def run(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[str]:
         calls.append(cmd)
+        if cmd[0] == "python3":  # slop-lint
+            return subprocess.CompletedProcess(
+                cmd, 0, '[{"score": 40, "band": "mild"}]', ""
+            )
         work = Path(kw["cwd"])
         prompt = cmd[2]
         if prompt.startswith("/deslop") and on_deslop is not None:
@@ -61,7 +65,9 @@ def test_deslop_and_illustration_land_in_the_article(
         "",
         "![Caching](article-assets/caching.svg)",
     ]
-    cmd = run.calls[0]
+    assert done.lint["before"] == {"score": 40, "band": "mild"}
+    cmd = next(c for c in run.calls if c[0] == "claude")
+    assert "genre: technical" in cmd[2]
     assert "--strict-mcp-config" in cmd and "bypassPermissions" not in cmd
     assert "WebSearch,WebFetch" in cmd
 
